@@ -1,0 +1,38 @@
+{
+  "name": "casomer",
+  "version": "0.0.1",
+  "description": "JSON-native CMS that compiles to lightning-fast static sites with dynamic view transitions. Powered by Alpine.js. (In development — placeholder release.)",
+  "keywords": [
+    "cms",
+    "static-site-generator",
+    "json",
+    "alpinejs",
+    "view-transitions",
+    "ssg",
+    "headless-cms",
+    "content-management",
+    "static-site",
+    "wysiwyg"
+  ],
+  "homepage": "https://casomer.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/casomer-cms/casomer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/casomer-cms/casomer/issues"
+  },
+  "license": "SEE LICENSE IN LICENSE.md",
+  "author": "Casomer",
+  "bin": {
+    "caso": "./bin/caso.js"
+  },
+  "files": [
+    "bin/",
+    "README.md",
+    "LICENSE.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}
