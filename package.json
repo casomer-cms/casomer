@@ -1,6 +1,6 @@
 {
   "name": "casomer",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "JSON-native CMS that compiles to lightning-fast static sites with dynamic view transitions. Powered by Alpine.js. (In development — placeholder release.)",
   "keywords": [
     "cms",
