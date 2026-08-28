@@ -10,7 +10,7 @@
     <div><span>&nbsp;</span></div>
 </div>
 
-Your whole site - content, components, structure - lives as JSON. Publish compiles it to pre-rendered static HTML with view transitions that make static feel alive. Git-friendly. Self-host it, or let casomer cloud handle the nitty gritty.```
+Your whole site - content, components, structure - lives as JSON. Publish compiles it to pre-rendered static HTML with view transitions that make static feel alive. Git-friendly. Self-host it, or let casomer cloud handle the nitty gritty.
 
 > ⚠️ **Casomer is in early active development.** Watch this repo or check [casomer.com](https://casomer.com) for the first real release.
 
