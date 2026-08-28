@@ -41,4 +41,4 @@ Casomer will be **source-available**: free for personal use (including self-host
 
 ---
 
-© Casomer. All rights reserved.
+© Casomer™. All rights reserved.
