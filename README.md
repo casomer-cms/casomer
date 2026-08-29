@@ -37,7 +37,7 @@ The `caso` command currently prints a friendly note. Soon it will build websites
 
 ## License
 
-Casomer will be **source-available**: free for personal use (including self-hosting), licensed for commercial use. Final license terms are being drafted - see [LICENSE.md](./LICENSE.md) for the current placeholder terms.
+Casomer is **source-available** under the [Business Source License 1.1](./LICENSE.md): free for personal, noncommercial use (including self-hosting your own hobby site or blog), licensed for commercial use - and every release automatically becomes **MIT** four years after publication. The runtime that ships inside generated sites will be MIT from day one, and your generated site belongs entirely to you.
 
 ---
 

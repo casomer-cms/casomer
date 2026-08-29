@@ -1,5 +1,10 @@
 node_modules/
 dist/
+internal/
+desktop
+cloud
+components
+github
 .DS_Store
 *.log
 .env

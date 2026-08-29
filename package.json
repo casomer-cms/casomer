@@ -22,7 +22,7 @@
   "bugs": {
     "url": "https://github.com/casomer-cms/casomer/issues"
   },
-  "license": "SEE LICENSE IN LICENSE.md",
+  "license": "BUSL-1.1",
   "author": "Casomer",
   "bin": {
     "caso": "./bin/caso.js"
