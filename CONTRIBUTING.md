@@ -74,8 +74,11 @@ developer:
   reason behind a non-obvious choice. No narration, no changelog
   archaeology.
 - Plain human punctuation in comments, messages, and strings.
-- Formatting is owned by the formatter and checked in CI. Style debates
-  are settled by tooling, not review threads.
+- Formatting is owned by the formatter and applies itself: editors
+  with ESLint integration format on save (workspace settings are
+  committed), and a pre-commit hook formats whatever you stage. You do
+  not need to learn or apply the style - write code however you like
+  and let the tooling dress it. CI is only the backstop.
 
 ## Conduct
 

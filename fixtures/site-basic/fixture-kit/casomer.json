@@ -1,0 +1,8 @@
+{
+    "schema": 1,
+    "name": "fixture-kit",
+    "components": [
+        "./components/card",
+        "./components/note"
+    ]
+}

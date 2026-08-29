@@ -1,0 +1,11 @@
+#!/bin/sh
+# Auto-format staged JS/TS before every commit (DEVELOPMENT section 8):
+# the style applies itself; nobody is asked to hand-format.
+# Known limit: a partially staged file is formatted whole and restaged.
+
+staged=$( git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|js)$' )
+
+if [ -z "$staged" ]; then exit 0; fi
+
+echo "$staged" | tr '\n' '\0' | xargs -0 npx eslint --fix --no-warn-ignored || exit 1
+echo "$staged" | tr '\n' '\0' | xargs -0 git add
