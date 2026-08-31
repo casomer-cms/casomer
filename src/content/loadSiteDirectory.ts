@@ -12,6 +12,14 @@ import { join } from 'node:path';
 import { suggestNearest } from '../schema/fields.ts';
 import { parseComponentReference, type SchemaIssue } from '../schema/manifest.ts';
 import { type LoadedPackage } from '../schema/loadPackage.ts';
+
+export interface LoadedPage
+{
+    readonly id: string;
+    readonly title: string;
+    readonly slug: string;
+    readonly blocks: readonly unknown[];
+}
 import { serializeCanonicalJson, type JsonValue } from './canonicalJson.ts';
 import { analyzeBlocks, type BlocksAnalysis } from './blocks.ts';
 import { validateSiteConfig, type SiteConfig } from './siteConfig.ts';
@@ -21,6 +29,7 @@ import { validateSiteConfig, type SiteConfig } from './siteConfig.ts';
 // forever.
 const coreComponentIds = [ 'markdown', 'image' ];
 
+const pagesFileKeys = [ 'casomerSchema', 'pages' ];
 const pageKeys = [ 'id', 'title', 'slug', 'blocks' ];
 
 const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -30,6 +39,7 @@ export interface SiteLoadResult
 {
     readonly config: SiteConfig;
     readonly pageCount: number;
+    readonly pages: readonly LoadedPage[];
     readonly issues: readonly SchemaIssue[];
 }
 
@@ -171,19 +181,49 @@ export async function loadSiteDirectory (
 
     const pagesDocument = await readCanonicalDocument( join( contentDirectory, 'pages.json' ), 'pages.json', issues );
     let pageCount = 0;
+    const pages: LoadedPage[] = [];
 
     if ( pagesDocument !== undefined )
     {
-        if ( !Array.isArray( pagesDocument.value ) )
+        let pageList: readonly unknown[] | undefined;
+
+        if ( pagesDocument.value === null || typeof pagesDocument.value !== 'object' || Array.isArray( pagesDocument.value ) )
         {
-            issues.push( { path: 'pages.json', message: 'pages.json is an array of pages.' } );
+            issues.push( { path: 'pages.json', message: 'pages.json is an object: { "casomerSchema": 1, "pages": [ ... ] }.' } );
         }
         else
+        {
+            const pagesRecord = pagesDocument.value as Record<string, unknown>;
+
+            for ( const key of Object.keys( pagesRecord ) )
+            {
+                if ( !pagesFileKeys.includes( key ) )
+                {
+                    issues.push( { path: `pages.${key}`, message: `Unknown key "${key}".${suggestNearest( key, pagesFileKeys )}` } );
+                }
+            }
+
+            if ( pagesRecord.casomerSchema !== 1 )
+            {
+                issues.push( {
+                    path: 'pages.casomerSchema',
+                    message: `Every Casomer file carries "casomerSchema": 1 (SCHEMA section 13.1); got ${JSON.stringify( pagesRecord.casomerSchema )}. A newer schema needs a newer Casomer.`,
+                } );
+            }
+
+            if ( !Array.isArray( pagesRecord.pages ) )
+            {
+                issues.push( { path: 'pages.pages', message: '"pages" is an array of pages.' } );
+            }
+            else { pageList = pagesRecord.pages; }
+        }
+
+        if ( pageList !== undefined )
         {
             const seenIds = new Map<string, string>();
             const seenSlugs = new Map<string, string>();
 
-            for ( const [ index, rawPage ] of pagesDocument.value.entries() )
+            for ( const [ index, rawPage ] of pageList.entries() )
             {
                 const pagePath = `pages[${index}]`;
 
@@ -195,6 +235,13 @@ export async function loadSiteDirectory (
 
                 pageCount += 1;
                 const page = rawPage as Record<string, unknown>;
+
+                pages.push( {
+                    id: String( page.id ?? '' ),
+                    title: String( page.title ?? '' ),
+                    slug: String( page.slug ?? '' ),
+                    blocks: Array.isArray( page.blocks ) ? page.blocks : [],
+                } );
 
                 for ( const key of Object.keys( page ) )
                 {
@@ -237,5 +284,5 @@ export async function loadSiteDirectory (
         }
     }
 
-    return { config, pageCount, issues };
+    return { config, pageCount, pages, issues };
 }

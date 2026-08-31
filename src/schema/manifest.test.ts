@@ -119,7 +119,7 @@ describe( 'normalizeComponentManifest', () =>
 describe( 'normalizePackageManifest', () =>
 {
     const packageManifest = {
-        schema: 1,
+        casomerSchema: 1,
         name: '@casomer/components',
         components: [ './components/markdown', './components/hero' ],
     };
@@ -128,16 +128,16 @@ describe( 'normalizePackageManifest', () =>
     {
         const manifest = normalizePackageManifest( packageManifest );
 
-        assert.equal( manifest.schemaVersion, 1 );
+        assert.equal( manifest.casomerSchema, 1 );
         assert.equal( manifest.name, '@casomer/components' );
         assert.deepEqual( manifest.componentPaths, [ './components/markdown', './components/hero' ] );
     } );
 
     it( 'rejects unknown schema versions by naming the mismatch', () =>
     {
-        const [ issue ] = issuesFrom( () => normalizePackageManifest( { ...packageManifest, schema: 2 } ) );
+        const [ issue ] = issuesFrom( () => normalizePackageManifest( { ...packageManifest, casomerSchema: 2 } ) );
 
-        assert.ok( issue?.message.includes( 'schema 1' ) );
+        assert.ok( issue?.message.includes( '"casomerSchema": 1' ) );
         assert.ok( issue?.message.includes( 'newer Casomer' ) );
     } );
 
@@ -190,5 +190,39 @@ describe( 'parseComponentReference', () =>
     {
         assert.throws( () => parseComponentReference( 'Bad Name/hero' ), ComponentReferenceError );
         assert.throws( () => parseComponentReference( 'kit/Hero!' ), ComponentReferenceError );
+    } );
+} );
+
+describe( 'component examples', () =>
+{
+    it( 'normalizes named prop sets', () =>
+    {
+        const manifest = normalizeComponentManifest( {
+            ...markdownManifest,
+            examples: [ { name: 'Basic', props: { content: '# Hi' } }, { name: 'Empty' } ],
+        } );
+
+        assert.equal( manifest.examples.length, 2 );
+        assert.deepEqual( manifest.examples[ 0 ], { name: 'Basic', props: { content: '# Hi' } } );
+        assert.deepEqual( manifest.examples[ 1 ]?.props, {} );
+    } );
+
+    it( 'rejects duplicate names and unknown example keys', () =>
+    {
+        const issues = issuesFrom( () => normalizeComponentManifest( {
+            ...markdownManifest,
+            examples: [
+                { name: 'Basic', porps: {} },
+                { name: 'Basic' },
+            ],
+        } ) );
+
+        assert.ok( issues.some( ( issue ) => issue.message.includes( 'Did you mean "props"?' ) ) );
+        assert.ok( issues.some( ( issue ) => issue.message.includes( 'Duplicate example name' ) ) );
+    } );
+
+    it( 'defaults to no examples', () =>
+    {
+        assert.deepEqual( normalizeComponentManifest( markdownManifest ).examples, [] );
     } );
 } );

@@ -1,0 +1,231 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Sora', system-ui, sans-serif; }
+    a { color: #CE8A28; } a:hover { color: #9A6A12; }
+  </style>
+</helmet>
+<div style="width: 1440px; height: 900px; background: #E9E6DE; color: #1A1D28; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">
+
+  <div style="height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 22px; flex: none;">
+    <img src="casomer-wordmark-ui.svg" alt="casomer" style="height: 18px; width: auto; display: block;">
+    <div style="font-size: 15px; color: #B6B1A4; font-weight: 300; margin: 0 2px;">|</div>
+    <div style="font-size: 15px; font-weight: 600; color: #4B4F5C;">sunrise-bakery</div>
+    <div style="display: flex; align-items: center; gap: 6px; margin-left: 6px;">
+      <div style="width: 7px; height: 7px; border-radius: 4px; background: #E8A13D;"></div>
+      <span style="font-size: 12px; color: #8A8677;">3 unpublished edits</span>
+    </div>
+    <div style="flex: 1;"></div>
+    <div style="display: flex; background: #DDD9CE; border-radius: 9px; padding: 3px; gap: 2px;">
+      <div style="width: 32px; height: 26px; border-radius: 7px; background: #FFFFFF; display: flex; align-items: center; justify-content: center;">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3" width="13" height="8.5" rx="1" stroke="#1A1D28" stroke-width="1.4"></rect><path d="M5.5 14h5" stroke="#1A1D28" stroke-width="1.4" stroke-linecap="round"></path></svg>
+      </div>
+      <div style="width: 32px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="1.5" width="10" height="13" rx="1.2" stroke="#8A8677" stroke-width="1.4"></rect></svg>
+      </div>
+      <div style="width: 32px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center;">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="4.5" y="1.5" width="7" height="13" rx="1.2" stroke="#8A8677" stroke-width="1.4"></rect></svg>
+      </div>
+    </div>
+    <div style="width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center;">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 2.5a5 5 0 0 0-5 5v3l-1.5 3h13L15 10.5v-3a5 5 0 0 0-5-5z" stroke="#4B4F5C" stroke-width="1.5" stroke-linejoin="round"></path><path d="M8.3 16.5a1.8 1.8 0 0 0 3.4 0" stroke="#4B4F5C" stroke-width="1.5" stroke-linecap="round"></path></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px; background: #DDD9CE; border-radius: 9px; height: 32px; padding: 0 11px; box-sizing: border-box;">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="#4B4F5C" stroke-width="1.5"></circle><path d="M10.5 10.5L14 14" stroke="#4B4F5C" stroke-width="1.5" stroke-linecap="round"></path></svg>
+      <span style="font-size: 11.5px; color: #A39E8F; font-weight: 500;">Ctrl K</span>
+    </div>
+    <div style="width: 292px; margin-left: 2px; display: flex; align-items: center; gap: 12px; flex: none;">
+      <div style="flex: 1; background: #FFFFFF; color: #4B4F5C; font-size: 13px; padding: 7px 0; border-radius: 9px; border: 1px solid #CDC8BB; display: flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap;">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H4A1.5 1.5 0 0 0 2.5 5v7A1.5 1.5 0 0 0 4 13.5h7a1.5 1.5 0 0 0 1.5-1.5V9.5M9.5 2.5h4v4M13.2 2.8L8 8" stroke="#4B4F5C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        Preview
+      </div>
+      <div style="flex: 1; background: #E8A13D; color: #1A1D28; font-weight: 600; font-size: 13px; padding: 8px 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap;">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 10.5V3M4.8 6.2L8 3l3.2 3.2M3 11.5V13h10v-1.5" stroke="#1A1D28" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        Publish
+      </div>
+      <div style="width: 30px; height: 30px; border-radius: 15px; background: #1A1D28; color: #F7F5F0; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: none;">M</div>
+    </div>
+  </div>
+
+  <div style="flex: 1; display: flex; min-height: 0; padding: 0 14px 14px; gap: 14px;">
+
+    <div style="width: 218px; flex: none; padding: 8px 2px 4px; display: flex; flex-direction: column; gap: 2px; box-sizing: border-box;">
+      <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: #A39E8F; padding: 0 12px 7px; display: flex; align-items: center;">PAGES<div style="flex: 1;"></div><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="#A39E8F" stroke-width="1.5" stroke-linecap="round"></path></svg></div>
+      <div style="height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border-radius: 9px; background: #FFFFFF; font-size: 13px; font-weight: 600; box-shadow: 0 1px 2px rgba(26,29,40,0.06);">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 1.5h5.5L13 5v9.5H4z" stroke="#E8A13D" stroke-width="1.3" stroke-linejoin="round"></path><path d="M9.5 1.5V5H13" stroke="#E8A13D" stroke-width="1.3" stroke-linejoin="round"></path></svg>
+        Home
+        <div style="flex: 1;"></div>
+        <div style="width: 6px; height: 6px; border-radius: 3px; background: #E8A13D;"></div>
+      </div>
+      <div style="height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #4B4F5C;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 1.5h5.5L13 5v9.5H4z" stroke="#8A8677" stroke-width="1.3" stroke-linejoin="round"></path><path d="M9.5 1.5V5H13" stroke="#8A8677" stroke-width="1.3" stroke-linejoin="round"></path></svg>
+        About
+      </div>
+      <div style="height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #4B4F5C;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 1.5h5.5L13 5v9.5H4z" stroke="#8A8677" stroke-width="1.3" stroke-linejoin="round"></path><path d="M9.5 1.5V5H13" stroke="#8A8677" stroke-width="1.3" stroke-linejoin="round"></path></svg>
+        Contact
+      </div>
+
+      <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: #A39E8F; padding: 18px 12px 7px; display: flex; align-items: center;">COLLECTIONS<div style="flex: 1;"></div><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="#A39E8F" stroke-width="1.5" stroke-linecap="round"></path></svg></div>
+      <div style="height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #4B4F5C;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="9" height="9" rx="1.5" stroke="#8A8677" stroke-width="1.3"></rect><path d="M14 5.5v6a2.5 2.5 0 0 1-2.5 2.5h-6" stroke="#8A8677" stroke-width="1.3" stroke-linecap="round"></path></svg>
+        Bakes journal
+        <div style="flex: 1;"></div>
+        <span style="font-size: 10px; background: #FFFFFF; border-radius: 8px; padding: 1px 7px; color: #8A8677;">8</span>
+      </div>
+      <div style="height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #4B4F5C;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="9" height="9" rx="1.5" stroke="#8A8677" stroke-width="1.3"></rect><path d="M14 5.5v6a2.5 2.5 0 0 1-2.5 2.5h-6" stroke="#8A8677" stroke-width="1.3" stroke-linecap="round"></path></svg>
+        Events
+        <div style="flex: 1;"></div>
+        <span style="font-size: 10px; background: #FFFFFF; border-radius: 8px; padding: 1px 7px; color: #8A8677;">3</span>
+      </div>
+
+      <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.12em; color: #A39E8F; padding: 18px 12px 7px; display: flex; align-items: center;">TAXONOMIES<div style="flex: 1;"></div><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="#A39E8F" stroke-width="1.5" stroke-linecap="round"></path></svg></div>
+      <div style="height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border-radius: 9px; font-size: 13px; color: #4B4F5C;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 2h5.2L14 8.8 8.8 14 2 7.2z" stroke="#8A8677" stroke-width="1.3" stroke-linejoin="round"></path><circle cx="5.2" cy="5.2" r="1.1" stroke="#8A8677" stroke-width="1.2"></circle></svg>
+        Venues
+      </div>
+
+      <div style="flex: 1;"></div>
+
+      <div style="height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 12px; font-size: 12.5px; color: #4B4F5C;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A8677" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        Site settings
+      </div>
+    </div>
+
+    <div style="flex: 1; min-width: 0; background: #FFFFFF; border-radius: 18px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 2px 18px rgba(26,29,40,0.06);">
+      <div style="flex: 1; display: flex; overflow: hidden;">
+        <div style="flex: 1; background: #FFFFFF; overflow: hidden;">
+          <div style="display: flex; align-items: center; padding: 14px 30px; border-bottom: 1px solid #F1EEE7;">
+            <div style="font-size: 13px; font-weight: 700;">Sunrise Bakery</div>
+            <div style="flex: 1;"></div>
+            <div style="display: flex; gap: 18px; font-size: 12px; color: #7D808B;"><span style="color: #1A1D28;">Home</span><span>About</span><span>Contact</span></div>
+          </div>
+          <div style="padding: 26px 38px 30px;">
+            <div style="font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 22px;">Fresh mornings, honest bread.</div>
+            <div style="position: relative; border-radius: 8px; outline: 2px solid #E8A13D; outline-offset: 3px;">
+              <div style="position: absolute; top: -25px; left: -3px; background: #E8A13D; color: #1A1D28; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 5px;">Card</div>
+              <div style="height: 126px; background: #F3E3C6; border-radius: 8px 8px 0 0; display: flex; align-items: center; justify-content: center;">
+                <svg width="34" height="27" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+              <div style="padding: 14px 18px 16px;">
+                <div style="font-size: 16px; font-weight: 600; margin-bottom: 5px;">Our sourdough story</div>
+                <div style="font-size: 12.5px; color: #4B4F5C; line-height: 1.6;">Every loaf starts three days early, with a starter older than the shop itself.</div>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; margin-top: 26px;">
+              <div>
+                <div style="font-size: 15px; font-weight: 600; margin-bottom: 6px;">Visit the bakery</div>
+                <div style="font-size: 12px; color: #4B4F5C; line-height: 1.65;">We are on the corner of 5th and Alder, two blocks from the park. <a href="#">Get directions</a>.</div>
+              </div>
+              <div style="background: #F7F5F0; border-radius: 8px; padding: 14px 16px;">
+                <div style="font-size: 13px; font-weight: 600; margin-bottom: 5px;">Hours</div>
+                <div style="font-size: 12px; color: #4B4F5C; line-height: 1.65;">Tue to Sun, 7am until the bread runs out.</div>
+              </div>
+            </div>
+
+            <div style="margin-top: 22px; position: relative;">
+              <div style="opacity: 0.5; filter: grayscale(0.85); background: #F3E3C6; border-radius: 8px; padding: 15px 20px;">
+                <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">Holiday hours</div>
+                <div style="font-size: 12px; color: #4B4F5C; line-height: 1.6;">We close early on Dec 24 and rest until the 27th.</div>
+              </div>
+              <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #FFFFFF; border: 1px solid #CDC8BB; border-radius: 14px; padding: 5px 10px; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 4px rgba(26,29,40,0.12);">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4z" stroke="#4B4F5C" stroke-width="1.3"></path><circle cx="8" cy="8" r="1.8" stroke="#4B4F5C" stroke-width="1.3"></circle><path d="M2.5 13.5l11-11" stroke="#4B4F5C" stroke-width="1.3" stroke-linecap="round"></path></svg>
+                <span style="font-size: 11px; color: #4B4F5C; font-weight: 600;">hidden</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="height: 42px; flex: none; display: flex; align-items: center; gap: 6px; padding: 0 20px; font-size: 12.5px; background: #F4F2EB; border-top: 1px solid #EBE8DF;">
+        <div style="display: flex; align-items: center; gap: 6px; padding: 5px 12px; background: #FFFFFF; border-radius: 8px; font-size: 11.5px; color: #4B4F5C; margin-right: 8px; box-shadow: 0 1px 2px rgba(26,29,40,0.05);">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M5.5 3.5h9M5.5 8h9M5.5 12.5h9" stroke="#8A8677" stroke-width="1.5" stroke-linecap="round"></path><circle cx="2.2" cy="3.5" r="1" fill="#8A8677"></circle><circle cx="2.2" cy="8" r="1" fill="#8A8677"></circle><circle cx="2.2" cy="12.5" r="1" fill="#8A8677"></circle></svg>
+          Outline
+        </div>
+        <span style="color: #8A8677;">home</span>
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" stroke="#B6B1A4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="color: #8A8677;">section</span>
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" stroke="#B6B1A4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        <span style="font-weight: 600;">card</span>
+      </div>
+    </div>
+
+    <div style="width: 292px; flex: none; background: #FFFFFF; border-radius: 18px; padding: 14px 18px 20px; display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; overflow: hidden;">
+      <div style="display: flex; align-items: flex-start;">
+        <div>
+          <div style="font-size: 15px; font-weight: 600;">Card</div>
+          <div style="font-size: 11.5px; color: #A39E8F; margin-top: 2px;">fixture-kit / card</div>
+        </div>
+        <div style="flex: 1;"></div>
+        <div style="width: 24px; height: 24px; border-radius: 7px; display: flex; align-items: center; justify-content: center; margin-top: 1px;">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9" stroke="#8A8677" stroke-width="1.5" stroke-linecap="round"></path></svg>
+        </div>
+      </div>
+      <div style="border-top: 1px solid #DDD9CE; margin: 0 -18px;"></div>
+      <div style="display: flex; border-bottom: 1px solid #F1EEE7; gap: 18px;">
+        <div style="font-size: 12.5px; font-weight: 600; padding-bottom: 8px; border-bottom: 2px solid #E8A13D;">Content</div>
+        <div style="font-size: 12.5px; color: #A39E8F; padding-bottom: 8px;">Settings</div>
+      </div>
+      <div>
+        <div style="font-size: 11.5px; font-weight: 600; color: #4B4F5C; margin-bottom: 5px;">Title</div>
+        <div style="height: 34px; background: #F4F2EB; border-radius: 9px; padding: 0 12px; display: flex; align-items: center; font-size: 12.5px;">Our sourdough story</div>
+      </div>
+      <div>
+        <div style="font-size: 11.5px; font-weight: 600; color: #4B4F5C; margin-bottom: 5px;">Layout</div>
+        <div style="height: 34px; background: #F4F2EB; border-radius: 9px; padding: 0 12px; display: flex; align-items: center; font-size: 12.5px;">
+          <span>Stacked</span>
+          <div style="flex: 1;"></div>
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3.5 6L8 10.5L12.5 6" stroke="#8A8677" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </div>
+      </div>
+      <div>
+        <div style="font-size: 11.5px; font-weight: 600; color: #4B4F5C; margin-bottom: 5px;">Photo</div>
+        <div style="display: flex; gap: 10px; align-items: center; background: #F4F2EB; border-radius: 9px; padding: 9px 11px;">
+          <div style="width: 40px; height: 40px; border-radius: 7px; background: #F3E3C6; flex: none; display: flex; align-items: center; justify-content: center;"><svg width="16" height="13" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+          <div style="min-width: 0;">
+            <div style="font-size: 12px;">hero-photo.jpg</div>
+            <div style="font-size: 10.5px; color: #A39E8F;">1600 × 900 · 210 KB</div>
+          </div>
+        </div>
+        <div style="font-size: 11px; color: #8A8677; margin: 8px 0 4px;">Alt text</div>
+        <div style="height: 32px; background: #F4F2EB; border-radius: 9px; padding: 0 12px; display: flex; align-items: center; font-size: 12.5px;">Golden loaves at sunrise</div>
+      </div>
+      <div>
+        <div style="display: flex; align-items: baseline; margin-bottom: 5px;">
+          <div style="font-size: 11.5px; font-weight: 600; color: #4B4F5C;">FAQs</div>
+          <div style="flex: 1;"></div>
+          <div style="font-size: 11px; color: #A39E8F;">2 items</div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="border: 1px solid #E3DFD5; border-radius: 9px; background: #FFFFFF; overflow: hidden;">
+            <div style="height: 30px; padding: 0 11px; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; background: #F4F2EB;"><svg width="10" height="14" viewBox="0 0 10 14" fill="#A39E8F"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg>What is sourdough?<div style="flex: 1;"></div><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3.5 10L8 5.5L12.5 10" stroke="#8A8677" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+            <div style="padding: 10px 11px 12px; display: flex; flex-direction: column; gap: 9px;">
+              <div>
+                <div style="font-size: 11px; font-weight: 600; color: #4B4F5C; margin-bottom: 4px;">Question</div>
+                <div style="height: 28px; background: #F4F2EB; border-radius: 8px; padding: 0 10px; display: flex; align-items: center; font-size: 12px;">What is sourdough?</div>
+              </div>
+              <div>
+                <div style="font-size: 11px; font-weight: 600; color: #4B4F5C; margin-bottom: 4px;">Answer</div>
+                <div style="min-height: 44px; background: #F4F2EB; border-radius: 8px; padding: 7px 10px; font-size: 12px; color: #4B4F5C; line-height: 1.5;">Naturally leavened bread — no commercial yeast, just time.</div>
+              </div>
+            </div>
+          </div>
+          <div style="height: 32px; background: #F4F2EB; border-radius: 9px; padding: 0 11px; display: flex; align-items: center; gap: 8px; font-size: 12px;"><svg width="10" height="14" viewBox="0 0 10 14" fill="#A39E8F"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg>Do you deliver?<div style="flex: 1;"></div><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3.5 6L8 10.5L12.5 6" stroke="#8A8677" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+          <div style="font-size: 12px; font-weight: 600; color: #CE8A28; padding: 2px 2px 0;">+ Add item</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

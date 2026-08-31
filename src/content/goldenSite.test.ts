@@ -68,12 +68,12 @@ describe( 'the golden fixture site', () =>
 
         // Reference a component that does not exist, with a spacing token
         // outside the theme, in canonical form so only real issues fire.
-        const pages = parseJsonDocument( await readFile( join( brokenDirectory, 'pages.json' ), 'utf8' ) ) as JsonValue[];
-        const home = pages[ 0 ] as { blocks: JsonValue[] };
+        const pagesFile = parseJsonDocument( await readFile( join( brokenDirectory, 'pages.json' ), 'utf8' ) ) as { pages: JsonValue[] };
+        const home = pagesFile.pages[ 0 ] as { blocks: JsonValue[] };
 
         home.blocks[ 0 ] = { component: 'fixture-kit/ghost', props: {} };
         home.blocks[ 1 ] = { section: { gap: 'xl' }, blocks: [] };
-        await writeFile( join( brokenDirectory, 'pages.json' ), serializeCanonicalJson( pages ), 'utf8' );
+        await writeFile( join( brokenDirectory, 'pages.json' ), serializeCanonicalJson( pagesFile as unknown as JsonValue ), 'utf8' );
 
         const { loadedPackage } = await loadPackageFromDirectory( packageDirectory );
         const result = await loadSiteDirectory( brokenDirectory, loadedPackage === undefined ? [] : [ loadedPackage ] );
@@ -90,15 +90,36 @@ describe( 'the golden fixture site', () =>
 
         await cp( contentDirectory, brokenDirectory, { recursive: true } );
 
-        const pages = parseJsonDocument( await readFile( join( brokenDirectory, 'pages.json' ), 'utf8' ) ) as JsonValue[];
-        const home = pages[ 0 ] as { blocks: JsonValue[] };
+        const pagesFile = parseJsonDocument( await readFile( join( brokenDirectory, 'pages.json' ), 'utf8' ) ) as { pages: JsonValue[] };
+        const home = pagesFile.pages[ 0 ] as { blocks: JsonValue[] };
 
         home.blocks = [ { component: 'core/section', props: {} } ];
-        await writeFile( join( brokenDirectory, 'pages.json' ), serializeCanonicalJson( pages ), 'utf8' );
+        await writeFile( join( brokenDirectory, 'pages.json' ), serializeCanonicalJson( pagesFile as unknown as JsonValue ), 'utf8' );
 
         const result = await loadSiteDirectory( brokenDirectory, [] );
 
         assert.ok( result.issues.some( ( issue ) => issue.message.includes( 'Core is deliberately small' ) ) );
+    } );
+
+    it( 'rejects content files that do not identify as Casomer files', async () =>
+    {
+        const brokenDirectory = await mkdtemp( join( tmpdir(), 'casomer-unowned-' ) );
+
+        await cp( contentDirectory, brokenDirectory, { recursive: true } );
+
+        const siteFile = parseJsonDocument( await readFile( join( brokenDirectory, 'site.json' ), 'utf8' ) ) as Record<string, JsonValue>;
+
+        delete siteFile.casomerSchema;
+        await writeFile( join( brokenDirectory, 'site.json' ), serializeCanonicalJson( siteFile as unknown as JsonValue ), 'utf8' );
+
+        // A pre-identity pages.json: a bare array instead of the object shape.
+        await writeFile( join( brokenDirectory, 'pages.json' ), serializeCanonicalJson( [] ), 'utf8' );
+
+        const result = await loadSiteDirectory( brokenDirectory, [] );
+        const messages = result.issues.map( ( issue ) => issue.message ).join( '\n' );
+
+        assert.ok( messages.includes( '"casomerSchema": 1' ), 'the identity key is named' );
+        assert.ok( result.issues.some( ( issue ) => issue.path === 'pages.json' ), 'the pages.json shape is rejected' );
     } );
 
     it( 'has no stray files in the fixture content directory', async () =>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Sora', system-ui, sans-serif; }
+    a { color: #CE8A28; } a:hover { color: #9A6A12; }
+  </style>
+</helmet>
+<div style="width: 560px; height: 640px; background: #E9E6DE; color: #1A1D28; box-sizing: border-box; padding: 32px; display: flex; align-items: flex-start; justify-content: center; overflow: hidden;">
+  <div style="width: 460px; background: #FFFFFF; border-radius: 14px; box-shadow: 0 8px 32px rgba(26,29,40,0.16); overflow: hidden;">
+
+    <div style="padding: 18px 22px 6px;">
+      <div style="font-size: 15px; font-weight: 600;">First publish</div>
+      <div style="font-size: 12px; color: #7D808B; margin-top: 4px;">One question before it goes: where should this site live?</div>
+    </div>
+
+    <div style="padding: 12px 22px 6px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="border: 2px solid #E8A13D; background: #FBF1DE; border-radius: 10px; padding: 12px 14px; display: flex; gap: 11px; align-items: flex-start;">
+        <div style="width: 16px; height: 16px; border-radius: 8px; border: 5px solid #E8A13D; background: #FFFFFF; box-sizing: border-box; flex: none; margin-top: 1px;"></div>
+        <div>
+          <div style="font-size: 12.5px; font-weight: 600;">Just save versions</div>
+          <div style="font-size: 11.5px; color: #4B4F5C; line-height: 1.55; margin-top: 2px;">Publish keeps every version here (and on your backup). If your host watches the repository, it deploys itself.</div>
+        </div>
+      </div>
+      <div style="border: 1px solid #E3DFD5; border-radius: 10px; padding: 12px 14px; display: flex; gap: 11px; align-items: flex-start;">
+        <div style="width: 16px; height: 16px; border-radius: 8px; border: 1.5px solid #CDC8BB; flex: none; margin-top: 1px;"></div>
+        <div>
+          <div style="font-size: 12.5px; font-weight: 600;">Upload to my hosting</div>
+          <div style="font-size: 11.5px; color: #4B4F5C; line-height: 1.55; margin-top: 2px;">Every publish also carries the built site to your host over SFTP — only what changed, right after the version is saved.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; padding: 16px 22px 18px;">
+      <div style="font-size: 11px; color: #ABADB5;">Asked once · change any time in Site settings</div>
+      <div style="flex: 1;"></div>
+      <div style="background: #E8A13D; color: #1A1D28; font-weight: 600; font-size: 12.5px; padding: 8px 20px; border-radius: 9px; flex: none; white-space: nowrap;">Publish</div>
+    </div>
+
+    <div style="padding: 11px 22px 14px; background: #FBFAF7; border-top: 1px solid #F1EEE7;">
+      <div style="font-size: 10.5px; color: #7D808B; line-height: 1.7;">Choosing hosting asks for a host, path, and user — the password stays in your system&#39;s keychain, never in your site folder.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

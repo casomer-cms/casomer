@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Sora', system-ui, sans-serif; }
+    a { color: #CE8A28; } a:hover { color: #9A6A12; }
+  </style>
+</helmet>
+<div style="width: 1100px; height: 700px; background: #E9E6DE; color: #1A1D28; box-sizing: border-box; overflow: hidden; position: relative;">
+
+  <div style="height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 22px;">
+    <img src="casomer-wordmark-ui.svg" alt="casomer" style="height: 18px; width: auto; display: block; opacity: 0.5;">
+  </div>
+  <div style="padding: 8px 22px;">
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;">
+      <div style="height: 150px; background: #FFFFFF; border-radius: 16px; opacity: 0.55;"></div>
+      <div style="height: 150px; background: #FFFFFF; border-radius: 16px; opacity: 0.55;"></div>
+      <div style="height: 150px; background: #E2DED2; border-radius: 16px; opacity: 0.55;"></div>
+    </div>
+  </div>
+
+  <div style="position: absolute; inset: 0; background: rgba(20,22,29,0.45); display: flex; align-items: center; justify-content: center;">
+    <div style="width: 480px; background: #FFFFFF; border-radius: 14px; box-shadow: 0 12px 48px rgba(20,22,29,0.35); padding: 26px 28px; box-sizing: border-box;">
+
+      <div style="font-size: 17px; font-weight: 600;">Add site</div>
+      <div style="font-size: 12px; color: #7D808B; margin-top: 3px;">Where is this site coming from?</div>
+
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 20px;">
+        <div style="border: 2px solid #E8A13D; background: #FBF1DE; border-radius: 10px; padding: 13px 14px; display: flex; gap: 12px; align-items: flex-start;">
+          <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style="flex: none; margin-top: 1px;"><path d="M8 2v9M4.5 7.5L8 11l3.5-3.5" stroke="#9A6A12" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" transform="rotate(180 8 6.5)"></path><path d="M3 13.5h10" stroke="#9A6A12" stroke-width="1.5" stroke-linecap="round"></path></svg>
+          <div>
+            <div style="font-size: 13px; font-weight: 600;">Start from scratch</div>
+            <div style="font-size: 11.5px; color: #4B4F5C; line-height: 1.55; margin-top: 2px;">A fresh folder with a starter home page, ready to edit.</div>
+          </div>
+        </div>
+
+        <div style="border: 1px solid #E3DFD5; border-radius: 10px; padding: 13px 14px; display: flex; gap: 12px; align-items: flex-start;">
+          <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style="flex: none; margin-top: 1px;"><path d="M2 5a1.5 1.5 0 0 1 1.5-1.5H6l1.5 2h5A1.5 1.5 0 0 1 14 7v4.5A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" stroke="#7D808B" stroke-width="1.4" stroke-linejoin="round"></path></svg>
+          <div>
+            <div style="font-size: 13px; font-weight: 600;">From a folder on this computer</div>
+            <div style="font-size: 11.5px; color: #4B4F5C; line-height: 1.55; margin-top: 2px;">An existing Casomer site, adopted as-is — nothing is touched.</div>
+          </div>
+        </div>
+
+        <div style="border: 1px solid #E3DFD5; border-radius: 10px; padding: 13px 14px; display: flex; gap: 12px; align-items: flex-start;">
+          <svg width="17" height="17" viewBox="0 0 16 16" fill="none" style="flex: none; margin-top: 1px;"><path d="M5 12h6.3a2.7 2.7 0 0 0 .5-5.4A4 4 0 0 0 4 7.6 2.5 2.5 0 0 0 5 12z" stroke="#7D808B" stroke-width="1.4" stroke-linejoin="round"></path></svg>
+          <div>
+            <div style="font-size: 13px; font-weight: 600;">From a remote repository</div>
+            <div style="font-size: 11.5px; color: #4B4F5C; line-height: 1.55; margin-top: 2px;">Pull a backed-up site down to this computer — GitHub or any git URL.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; margin-top: 22px;">
+        <div style="flex: 1;"></div>
+        <div style="background: #FFFFFF; color: #4B4F5C; font-size: 13px; padding: 8px 16px; border-radius: 8px; border: 1px solid #CDC8BB; margin-right: 10px;">Cancel</div>
+        <div style="background: #E8A13D; color: #1A1D28; font-weight: 600; font-size: 13px; padding: 8px 18px; border-radius: 8px;">Continue</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

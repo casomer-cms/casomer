@@ -7,15 +7,16 @@
 import { suggestNearest } from '../schema/fields.ts';
 import { parseComponentReference, ComponentReferenceError, type SchemaIssue } from '../schema/manifest.ts';
 
-const siteConfigKeys = [ 'theme', 'components' ];
+const siteConfigKeys = [ 'casomerSchema', 'theme', 'components', 'use' ];
 const themeKeys = [ 'colors', 'widths', 'spacing', 'radius', 'shadows', 'typography', 'breakpoints', 'allowCustomColors', 'rhythm' ];
 const tokenFamilies = [ 'colors', 'widths', 'spacing', 'radius', 'shadows', 'typography' ] as const;
 const governanceKeys = [ 'disabled', 'enabled' ];
 
 export interface SiteTheme
 {
-    readonly families: Readonly<Record<string, readonly string[]>>;
+    readonly families: Readonly<Record<string, Readonly<Record<string, string>>>>;
     readonly breakpointNames: readonly string[];
+    readonly breakpoints: Readonly<Record<string, number>>;
     readonly spacingTokens: readonly string[];
     readonly allowCustomColors: boolean;
     readonly rhythm?: string;
@@ -31,17 +32,18 @@ export interface SiteConfig
 {
     readonly theme: SiteTheme;
     readonly governance: SiteGovernance;
+    readonly declaredUse?: 'personal' | 'commercial';
 }
 
-function validateTokenRecord ( raw: unknown, path: string, issues: SchemaIssue[] ): string[]
+function validateTokenRecord ( raw: unknown, path: string, issues: SchemaIssue[] ): Record<string, string>
 {
     if ( raw === null || typeof raw !== 'object' || Array.isArray( raw ) )
     {
         issues.push( { path, message: 'A token family is an object of token names to values.' } );
-        return [];
+        return {};
     }
 
-    const names: string[] = [];
+    const tokens: Record<string, string> = {};
 
     for ( const [ name, value ] of Object.entries( raw as Record<string, unknown> ) )
     {
@@ -51,10 +53,10 @@ function validateTokenRecord ( raw: unknown, path: string, issues: SchemaIssue[]
             continue;
         }
 
-        names.push( name );
+        tokens[ name ] = value;
     }
 
-    return names;
+    return tokens;
 }
 
 function validateGovernanceList ( raw: unknown, path: string, issues: SchemaIssue[] ): string[]
@@ -107,7 +109,7 @@ function validateGovernanceList ( raw: unknown, path: string, issues: SchemaIssu
 
 export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): SiteConfig
 {
-    const emptyTheme: SiteTheme = { families: {}, breakpointNames: [], spacingTokens: [], allowCustomColors: false };
+    const emptyTheme: SiteTheme = { families: {}, breakpointNames: [], breakpoints: {}, spacingTokens: [], allowCustomColors: false };
 
     if ( raw === null || typeof raw !== 'object' || Array.isArray( raw ) )
     {
@@ -128,6 +130,16 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
         }
     }
 
+    // Identity lives in the data, not the filename (SCHEMA section 13.1):
+    // a site.json without the key is some other tool's site.json.
+    if ( record.casomerSchema !== 1 )
+    {
+        issues.push( {
+            path: 'site.casomerSchema',
+            message: `Every Casomer file carries "casomerSchema": 1 (SCHEMA section 13.1); got ${JSON.stringify( record.casomerSchema )}. A newer schema needs a newer Casomer.`,
+        } );
+    }
+
     let theme = emptyTheme;
 
     if ( record.theme === null || typeof record.theme !== 'object' || Array.isArray( record.theme ) )
@@ -137,7 +149,7 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
     else
     {
         const themeRecord = record.theme as Record<string, unknown>;
-        const families: Record<string, readonly string[]> = {};
+        const families: Record<string, Readonly<Record<string, string>>> = {};
 
         for ( const key of Object.keys( themeRecord ) )
         {
@@ -155,7 +167,25 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
             }
         }
 
+        // Three color roles are guaranteed on every site (SCHEMA 12.1):
+        // the contract that lets any component lean on bg-secondary and
+        // fit any palette. Extra named colors are unbounded.
+        if ( families.colors !== undefined )
+        {
+            for ( const role of [ 'primary', 'secondary', 'tertiary' ] )
+            {
+                if ( families.colors[ role ] === undefined )
+                {
+                    issues.push( {
+                        path: `site.theme.colors.${role}`,
+                        message: `Every site's colors include "${role}".${suggestNearest( role, Object.keys( families.colors ) )} The primary/secondary/tertiary roles are what let components fit any palette.`,
+                    } );
+                }
+            }
+        }
+
         const breakpointNames: string[] = [];
+        const breakpoints: Record<string, number> = {};
 
         if ( themeRecord.breakpoints !== undefined )
         {
@@ -173,6 +203,7 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
                         continue;
                     }
 
+                    breakpoints[ name ] = value;
                     breakpointNames.push( name );
                 }
             }
@@ -183,7 +214,7 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
             issues.push( { path: 'site.theme.allowCustomColors', message: '"allowCustomColors" is a boolean; tokens-only is the default state.' } );
         }
 
-        const spacingTokens = families.spacing ?? [];
+        const spacingTokens = Object.keys( families.spacing ?? {} );
         let rhythm: string | undefined;
 
         if ( themeRecord.rhythm !== undefined )
@@ -204,6 +235,7 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
         theme = {
             families,
             breakpointNames,
+            breakpoints,
             spacingTokens,
             allowCustomColors: themeRecord.allowCustomColors === true,
             ...( rhythm === undefined ? {} : { rhythm } ),
@@ -241,5 +273,19 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
         }
     }
 
-    return { theme, governance };
+    let declaredUse: 'personal' | 'commercial' | undefined;
+
+    if ( record.use !== undefined )
+    {
+        if ( record.use === 'personal' || record.use === 'commercial' )
+        {
+            declaredUse = record.use;
+        }
+        else
+        {
+            issues.push( { path: 'site.use', message: '"use" declares the site as "personal" or "commercial" (BUSINESS 5.3).' } );
+        }
+    }
+
+    return { theme, governance, ...( declaredUse === undefined ? {} : { declaredUse } ) };
 }

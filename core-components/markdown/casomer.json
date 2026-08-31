@@ -1,0 +1,37 @@
+{
+    "id": "markdown",
+    "title": "Markdown",
+    "description": "Write Markdown, get clean HTML.",
+    "template": "./template.html",
+    "fields": {
+        "content": {
+            "type": "markdown",
+            "required": true,
+            "label": "Content",
+            "help": "Headings here are relative - the page decides final levels."
+        },
+        "width": {
+            "type": "select",
+            "label": "Measure",
+            "options": {
+                "fromTokens": "widths"
+            },
+            "default": "prose"
+        }
+    },
+    "anchors": [
+        {
+            "id": "first-heading",
+            "label": "First heading",
+            "kind": "text"
+        }
+    ],
+    "examples": [
+        {
+            "name": "Basic",
+            "props": {
+                "content": "# Hello\n\nSome prose with a [link](/about/)."
+            }
+        }
+    ]
+}

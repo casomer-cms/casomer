@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Sora', system-ui, sans-serif; }
+    a { color: #CE8A28; } a:hover { color: #9A6A12; }
+  </style>
+</helmet>
+<div style="width: 560px; height: 560px; background: #E9E6DE; color: #1A1D28; box-sizing: border-box; padding: 32px; display: flex; align-items: flex-start; justify-content: center; overflow: hidden;">
+  <div style="width: 460px; background: #FFFFFF; border-radius: 14px; box-shadow: 0 8px 32px rgba(26,29,40,0.16); overflow: hidden;">
+
+    <div style="padding: 18px 22px 4px;">
+      <div style="font-size: 15px; font-weight: 600;">Delete "The corner shop"?</div>
+      <div style="font-size: 12px; color: #7D808B; margin-top: 4px;">A term in Venues, referenced by 5 entries:</div>
+      <div style="margin-top: 9px; border: 1px solid #E3DFD5; border-radius: 9px; max-height: 108px; overflow-y: auto;">
+        <div style="padding: 8px 12px; font-size: 12px; color: #4B4F5C; border-bottom: 1px solid #F1EEE7;">Summer bread fair</div>
+        <div style="padding: 8px 12px; font-size: 12px; color: #4B4F5C; border-bottom: 1px solid #F1EEE7;">Latte art night</div>
+        <div style="padding: 8px 12px; font-size: 12px; color: #4B4F5C; border-bottom: 1px solid #F1EEE7;">Harvest loaf tasting</div>
+        <div style="padding: 8px 12px; font-size: 12px; color: #4B4F5C; border-bottom: 1px solid #F1EEE7;">Rye tasting flight</div>
+        <div style="padding: 8px 12px; font-size: 12px; color: #4B4F5C;">Winter starter workshop</div>
+      </div>
+    </div>
+
+    <div style="padding: 16px 22px 6px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="border: 2px solid #E8A13D; background: #FBF1DE; border-radius: 10px; padding: 12px 14px; display: flex; gap: 11px; align-items: flex-start;">
+        <div style="width: 16px; height: 16px; border-radius: 8px; border: 5px solid #E8A13D; background: #FFFFFF; box-sizing: border-box; flex: none; margin-top: 1px;"></div>
+        <div>
+          <div style="font-size: 12.5px; font-weight: 600;">Remove it from those 5 entries</div>
+          <div style="font-size: 11.5px; color: #4B4F5C; line-height: 1.55; margin-top: 2px;">Their Venue field is cleared — the entries themselves are untouched.</div>
+        </div>
+      </div>
+      <div style="border: 1px solid #E3DFD5; border-radius: 10px; padding: 12px 14px; display: flex; gap: 11px; align-items: flex-start;">
+        <div style="width: 16px; height: 16px; border-radius: 8px; border: 1.5px solid #CDC8BB; flex: none; margin-top: 1px;"></div>
+        <div>
+          <div style="font-size: 12.5px; font-weight: 600;">Leave the references in place</div>
+          <div style="font-size: 11.5px; color: #4B4F5C; line-height: 1.55; margin-top: 2px;">They become orphans — kept quietly in the data, never rendered.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; padding: 16px 22px 18px;">
+      <div style="flex: 1;"></div>
+      <div style="background: #FFFFFF; color: #4B4F5C; font-size: 12.5px; padding: 8px 16px; border-radius: 9px; border: 1px solid #CDC8BB; margin-right: 10px; flex: none; white-space: nowrap;">Cancel</div>
+      <div style="background: #B5504A; color: #FFFFFF; font-weight: 600; font-size: 12.5px; padding: 8px 18px; border-radius: 9px; flex: none; white-space: nowrap;">Delete term</div>
+    </div>
+
+    <div style="padding: 11px 22px 14px; background: #FBFAF7; border-top: 1px solid #F1EEE7;">
+      <div style="font-size: 10.5px; color: #7D808B; line-height: 1.7;">Publish history keeps every version — this can be restored. Deleting a whole collection or taxonomy uses this same dialog and says plainly that every entry or term goes with it.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

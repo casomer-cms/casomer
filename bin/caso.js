@@ -1,9 +1,26 @@
 #!/usr/bin/env node
 
+import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire( import.meta.url );
 const { version } = require( '../package.json' );
+
+const commands = new Set( [ 'build', 'preview', 'init', 'publish', 'credential' ] );
+const command = process.argv[ 2 ];
+
+if ( commands.has( command ) )
+{
+    const cliMain = fileURLToPath( new URL( '../src/cli/main.ts', import.meta.url ) );
+    const result = spawnSync(
+        process.execPath,
+        [ '--experimental-strip-types', '--disable-warning=ExperimentalWarning', cliMain, ...process.argv.slice( 2 ) ],
+        { stdio: 'inherit' },
+    );
+
+    process.exit( result.status ?? 1 );
+}
 
 console.log( `
   casomer v${version}
@@ -11,8 +28,11 @@ console.log( `
   The JSON-native CMS. Visual editing in, static sites out -
   with view transitions that make static feel alive.
 
-  Casomer is in active development. This package reserves the
-  name and the \`caso\` command; the real thing is on its way.
+  Commands so far:
+    caso init [--remote url]
+    caso build [--content dir] [--out dir] [--package dir] [--pretty]
+    caso preview [--dir dir] [--port n]
+    caso publish
 
   Follow along: https://casomer.com
 ` );

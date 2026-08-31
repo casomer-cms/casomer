@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Sora', system-ui, sans-serif; }
+    a { color: #CE8A28; } a:hover { color: #9A6A12; }
+  </style>
+</helmet>
+<div style="width: 1100px; height: 460px; background: #E9E6DE; color: #1A1D28; box-sizing: border-box; padding: 30px; display: flex; gap: 26px; justify-content: center; overflow: hidden;">
+
+  <div style="width: 320px; display: flex; flex-direction: column;">
+    <div style="flex: 1; background: #FFFFFF; border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+      <div style="position: relative;">
+        <div style="position: absolute; top: -25px; left: -3px; background: #E8A13D; color: #1A1D28; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">Card</div>
+        <div style="position: absolute; inset: -3px; border: 2px solid #E8A13D; border-radius: 13px; pointer-events: none;"></div>
+        <div style="width: 220px; border-radius: 10px; background: #FFFFFF; box-shadow: 0 14px 34px rgba(26,29,40,0.28); overflow: hidden;">
+          <div style="height: 74px; background: #F3E3C6; display: flex; align-items: center; justify-content: center;"><svg width="26" height="21" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+          <div style="padding: 12px 14px 14px;">
+            <div style="font-size: 13px; font-weight: 600;">Our sourdough story</div>
+            <div style="font-size: 11px; color: #4B4F5C; margin-top: 3px;">A card with a heavy shadow.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="font-size: 10.5px; color: #7D808B; line-height: 1.65; padding: 12px 4px 0;"><span style="font-weight: 600; color: #1A1D28;">Shadowed element.</span> The ring tracks the layout box; the shadow spills past it deliberately — paint isn't bounds.</div>
+  </div>
+
+  <div style="width: 320px; display: flex; flex-direction: column;">
+    <div style="flex: 1; background: #FFFFFF; border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+      <div style="position: relative;">
+        <div style="position: absolute; top: -25px; left: -3px; background: #E8A13D; color: #1A1D28; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">Image</div>
+        <div style="position: absolute; inset: -3px; border: 2px solid #E8A13D; border-radius: 2px; pointer-events: none;"></div>
+        <div style="width: 230px; height: 150px; background: #F3E3C6; display: flex; align-items: center; justify-content: center;">
+          <svg width="30" height="24" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </div>
+      </div>
+    </div>
+    <div style="font-size: 10.5px; color: #7D808B; line-height: 1.65; padding: 12px 4px 0;"><span style="font-weight: 600; color: #1A1D28;">Square element.</span> The ring mirrors the element's own corners (2px minimum) — our chrome's rounding is never imposed.</div>
+  </div>
+
+  <div style="width: 320px; display: flex; flex-direction: column;">
+    <div style="flex: 1; background: #FFFFFF; border-radius: 14px; display: flex; align-items: center; justify-content: center;">
+      <div style="position: relative;">
+        <div style="width: 240px; height: 160px; border-radius: 10px; background: #F7F5F0; overflow: hidden; display: flex; align-items: flex-end;">
+          <div style="width: 240px; height: 90px; background: #F3E3C6; margin-bottom: -28px; border-radius: 6px 6px 0 0; display: flex; align-items: center; justify-content: center;"><svg width="26" height="21" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+        </div>
+        <div style="position: absolute; left: -3px; right: -3px; bottom: -31px; height: 96px; border: 2px solid #E8A13D; border-radius: 8px; pointer-events: none;"></div>
+        <div style="position: absolute; bottom: 54px; left: -3px; background: #E8A13D; color: #1A1D28; font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 4px;">Card</div>
+      </div>
+    </div>
+    <div style="font-size: 10.5px; color: #7D808B; line-height: 1.65; padding: 12px 4px 0;"><span style="font-weight: 600; color: #1A1D28;">Clipped container.</span> The ring lives in the editor's overlay layer, so it shows the element's full bounds even where an overflow-hidden ancestor crops the paint.</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -30,6 +30,8 @@
     },
     "files": [
         "bin/",
+        "src/",
+        "core-components/",
         "runtime/",
         "README.md",
         "LICENSE.md"
@@ -42,13 +44,30 @@
         "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
         "typecheck": "tsc",
         "lint": "eslint .",
-        "lint:fix": "eslint . --fix"
+        "lint:fix": "eslint . --fix",
+        "test:browser": "node --experimental-strip-types --test \"tests-browser/**/*.test.ts\""
     },
     "devDependencies": {
         "@stylistic/eslint-plugin": "^5.10.0",
+        "@types/js-beautify": "^1.14.3",
+        "@types/mdast": "^4.0.4",
         "@types/node": "^26.4.0",
         "eslint": "^10.9.1",
+        "playwright": "^1.62.1",
         "typescript": "^6.0.3",
         "typescript-eslint": "^8.68.0"
+    },
+    "dependencies": {
+        "@tailwindcss/cli": "^4.3.3",
+        "alpinejs": "^3.16.3",
+        "js-beautify": "^2.0.3",
+        "mdast-util-from-markdown": "^2.0.3",
+        "mdast-util-gfm-autolink-literal": "^2.0.1",
+        "mdast-util-gfm-strikethrough": "^2.0.0",
+        "mdast-util-gfm-table": "^2.0.0",
+        "micromark-extension-gfm-autolink-literal": "^2.1.0",
+        "micromark-extension-gfm-strikethrough": "^2.1.0",
+        "micromark-extension-gfm-table": "^2.1.1",
+        "tailwindcss": "^4.3.3"
     }
 }

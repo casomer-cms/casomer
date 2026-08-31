@@ -39,15 +39,22 @@ const packageNameShape = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$
 
 const reservedPackageName = 'core';
 
-const componentManifestKeys = [ 'id', 'title', 'description', 'template', 'fields', 'anchors' ];
+const componentManifestKeys = [ 'id', 'title', 'description', 'template', 'fields', 'anchors', 'examples' ];
 const anchorKeys = [ 'id', 'label', 'kind' ];
-const packageManifestKeys = [ 'schema', 'name', 'components' ];
+const exampleKeys = [ 'name', 'props' ];
+const packageManifestKeys = [ 'casomerSchema', 'name', 'components' ];
 
 export interface ComponentAnchor
 {
     readonly id: string;
     readonly label: string;
     readonly kind?: string;
+}
+
+export interface ComponentExample
+{
+    readonly name: string;
+    readonly props: Readonly<Record<string, unknown>>;
 }
 
 export interface NormalizedComponentManifest
@@ -58,11 +65,12 @@ export interface NormalizedComponentManifest
     readonly templatePath: string;
     readonly fields: NormalizedFields;
     readonly anchors: readonly ComponentAnchor[];
+    readonly examples: readonly ComponentExample[];
 }
 
 export interface NormalizedPackageManifest
 {
-    readonly schemaVersion: 1;
+    readonly casomerSchema: 1;
     readonly name: string;
     readonly componentPaths: readonly string[];
 }
@@ -165,6 +173,55 @@ function normalizeAnchors ( raw: unknown, path: string, issues: SchemaIssue[] ):
     return anchors;
 }
 
+function normalizeExamples ( raw: unknown, issues: SchemaIssue[] ): ComponentExample[]
+{
+    if ( !Array.isArray( raw ) )
+    {
+        issues.push( { path: 'manifest.examples', message: '"examples" is an array of { name, props } states.' } );
+        return [];
+    }
+
+    const examples: ComponentExample[] = [];
+    const seen = new Set<string>();
+
+    for ( const [ index, entry ] of raw.entries() )
+    {
+        const entryPath = `manifest.examples[${index}]`;
+
+        if ( entry === null || typeof entry !== 'object' || Array.isArray( entry ) )
+        {
+            issues.push( { path: entryPath, message: 'An example is an object: { "name", "props" }.' } );
+            continue;
+        }
+
+        const record = entry as Record<string, unknown>;
+
+        rejectUnknownKeys( record, exampleKeys, entryPath, issues );
+
+        const name = requireString( record, 'name', entryPath, issues );
+
+        if ( name === undefined ) { continue; }
+
+        if ( seen.has( name ) )
+        {
+            issues.push( { path: `${entryPath}.name`, message: `Duplicate example name "${name}".` } );
+            continue;
+        }
+
+        seen.add( name );
+
+        if ( record.props !== undefined && ( record.props === null || typeof record.props !== 'object' || Array.isArray( record.props ) ) )
+        {
+            issues.push( { path: `${entryPath}.props`, message: '"props" is an object of field values.' } );
+            continue;
+        }
+
+        examples.push( { name, props: ( record.props ?? {} ) as Record<string, unknown> } );
+    }
+
+    return examples;
+}
+
 export function normalizeComponentManifest ( raw: unknown ): NormalizedComponentManifest
 {
     const issues: SchemaIssue[] = [];
@@ -227,6 +284,7 @@ export function normalizeComponentManifest ( raw: unknown ): NormalizedComponent
     }
 
     const anchors = record.anchors === undefined ? [] : normalizeAnchors( record.anchors, 'manifest.anchors', issues );
+    const examples = record.examples === undefined ? [] : normalizeExamples( record.examples, issues );
 
     if ( issues.length > 0 ) { throw new ManifestSchemaError( issues ); }
 
@@ -237,6 +295,7 @@ export function normalizeComponentManifest ( raw: unknown ): NormalizedComponent
         templatePath: templatePath as string,
         fields,
         anchors,
+        examples,
     };
 }
 
@@ -253,11 +312,11 @@ export function normalizePackageManifest ( raw: unknown ): NormalizedPackageMani
 
     rejectUnknownKeys( record, packageManifestKeys, 'manifest', issues );
 
-    if ( record.schema !== 1 )
+    if ( record.casomerSchema !== 1 )
     {
         issues.push( {
-            path: 'manifest.schema',
-            message: `This version of Casomer understands manifest schema 1; got ${JSON.stringify( record.schema )}. A newer schema needs a newer Casomer.`,
+            path: 'manifest.casomerSchema',
+            message: `Every Casomer file carries "casomerSchema": 1 (SCHEMA section 13.1); got ${JSON.stringify( record.casomerSchema )}. A newer schema needs a newer Casomer.`,
         } );
     }
 
@@ -311,7 +370,7 @@ export function normalizePackageManifest ( raw: unknown ): NormalizedPackageMani
 
     if ( issues.length > 0 ) { throw new ManifestSchemaError( issues ); }
 
-    return { schemaVersion: 1, name: name as string, componentPaths };
+    return { casomerSchema: 1, name: name as string, componentPaths };
 }
 
 // Sites reference components as "package/id": "core/markdown",

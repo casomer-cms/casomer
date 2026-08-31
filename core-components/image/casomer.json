@@ -1,0 +1,31 @@
+{
+    "id": "image",
+    "title": "Image",
+    "description": "A single image with required alt text.",
+    "template": "./template.html",
+    "fields": {
+        "image": {
+            "type": "image",
+            "required": true,
+            "label": "Image"
+        }
+    },
+    "anchors": [
+        {
+            "id": "image",
+            "label": "Image",
+            "kind": "image"
+        }
+    ],
+    "examples": [
+        {
+            "name": "Basic",
+            "props": {
+                "image": {
+                    "src": "/media/example.jpg",
+                    "alt": "An example image"
+                }
+            }
+        }
+    ]
+}

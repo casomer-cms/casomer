@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Sora', system-ui, sans-serif; }
+    a { color: #CE8A28; } a:hover { color: #9A6A12; }
+  </style>
+</helmet>
+<div style="width: 1440px; height: 900px; background: #E9E6DE; color: #1A1D28; box-sizing: border-box; overflow: hidden; position: relative;">
+
+  <div style="height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 14px 0 22px;">
+    <img src="casomer-wordmark-ui.svg" alt="casomer" style="height: 18px; width: auto; display: block;">
+    <div style="font-size: 15px; color: #B6B1A4; font-weight: 300; margin: 0 2px;">|</div>
+    <div style="font-size: 15px; font-weight: 600; color: #4B4F5C;">sunrise-bakery</div>
+    <div style="flex: 1;"></div>
+    <div style="display: flex; background: #DDD9CE; border-radius: 9px; padding: 3px; gap: 2px;">
+      <div style="width: 32px; height: 26px; border-radius: 7px; background: #FFFFFF; display: flex; align-items: center; justify-content: center;">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3" width="13" height="8.5" rx="1" stroke="#1A1D28" stroke-width="1.4"></rect><path d="M5.5 14h5" stroke="#1A1D28" stroke-width="1.4" stroke-linecap="round"></path></svg>
+      </div>
+      <div style="width: 32px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="1.5" width="10" height="13" rx="1.2" stroke="#8A8677" stroke-width="1.4"></rect></svg>
+      </div>
+      <div style="width: 32px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center;">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="4.5" y="1.5" width="7" height="13" rx="1.2" stroke="#8A8677" stroke-width="1.4"></rect></svg>
+      </div>
+    </div>
+    <div style="width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center;">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 2.5a5 5 0 0 0-5 5v3l-1.5 3h13L15 10.5v-3a5 5 0 0 0-5-5z" stroke="#4B4F5C" stroke-width="1.5" stroke-linejoin="round"></path><path d="M8.3 16.5a1.8 1.8 0 0 0 3.4 0" stroke="#4B4F5C" stroke-width="1.5" stroke-linecap="round"></path></svg>
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px; background: #DDD9CE; border-radius: 9px; height: 32px; padding: 0 11px; box-sizing: border-box;">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="#4B4F5C" stroke-width="1.5"></circle><path d="M10.5 10.5L14 14" stroke="#4B4F5C" stroke-width="1.5" stroke-linecap="round"></path></svg>
+      <span style="font-size: 11.5px; color: #A39E8F; font-weight: 500;">Ctrl K</span>
+    </div>
+    <div style="width: 292px; margin-left: 2px; display: flex; align-items: center; gap: 12px; flex: none;">
+      <div style="flex: 1; background: #FFFFFF; color: #4B4F5C; font-size: 13px; padding: 7px 0; border-radius: 9px; border: 1px solid #CDC8BB; display: flex; align-items: center; justify-content: center; gap: 7px; white-space: nowrap;">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H4A1.5 1.5 0 0 0 2.5 5v7A1.5 1.5 0 0 0 4 13.5h7a1.5 1.5 0 0 0 1.5-1.5V9.5M9.5 2.5h4v4M13.2 2.8L8 8" stroke="#4B4F5C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        Preview
+      </div>
+      <div style="flex: 1; background: #E8A13D; color: #1A1D28; font-weight: 600; font-size: 13px; padding: 8px 0; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap;">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 10.5V3M4.8 6.2L8 3l3.2 3.2M3 11.5V13h10v-1.5" stroke="#1A1D28" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        Publish
+      </div>
+      <div style="width: 30px; height: 30px; border-radius: 15px; background: #1A1D28; color: #F7F5F0; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: none;">M</div>
+    </div>
+  </div>
+
+  <div style="position: absolute; top: 56px; left: 0; right: 0; bottom: 0; display: flex; padding: 0 14px 14px; gap: 14px; box-sizing: border-box;">
+    <div style="width: 218px; padding: 16px 12px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="height: 10px; width: 48px; background: #D5D0C3; border-radius: 5px; margin: 0 10px 4px;"></div>
+      <div style="height: 30px; background: #FFFFFF; border-radius: 9px; box-shadow: 0 1px 2px rgba(26,29,40,0.06);"></div>
+      <div style="height: 22px; background: #DDD9CE; border-radius: 9px; width: 80%;"></div>
+      <div style="height: 22px; background: #DDD9CE; border-radius: 9px; width: 70%;"></div>
+      <div style="height: 10px; width: 44px; background: #D5D0C3; border-radius: 5px; margin: 12px 10px 4px;"></div>
+      <div style="height: 22px; background: #DDD9CE; border-radius: 9px; width: 85%;"></div>
+      <div style="height: 22px; background: #DDD9CE; border-radius: 9px; width: 65%;"></div>
+    </div>
+    <div style="flex: 1; background: #FFFFFF; border-radius: 18px; display: flex; justify-content: center; padding: 30px 24px;">
+      <div style="width: 860px; height: 560px; background: #FFFFFF; border-radius: 10px; box-shadow: 0 2px 16px rgba(26,29,40,0.08); padding: 30px 36px; box-sizing: border-box;">
+        <div style="height: 20px; width: 60%; background: #DDD9CE; border-radius: 9px; margin-bottom: 22px;"></div>
+        <div style="height: 150px; background: #F3E3C6; border-radius: 8px; margin-bottom: 18px; display: flex; align-items: center; justify-content: center;"><svg width="34" height="27" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+        <div style="height: 12px; background: #DDD9CE; border-radius: 9px; margin-bottom: 10px;"></div>
+        <div style="height: 12px; width: 85%; background: #DDD9CE; border-radius: 9px; margin-bottom: 10px;"></div>
+        <div style="height: 12px; width: 70%; background: #DDD9CE; border-radius: 9px;"></div>
+      </div>
+    </div>
+    <div style="width: 292px; background: #FFFFFF; border-radius: 18px; padding: 18px 16px; display: flex; flex-direction: column; gap: 12px;">
+      <div style="height: 14px; width: 90px; background: #DDD9CE; border-radius: 9px;"></div>
+      <div style="height: 32px; background: #F4F2EB; border-radius: 9px;"></div>
+      <div style="height: 32px; background: #F4F2EB; border-radius: 9px;"></div>
+      <div style="height: 32px; background: #F4F2EB; border-radius: 9px;"></div>
+    </div>
+  </div>
+
+  <div style="position: absolute; inset: 0; background: rgba(20,22,29,0.45); display: flex; align-items: center; justify-content: center;">
+    <div style="width: 720px; background: #FFFFFF; border-radius: 12px; box-shadow: 0 12px 48px rgba(20,22,29,0.35); overflow: hidden;">
+
+      <div style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #F1EEE7;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="4.5" stroke="#7D808B" stroke-width="1.5"></circle><path d="M10.5 10.5L14 14" stroke="#7D808B" stroke-width="1.5" stroke-linecap="round"></path></svg>
+        <div style="flex: 1; font-size: 14px; color: #ABADB5;">Add a component…</div>
+        <div style="background: #F4F2EB; border-radius: 4px; font-size: 10.5px; padding: 3px 7px; color: #7D808B;">esc</div>
+      </div>
+
+      <div style="padding: 18px 18px 8px;">
+        <div style="font-size: 10.5px; font-weight: 600; letter-spacing: 0.09em; color: #7D808B; margin-bottom: 10px;">CORE</div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;">
+          <div style="border: 1px solid #E3DFD5; border-radius: 8px; padding: 10px; background: #FFFFFF;">
+            <div style="height: 84px; background: #F7F5F0; border-radius: 9px; padding: 12px 14px; box-sizing: border-box;">
+              <div style="height: 8px; width: 55%; background: #CDC8BB; border-radius: 4px; margin-bottom: 8px;"></div>
+              <div style="height: 6px; background: #E3DFD5; border-radius: 3px; margin-bottom: 6px;"></div>
+              <div style="height: 6px; width: 90%; background: #E3DFD5; border-radius: 3px; margin-bottom: 6px;"></div>
+              <div style="height: 6px; width: 70%; background: #E3DFD5; border-radius: 3px;"></div>
+            </div>
+            <div style="font-size: 12.5px; font-weight: 600; margin-top: 8px;">Markdown</div>
+            <div style="font-size: 10.5px; color: #7D808B;">core</div>
+          </div>
+          <div style="border: 1px solid #E3DFD5; border-radius: 8px; padding: 10px; background: #FFFFFF;">
+            <div style="height: 84px; background: #F3E3C6; border-radius: 9px; display: flex; align-items: center; justify-content: center;">
+              <svg width="34" height="27" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            </div>
+            <div style="font-size: 12.5px; font-weight: 600; margin-top: 8px;">Image</div>
+            <div style="font-size: 10.5px; color: #7D808B;">core</div>
+          </div>
+          <div style="border: 1px dashed #CDC8BB; border-radius: 8px; padding: 10px; background: #FBFAF7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 132px; box-sizing: border-box;">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="#7D808B" stroke-width="1.6" stroke-linecap="round"></path></svg>
+            <div style="font-size: 11.5px; color: #7D808B; text-align: center;">Browse the marketplace</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 10px 18px 18px;">
+        <div style="font-size: 10.5px; font-weight: 600; letter-spacing: 0.09em; color: #7D808B; margin-bottom: 10px;">FIXTURE-KIT</div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px;">
+          <div style="border: 2px solid #E8A13D; border-radius: 8px; padding: 10px; background: #FFFFFF; box-shadow: 0 0 0 3px rgba(232,161,61,0.2);">
+            <div style="height: 84px; background: #F7F5F0; border-radius: 9px; padding: 10px; box-sizing: border-box;">
+              <div style="height: 34px; background: #F3E3C6; border-radius: 4px; margin-bottom: 7px; display: flex; align-items: center; justify-content: center;"><svg width="16" height="13" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+              <div style="height: 7px; width: 60%; background: #CDC8BB; border-radius: 3px; margin-bottom: 6px;"></div>
+              <div style="height: 6px; background: #E3DFD5; border-radius: 3px;"></div>
+            </div>
+            <div style="font-size: 12.5px; font-weight: 600; margin-top: 8px;">Card</div>
+            <div style="font-size: 10.5px; color: #7D808B;">example: overlay hero</div>
+          </div>
+          <div style="border: 1px solid #E3DFD5; border-radius: 8px; padding: 10px; background: #FFFFFF;">
+            <div style="height: 84px; background: #F7F5F0; border-radius: 9px; padding: 12px 14px; box-sizing: border-box;">
+              <div style="height: 100%; background: #F4F2EB; border-radius: 4px; padding: 8px 10px; box-sizing: border-box;">
+                <div style="height: 7px; width: 40%; background: #CDC8BB; border-radius: 3px; margin-bottom: 6px;"></div>
+                <div style="height: 6px; width: 85%; background: #DCD8CD; border-radius: 3px;"></div>
+              </div>
+            </div>
+            <div style="font-size: 12.5px; font-weight: 600; margin-top: 8px;">Note</div>
+            <div style="font-size: 10.5px; color: #7D808B;">example: hours</div>
+          </div>
+          <div style="border: 1px solid #E3DFD5; border-radius: 8px; padding: 10px; background: #FFFFFF; position: relative;">
+            <div style="position: absolute; top: 8px; right: 8px;" >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 2.2L14.6 13.4H1.4L8 2.2z" stroke="#BC7A15" stroke-width="1.4" stroke-linejoin="round" fill="#F9EED9"></path><path d="M8 6.5v3.2" stroke="#BC7A15" stroke-width="1.4" stroke-linecap="round"></path><circle cx="8" cy="11.6" r="0.8" fill="#BC7A15"></circle></svg>
+            </div>
+            <div style="height: 84px; background: #F7F5F0; border-radius: 9px; display: flex; gap: 6px; padding: 12px; box-sizing: border-box;">
+              <div style="flex: 1; background: #F3E3C6; border-radius: 4px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="11" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+              <div style="flex: 1; background: #F3E3C6; border-radius: 4px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="11" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+              <div style="flex: 1; background: #F3E3C6; border-radius: 4px; display: flex; align-items: center; justify-content: center;"><svg width="14" height="11" viewBox="0 0 40 32" fill="none" style="opacity: 0.7;"><rect x="1" y="1" width="38" height="30" rx="3" stroke="#CBB57E" stroke-width="2"></rect><circle cx="12" cy="11" r="3" stroke="#CBB57E" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" stroke="#CBB57E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></div>
+            </div>
+            <div style="font-size: 12.5px; font-weight: 600; margin-top: 8px;">Gallery</div>
+            <div style="font-size: 10.5px; color: #BC7A15;">1 conformance check failing</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 12px 18px; border-top: 1px solid #F1EEE7; background: #FBFAF7;">
+        <div style="font-size: 11.5px; color: #7D808B;">2 components hidden by this site's governance</div>
+        <div style="flex: 1;"></div>
+        <div style="font-size: 12px; color: #CE8A28;">Manage components</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

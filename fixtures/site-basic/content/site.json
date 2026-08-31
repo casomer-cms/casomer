@@ -1,9 +1,10 @@
 {
+    "casomerSchema": 1,
     "theme": {
         "colors": {
-            "ink": "#1A1D28",
-            "paper": "#F7F5F0",
-            "amber": "#E8A13D"
+            "primary": "#1A1D28",
+            "secondary": "#F7F5F0",
+            "tertiary": "#E8A13D"
         },
         "widths": {
             "narrow": "42rem",
