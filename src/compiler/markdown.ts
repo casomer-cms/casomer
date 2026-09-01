@@ -181,11 +181,22 @@ function renderNode ( node: Node, context: RenderContext ): string
 
             const level = context.plan.levelByDepth.get( heading.depth ) ?? 6;
 
+            // Semantics from the plan, looks from the author (SCHEMA
+            // 8, Mikey): a lone "####" compiles to the block's lead
+            // level but wears .h4, so the outline is honest and the
+            // size is the one the author chose.
+            const visual = heading.depth === level ? '' : ` class="h${heading.depth}"`;
+
             context.outline.push( { level, text: plainTextOf( heading ) } );
-            return `<h${level}>${inner}</h${level}>\n`;
+            return `<h${level}${visual}>${inner}</h${level}>\n`;
         }
 
-        case 'text': return escapeHtml( ( node as unknown as { value: string } ).value );
+        // A single newline is a soft break in CommonMark - rendered
+        // as a space - but a person typing one line under another in
+        // a CMS means a line break (Mikey's report). Hard-break
+        // semantics for soft breaks, the way chat and most editors
+        // behave.
+        case 'text': return escapeHtml( ( node as unknown as { value: string } ).value ).replace( /\n/g, '<br>\n' );
         case 'emphasis': return `<em>${renderChildren( node as Parent, context )}</em>`;
         case 'strong': return `<strong>${renderChildren( node as Parent, context )}</strong>`;
         case 'delete': return `<del>${renderChildren( node as Parent, context )}</del>`;

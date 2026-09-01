@@ -9,3 +9,4 @@ github
 *.log
 .env
 .env.*
+studio/dist/

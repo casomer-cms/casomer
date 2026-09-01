@@ -34,7 +34,8 @@
         "core-components/",
         "runtime/",
         "README.md",
-        "LICENSE.md"
+        "LICENSE.md",
+        "studio/app/"
     ],
     "engines": {
         "node": ">=22"
@@ -45,19 +46,33 @@
         "typecheck": "tsc",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
-        "test:browser": "node --experimental-strip-types --test \"tests-browser/**/*.test.ts\""
+        "test:browser": "node --experimental-strip-types --test \"tests-browser/**/*.test.ts\"",
+        "checks:alpine": "node tools/alpine-checks.mjs studio-alpine/alpine/index.html studio-alpine/alpine/app.js",
+        "checks": "node tools/alpine-checks.mjs",
+        "engine:build": "vite build --config studio/engine/vite.config.ts"
     },
     "devDependencies": {
         "@stylistic/eslint-plugin": "^5.10.0",
+        "@sveltejs/vite-plugin-svelte": "^7.3.0",
+        "@types/alpinejs": "^3.13.11",
         "@types/js-beautify": "^1.14.3",
         "@types/mdast": "^4.0.4",
         "@types/node": "^26.4.0",
         "eslint": "^10.9.1",
         "playwright": "^1.62.1",
+        "svelte": "^5.57.0",
         "typescript": "^6.0.3",
-        "typescript-eslint": "^8.68.0"
+        "typescript-eslint": "^8.68.0",
+        "vite": "^8.2.2"
     },
     "dependencies": {
+        "@alpinejs/morph": "^3.17.0",
+        "@alpinejs/sort": "^3.17.1",
+        "@jsquash/jpeg": "^1.6.0",
+        "@jsquash/png": "^3.1.1",
+        "@jsquash/resize": "^2.1.1",
+        "@jsquash/webp": "^1.5.0",
+        "@tailwindcss/browser": "^4.3.3",
         "@tailwindcss/cli": "^4.3.3",
         "alpinejs": "^3.16.3",
         "js-beautify": "^2.0.3",

@@ -1,0 +1,35 @@
+{
+    "id": "link",
+    "title": "Link",
+    "description": "A single link: a label and a destination. The atom menus repeat through.",
+    "template": "./template.html",
+    "fields": {
+        "label": {
+            "type": "text",
+            "required": true,
+            "label": "Label"
+        },
+        "url": {
+            "type": "text",
+            "required": true,
+            "label": "URL",
+            "help": "Site-relative like /about/, or absolute."
+        }
+    },
+    "anchors": [
+        {
+            "id": "link",
+            "label": "Link",
+            "kind": "text"
+        }
+    ],
+    "examples": [
+        {
+            "name": "Basic",
+            "props": {
+                "label": "About",
+                "url": "/about/"
+            }
+        }
+    ]
+}

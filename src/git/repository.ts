@@ -7,8 +7,53 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const execFileAsync = promisify( execFile );
+
+// The .gitignore lines Casomer manages for the media-tracking choice
+// (SCHEMA 13.4): added when the user declines tracking, removed when
+// they turn it back on. Only these EXACT lines are ever touched -
+// the rest of a .gitignore belongs to the user.
+export async function appendIgnoreLines ( directory: string, lines: readonly string[] ): Promise<void>
+{
+    let current = '';
+
+    try
+    {
+        current = await readFile( join( directory, '.gitignore' ), 'utf8' );
+    }
+    catch { /* no .gitignore yet */ }
+
+    const present = new Set( current.split( /\r?\n/ ).map( ( line ) => line.trim() ) );
+    const missing = lines.filter( ( line ) => !present.has( line ) );
+
+    if ( missing.length === 0 ) { return; }
+
+    const glue = current === '' || current.endsWith( '\n' ) ? '' : '\n';
+
+    await writeFile( join( directory, '.gitignore' ), `${current}${glue}${missing.join( '\n' )}\n`, 'utf8' );
+}
+
+export async function removeIgnoreLines ( directory: string, lines: readonly string[] ): Promise<void>
+{
+    let current: string;
+
+    try
+    {
+        current = await readFile( join( directory, '.gitignore' ), 'utf8' );
+    }
+    catch
+    {
+        return;
+    }
+
+    const kept = current.split( /\r?\n/ ).filter( ( line ) => !lines.includes( line.trim() ) );
+    const text = kept.join( '\n' ).replace( /\n+$/, '' );
+
+    await writeFile( join( directory, '.gitignore' ), text === '' ? '' : `${text}\n`, 'utf8' );
+}
 
 export interface GitResult
 {
@@ -17,11 +62,14 @@ export interface GitResult
     readonly stderr: string;
 }
 
-export async function runGit ( directory: string, arguments_: readonly string[] ): Promise<GitResult>
+export async function runGit ( directory: string, arguments_: readonly string[], environment?: Readonly<Record<string, string>> ): Promise<GitResult>
 {
     try
     {
-        const { stdout, stderr } = await execFileAsync( 'git', [ ...arguments_ ], { cwd: directory } );
+        const { stdout, stderr } = await execFileAsync( 'git', [ ...arguments_ ], {
+            cwd: directory,
+            ...environment === undefined ? {} : { env: { ...process.env, ...environment } },
+        } );
 
         return { code: 0, stdout, stderr };
     }

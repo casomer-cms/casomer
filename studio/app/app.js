@@ -1,0 +1,6851 @@
+// The Studio chrome: Alpine inside and out (DEVELOPMENT section 2).
+// No build step; this module and the markup in index.html are served
+// as they sit here. Logic lives in Alpine.data factories, never in
+// x-data blobs; every markup expression is verified by npm run checks.
+
+import { t } from './strings.js';
+
+// The drag clone is a copy of a live Alpine row: its x-text and
+// x-sort attributes have no valid scope on <body>, so Alpine firing
+// on it blanks the text and its errors disrupt Sortable's
+// positioning (the yw-webapp gotcha). The observer catches the clone
+// the moment it appears, rebuilds its content from the still-rendered
+// source row, and strips every directive so Alpine leaves it alone.
+if ( typeof MutationObserver !== 'undefined' )
+{
+    new MutationObserver( ( mutations ) =>
+    {
+        for ( const mutation of mutations )
+        {
+            for ( const node of mutation.addedNodes )
+            {
+                if ( node.nodeType !== 1 || !node.classList?.contains( 'sort-drag-clone' ) ) { continue; }
+
+                const source = document.querySelector( '.sortable-chosen' );
+
+                if ( source !== null ) { node.innerHTML = source.innerHTML; }
+
+                for ( const el of [ node, ...node.querySelectorAll( '*' ) ] )
+                {
+                    for ( const attribute of [ ...el.attributes ] )
+                    {
+                        if ( /^(x-|[:@])/.test( attribute.name ) || attribute.name === 'data-sort-id' )
+                        {
+                            el.removeAttribute( attribute.name );
+                        }
+                    }
+                }
+            }
+        }
+    } ).observe( document.documentElement, { childList: true, subtree: true } );
+
+    // A menu family drags as ONE group (Mikey): the moment Sortable
+    // marks a menu row chosen, its descendants - the following rows
+    // with greater depth - collapse out of the list and travel with
+    // the drop; they reappear when the choice releases. Depth comes
+    // from the rows' own data attributes, so this needs no reach into
+    // Alpine scope, and no Sortable config handlers are overridden
+    // (the sort plugin owns onStart/onEnd).
+    new MutationObserver( ( mutations ) =>
+    {
+        for ( const mutation of mutations )
+        {
+            const row = mutation.target;
+
+            if ( row.nodeType !== 1 || row.closest?.( '[data-menu-tree]' ) === null ) { continue; }
+
+            const had = ( mutation.oldValue ?? '' ).includes( 'sortable-chosen' );
+            const has = row.classList.contains( 'sortable-chosen' );
+
+            if ( !had && has && row.dataset.depth !== undefined )
+            {
+                const depth = Number( row.dataset.depth );
+                let next = row.nextElementSibling;
+
+                while ( next !== null && Number( next.dataset?.depth ?? 'NaN' ) > depth )
+                {
+                    next.classList.add( 'sort-family-hidden' );
+                    next = next.nextElementSibling;
+                }
+            }
+
+            if ( had && !has )
+            {
+                for ( const hidden of row.closest( '[data-menu-tree]' )?.querySelectorAll( '.sort-family-hidden' ) ?? [] )
+                {
+                    hidden.classList.remove( 'sort-family-hidden' );
+                }
+            }
+        }
+    } ).observe( document.documentElement, { subtree: true, attributes: true, attributeFilter: [ 'class' ], attributeOldValue: true } );
+}
+
+// Catalog entries may carry {placeholders}; this fills them. Count
+// keys get a singular sibling under "<key>One" when one exists.
+function tFill ( key, values )
+{
+    let text = t( key );
+
+    for ( const [ name, value ] of Object.entries( values ) )
+    {
+        text = text.replaceAll( `{${name}}`, String( value ) );
+    }
+
+    return text;
+}
+
+function tCount ( key, count )
+{
+    if ( count === 1 && t( `${key}One` ) !== `${key}One` ) { return t( `${key}One` ); }
+
+    return tFill( key, { n: count } );
+}
+
+// A minimal showWhen evaluator for manifest condition sources. The
+// full expression evaluator arrives with the canvas engine bundle
+// (DEVELOPMENT section 6.1); equality covers the shipped manifests.
+function evalCondition ( source, values )
+{
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*(==|!=)\s*"([^"]*)"$/.exec( source.trim() );
+
+    if ( match === null ) { return true; }
+
+    const [ , key, operator, literal ] = match;
+
+    return operator === '==' ? values[ key ] === literal : values[ key ] !== literal;
+}
+
+// A prop value of { "$bind": "entry.x" } is a binding (SCHEMA 13.5).
+// The chrome resolves it against a sample entry for the local morph;
+// the server resolves the real thing.
+function isBindValue ( value )
+{
+    return value !== null && typeof value === 'object' && !Array.isArray( value ) && typeof value.$bind === 'string';
+}
+
+function resolveBoundProps ( value, scope )
+{
+    if ( Array.isArray( value ) ) { return value.map( ( item ) => resolveBoundProps( item, scope ) ); }
+
+    if ( value !== null && typeof value === 'object' )
+    {
+        if ( isBindValue( value ) )
+        {
+            let current = { entry: scope, term: scope };
+
+            for ( const segment of value.$bind.split( '.' ) )
+            {
+                current = current === null || typeof current !== 'object' ? undefined : current[ segment ];
+            }
+
+            // Presented references travel as String objects for
+            // bind-through traversal; callers get the primitive.
+            return current instanceof String ? String( current ) : current;
+        }
+
+        return Object.fromEntries( Object.entries( value ).map( ( [ key, item ] ) => [ key, resolveBoundProps( item, scope ) ] ) );
+    }
+
+    // Inline interpolation, mirrored from the server resolver: the
+    // "{{ $" marker, the same path vocabulary. Local morphs know only
+    // the sample entry/term scope; $page and $site tokens substitute
+    // empty here and the server render corrects them.
+    if ( typeof value === 'string' && value.includes( '{{' ) )
+    {
+        return value.replace( /\{\{\s*\$((?:entry|term|page|site)(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*\}\}/g, ( match, path ) =>
+        {
+            let current = { entry: scope, term: scope };
+
+            for ( const segment of path.split( '.' ) )
+            {
+                current = current === null || typeof current !== 'object' ? undefined : current[ segment ];
+            }
+
+            return current === undefined || current === null ? '' : String( current );
+        } );
+    }
+
+    return value;
+}
+
+// The wiring UI offers only type-compatible fields (SCHEMA 13.5):
+// an image prop lists image fields, text-shaped props list every
+// field that can speak as text (markdown is just text - Mikey), and
+// select/toggle/list props stay literal-only. References qualify as
+// text: they present as their target's name.
+const bindCompatibility = {
+    text: [ 'text', 'textarea', 'select', 'date', 'number', 'url', 'email', 'reference' ],
+    textarea: [ 'textarea', 'text', 'markdown', 'select', 'date', 'number', 'url', 'email', 'reference' ],
+    markdown: [ 'markdown', 'textarea', 'text', 'select', 'date', 'number', 'url', 'email', 'reference' ],
+    url: [ 'url', 'text' ],
+    email: [ 'email', 'text' ],
+    number: [ 'number' ],
+    date: [ 'date' ],
+    image: [ 'image' ],
+};
+
+function compatibleFieldKeys ( propType, entryFields )
+{
+    const allowed = bindCompatibility[ propType ] ?? [];
+
+    return Object.entries( entryFields ?? {} )
+        .filter( ( [ , field ] ) => allowed.includes( field.type ) )
+        .map( ( [ key ] ) => key );
+}
+
+// A hierarchical taxonomy's terms in tree order, each with its depth:
+// roots in stored order, children walked directly after their parent.
+// Terms whose parent id resolves to nothing sit at the top level.
+function termTree ( terms )
+{
+    const childrenOf = new Map();
+    const roots = [];
+
+    for ( const term of terms )
+    {
+        if ( term.parent !== undefined && terms.some( ( candidate ) => candidate.id === term.parent ) )
+        {
+            if ( !childrenOf.has( term.parent ) ) { childrenOf.set( term.parent, [] ); }
+
+            childrenOf.get( term.parent ).push( term );
+        }
+        else { roots.push( term ); }
+    }
+
+    const ordered = [];
+    const walk = ( term, depth ) =>
+    {
+        ordered.push( { term, depth } );
+
+        for ( const child of childrenOf.get( term.id ) ?? [] ) { walk( child, depth + 1 ); }
+    };
+
+    for ( const root of roots ) { walk( root, 0 ); }
+
+    return ordered;
+}
+
+function emptyValueFor ( field )
+{
+    if ( field.defaultValue !== undefined ) { return structuredClone( field.defaultValue ); }
+    if ( field.type === 'reference' && field.rules?.multiple === true ) { return []; }
+
+    switch ( field.type )
+    {
+        case 'toggle': return false;
+        case 'list': return [];
+        case 'image': return null;
+        default: return '';
+    }
+}
+
+// Block renderers cache by component reference: one parsed template
+// serves every block of that component. Kept outside Alpine's
+// reactivity on purpose - a template AST gains nothing from proxies.
+const blockRenderers = new Map();
+let enginePromise = null;
+
+async function rendererFor ( reference, fields, templateText )
+{
+    if ( blockRenderers.has( reference ) ) { return blockRenderers.get( reference ); }
+
+    enginePromise = enginePromise ?? import( '/engine.js' );
+
+    const engine = await enginePromise;
+    const renderer = engine.createBlockRenderer( fields, templateText );
+
+    blockRenderers.set( reference, renderer );
+    return renderer;
+}
+
+document.addEventListener( 'alpine:init', () =>
+{
+    const Alpine = window.Alpine;
+
+    Alpine.magic( 't', () => t );
+
+    // x-component="template-id": stamp a named template into the
+    // element. Children appended while Alpine walks the element are
+    // not walked themselves, so stamp after the pass settles and
+    // initialize each child against the inherited scope chain.
+    Alpine.directive( 'component', ( el, { expression } ) =>
+    {
+        if ( el.__casomerStamped === true ) { return; }
+
+        el.__casomerStamped = true;
+
+        const template = document.getElementById( expression );
+        const content = template.content.cloneNode( true );
+
+        queueMicrotask( () =>
+        {
+            el.append( content );
+
+            for ( const child of el.children ) { Alpine.initTree( child ); }
+        } );
+    } );
+
+    Alpine.data( 'studio', () => ( {
+        booting: true,
+        snapshot: null,
+        error: null,
+        selectedPageId: null,
+        viewport: 'desktop',
+        themeDark: document.documentElement?.dataset.theme === 'dark',
+        palette: null,
+        contentVersion: 0,
+        selectedBlock: null,
+        selectionRect: null,
+        selectionRadius: 2,
+        hoverChain: [],
+        tab: 'content',
+        blockEditor: null,
+        dirty: 0,
+        saveTimer: null,
+        hoverClearTimer: null,
+        pinnedHandle: null,
+        saveState: 'idle',
+        publishState: 'idle',
+        suppressReloadUntil: 0,
+        loadSequence: 0,
+        discardOpen: false,
+        workspace: 'page',
+        workspaceFile: null,
+        collectionEditor: null,
+        selectedEntryId: null,
+        taxonomyEditor: null,
+        selectedTermId: null,
+        confirmTarget: null,
+        confirmRowId: null,
+        navCreate: null,
+        navCreateLabel: '',
+        navCreateIndex: true,
+        navCreateHierarchical: false,
+        createKind: null,
+        createLabel: '',
+        createValues: {},
+        createFieldDraft: null,
+        entrySaveTimer: null,
+        themeDraft: null,
+        themeSaveTimer: null,
+        metaSaveTimer: null,
+        surface: null,
+        collectionView: 'entries',
+        selectedFieldKey: null,
+        fieldsDraft: null,
+        fieldsSaveTimer: null,
+        fieldsOpChain: null,
+        sampleEntryId: null,
+        samplePickerOpen: false,
+        repeatEditor: null,
+        repeatSaveTimer: null,
+        seamInfo: null,
+        seamPinned: false,
+        seamClearTimer: null,
+        pickerOpen: false,
+        pickerSwapRepeat: false,
+        pickerInsertIndex: 0,
+        pickerContainer: '',
+        pickerKind: 'component',
+        pickerComponents: null,
+        pickerQuery: '',
+        publishProblems: [],
+        pendingAbandon: null,
+        abandonName: '',
+        abandonBypass: false,
+        saveConfirmOpen: false,
+        saveProblems: [],
+        commercialAssentOpen: false,
+        renameConfirmOpen: false,
+        metaNameGuardOpen: false,
+        metaNameGuardFile: null,
+        collapsedPages: {},
+        sortEpoch: 0,
+        siteNameDraft: '',
+        mediaPicker: null,
+        mediaLibrary: null,
+        mediaTrash: [],
+        mediaView: 'library',
+        mediaQuery: '',
+        mediaBrowse: null,
+        selectedMediaFile: null,
+        mediaUploading: false,
+        mediaLabelTimer: null,
+        routePushTimer: null,
+        usageRows: null,
+        usageTarget: null,
+        menuName: null,
+        menuEditor: null,
+        menuNameDraft: '',
+        selectedMenuKey: null,
+        menuAddOpen: false,
+        menuKeySeq: 0,
+        canvasFitHeight: 200,
+        focusFreshPath: null,
+        pageTitleDraft: '',
+        addressConfirmOpen: false,
+        navCollapsed: { pages: false, collections: false, taxonomies: false, menus: false },
+        outlineOpen: false,
+        outlineItems: [],
+        remoteEditOpen: false,
+        remoteDraft: '',
+
+        init ()
+        {
+            // The view survives a reload: the hash is the route, kept
+            // current as state changes and re-applied on boot once the
+            // site snapshot arrives. The boot veil holds until routing
+            // settles - no flash of the default workspace - and stays
+            // up a beat so a fast load never blinks it.
+            const bootStarted = Date.now();
+
+            void this.refresh().then( async () =>
+            {
+                await this.applyRoute();
+
+                // Every settled route change is a real history entry
+                // (Mikey: "back should work intuitively throughout").
+                // Debounced so a compound navigation (enter
+                // workspace, then its surface) spends ONE entry on
+                // its final route; deduped so popstate landings and
+                // reloads never double up.
+                this.$watch( 'routeHash', ( hash ) =>
+                {
+                    clearTimeout( this.routePushTimer );
+                    this.routePushTimer = setTimeout( () =>
+                    {
+                        if ( window.location.hash === hash ) { return; }
+
+                        history.pushState( null, '', hash );
+                    }, 80 );
+                } );
+                history.replaceState( null, '', this.routeHash );
+
+                // Back after a usage jump: the entry we return to
+                // carries the exact pre-jump spot; anything else
+                // (Forward included) re-applies its route.
+                window.addEventListener( 'popstate', ( event ) =>
+                {
+                    const spot = event.state?.casomerSpot ?? null;
+
+                    if ( spot !== null ) { this.restoreSpot( spot ); }
+                    else { void this.applyRoute(); }
+                } );
+                setTimeout( () =>
+                {
+                    this.booting = false;
+                }, Math.max( 0, 450 - ( Date.now() - bootStarted ) ) );
+            } );
+
+            const events = new EventSource( '/api/events' );
+
+            events.onmessage = () =>
+            {
+                // The canvas already shows our own writes through the
+                // morph loop; reloading it for them would only flicker.
+                // Anyone else's change (a hand edit, another session)
+                // still reloads - including an open data workspace.
+                if ( Date.now() >= this.suppressReloadUntil )
+                {
+                    this.contentVersion += 1;
+
+                    if ( this.workspace === 'collection' ) { void this.loadCollection(); }
+                    if ( this.workspace === 'taxonomy' ) { void this.loadTaxonomy(); }
+                    if ( this.workspace === 'menu' ) { void this.refresh().then( () => this.syncMenuEditor() ); }
+                }
+
+                void this.refresh();
+            };
+
+            window.addEventListener( 'message', ( event ) =>
+            {
+                if ( event.data?.casomerStudio !== true ) { return; }
+
+                if ( event.data.kind === 'size' )
+                {
+                    // Every canvas carries the bridge, so page canvases
+                    // report sizes too - only the partial frame listens,
+                    // or a page's height would leak into the next region
+                    // visit as a stale tall frame.
+                    if ( this.regionSurfaceActive && typeof event.data.height === 'number' )
+                    {
+                        this.canvasFitHeight = Math.max( 96, Math.ceil( event.data.height ) );
+                    }
+
+                    return;
+                }
+
+                if ( event.data.kind === 'remove-request' )
+                {
+                    if ( this.selectedBlock !== null && this.confirmTarget === null ) { this.confirmTarget = 'block'; }
+
+                    return;
+                }
+
+                this.onCanvasMessage( event.data );
+            } );
+
+            // Cross-session undo (EDITOR section 9, the edit journal):
+            // outside text fields, undo and redo step the journal.
+            // Inside a field, the browser's own text undo applies.
+            window.addEventListener( 'keydown', ( event ) =>
+            {
+                if ( !( event.ctrlKey || event.metaKey ) || event.key.toLowerCase() !== 'z' ) { return; }
+
+                const target = event.target;
+                const editable = target instanceof HTMLElement
+                    && ( target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable );
+
+                if ( editable ) { return; }
+
+                event.preventDefault();
+                void this.stepJournal( event.shiftKey ? 'redo' : 'undo' );
+            } );
+        },
+
+        onCanvasMessage ( message )
+        {
+            if ( message.kind === 'select' )
+            {
+                const changed = message.path !== this.blockEditor?.path;
+
+                if ( this.focusFreshPath !== null && message.path !== this.focusFreshPath ) { this.focusFreshPath = null; }
+
+                this.selectedBlock = message.path;
+                this.selectionRect = message.rect;
+                this.selectionRadius = message.radius;
+                this.hoverChain = [];
+
+                // A re-select of the same block (the canvas reloading
+                // after our own save) keeps the editing state; only a
+                // genuinely new selection refetches.
+                if ( changed ) { void this.loadBlock( message.path ); }
+            }
+
+            if ( message.kind === 'deselect' ) { this.applyDeselect(); }
+            if ( message.kind === 'undo' || message.kind === 'redo' ) { void this.stepJournal( message.kind ); }
+            if ( message.kind === 'palette' ) { this.togglePalette(); }
+
+            // The add-block seam (EDITOR section 2, the AddBlock
+            // board): the bridge reports when the pointer rests on a
+            // boundary between top-level blocks; clears take a grace
+            // period, and the seam pins while the pointer is on its
+            // own plus button (which sits outside the iframe).
+            if ( message.kind === 'seam' )
+            {
+                clearTimeout( this.seamClearTimer );
+                this.seamInfo = {
+                    container: message.container,
+                    index: message.index,
+                    orientation: message.orientation,
+                    at: message.at,
+                    crossStart: message.crossStart,
+                    crossSize: message.crossSize,
+                };
+            }
+
+            if ( message.kind === 'seam-clear' )
+            {
+                clearTimeout( this.seamClearTimer );
+                this.seamClearTimer = setTimeout( () =>
+                {
+                    if ( !this.seamPinned ) { this.seamInfo = null; }
+                }, 160 );
+            }
+
+            // Hover clears land on a short grace period: crossing the
+            // gaps inside a section, or reaching the chrome-side
+            // section handle, fires spurious leave/enter pairs that
+            // would otherwise flicker the ring and the pill.
+            if ( message.kind === 'hover' )
+            {
+                clearTimeout( this.hoverClearTimer );
+                this.hoverChain = message.chain;
+            }
+
+            if ( message.kind === 'hover-clear' )
+            {
+                clearTimeout( this.hoverClearTimer );
+                this.hoverClearTimer = setTimeout( () =>
+                {
+                    this.hoverChain = [];
+                }, 120 );
+            }
+        },
+
+        sendToCanvas ( message )
+        {
+            this.$refs.canvas?.contentWindow?.postMessage( { casomerStudio: true, ...message }, '*' );
+        },
+
+        // The canvas-reported deselect applies locally; only a
+        // chrome-initiated clear also commands the canvas, so the two
+        // sides never echo each other.
+        applyDeselect ()
+        {
+            this.focusFreshPath = null;
+            this.selectedBlock = null;
+            this.selectionRect = null;
+            this.hoverChain = [];
+            this.pinnedHandle = null;
+            this.blockEditor = null;
+            this.repeatEditor = null;
+        },
+
+        // While the pointer rests on the handle pill itself, the pill
+        // stays put: entering it takes the pointer out of the canvas,
+        // and without the pin the resulting hover-clear would remove
+        // the very control being aimed at.
+        pinHandle ()
+        {
+            this.pinnedHandle = this.sectionHandle;
+        },
+
+        unpinHandle ()
+        {
+            this.pinnedHandle = null;
+        },
+
+        selectHandle ()
+        {
+            const handle = this.sectionHandle;
+
+            if ( handle === null ) { return; }
+
+            this.pinnedHandle = null;
+            this.sendToCanvas( { kind: 'select-path', path: handle.path } );
+        },
+
+        // The target half of every block request: the page, or the
+        // collection surface, whichever canvas is up.
+        get blockTarget ()
+        {
+            if ( this.surface === null ) { return { pageId: this.selectedPageId }; }
+            if ( this.workspace === 'settings' ) { return { region: this.surface }; }
+            if ( this.surface === 'entry' ) { return { doc: this.stem, surface: 'entry', entry: this.sampleEntryId }; }
+
+            return { doc: this.stem, surface: this.surface };
+        },
+
+        async loadBlock ( path )
+        {
+            this.blockEditor = null;
+            this.repeatEditor = null;
+            this.loadSequence = ( this.loadSequence ?? 0 ) + 1;
+
+            const sequence = this.loadSequence;
+            let kind = this.blockInfoAt( path )?.kind;
+
+            // A freshly inserted block is not in the snapshot yet -
+            // the canvas reload beats the refresh here - so an unknown
+            // path retries once against fresh data before giving up.
+            if ( kind === undefined )
+            {
+                await this.refresh();
+
+                if ( sequence !== this.loadSequence ) { return; }
+
+                kind = this.blockInfoAt( path )?.kind;
+            }
+
+            if ( kind !== 'component' && kind !== 'repeat' && kind !== 'partial' ) { return; }
+
+            const query = this.surface === null
+                ? new URLSearchParams( { page: this.selectedPageId, path } )
+                : ( this.workspace === 'settings'
+                        ? new URLSearchParams( { region: this.surface, path } )
+                        : ( this.surface === 'entry'
+                                ? new URLSearchParams( { doc: this.stem, surface: 'entry', entry: this.sampleEntryId ?? '', path } )
+                                : new URLSearchParams( { doc: this.stem, surface: this.surface, path } ) ) );
+            const response = await fetch( `/api/block?${query.toString()}` );
+
+            // A newer load superseded this one while it was in flight.
+            if ( sequence !== this.loadSequence ) { return; }
+
+            if ( !response.ok ) { return; }
+
+            const loaded = await response.json();
+
+            if ( loaded.kind === 'repeat' )
+            {
+                const repeat = structuredClone( loaded.repeat );
+
+                // The wiring editors write straight into props; the
+                // record must exist before a row stamps.
+                repeat.props = repeat.props ?? {};
+                this.repeatEditor = { path, ...this.blockTarget, ...loaded, repeat };
+                return;
+            }
+
+            const props = structuredClone( loaded.props );
+
+            for ( const [ key, field ] of Object.entries( loaded.fields ) )
+            {
+                if ( props[ key ] === undefined ) { props[ key ] = emptyValueFor( field ); }
+            }
+
+            this.blockEditor = { path, ...this.blockTarget, ...loaded, props };
+
+            // Focus lands in the first field only for a NEWLY ADDED
+            // block (Mikey's rule): selecting an existing component
+            // is inspection, not editing. The marker is a PATH, not a
+            // one-shot flag: the post-insert canvas reload re-runs
+            // this load and rebuilds the editor, destroying the first
+            // focus - so every rebuild of the fresh block refocuses,
+            // until the user moves on or the window lapses.
+            if ( this.focusFreshPath === path ) { this.focusInspector(); }
+        },
+
+        // The pure preview for whatever the canvas shows (Mikey:
+        // anywhere there is a preview window, a way to pop the real
+        // thing into a new tab). Null hides the button - regions and
+        // partials have no standalone visitor page.
+        get previewPopUrl ()
+        {
+            if ( this.workspace === 'page' && this.surface === null && this.selectedPage !== undefined )
+            {
+                const segments = this.pagePathOf( this.selectedPage.id );
+
+                return `/preview/${segments.join( '/' )}${segments.length > 0 ? '/' : ''}`;
+            }
+
+            if ( this.workspace === 'settings' )
+            {
+                // Any address no page can own serves the authored
+                // 404, status and all.
+                return this.surface === 'notFound' ? '/preview/--not-found--/' : null;
+            }
+
+            if ( this.workspace === 'collection' && this.surface !== null )
+            {
+                if ( this.surface === 'index' )
+                {
+                    return this.collectionEditor?.index === false ? null : `/preview${this.collectionAddress}`;
+                }
+
+                const id = this.surface === 'entry' ? this.sampleEntryId : this.sampleEntry?.id;
+                const address = id === undefined || id === null ? null : this.entryAddressOf( id );
+
+                return address === null ? null : `/preview${address}`;
+            }
+
+            if ( this.workspace === 'taxonomy' && this.surface !== null )
+            {
+                if ( this.surface === 'index' )
+                {
+                    return this.taxonomyEditor?.index === false ? null : `/preview/${this.stem}/`;
+                }
+
+                const id = this.sampleTerm?.id;
+                const address = id === undefined ? null : this.termAddressOf( id );
+
+                return address === null ? null : `/preview${address}`;
+            }
+
+            return null;
+        },
+
+        openPreview ()
+        {
+            if ( this.previewPopUrl !== null ) { window.open( this.previewPopUrl, '_blank' ); }
+        },
+
+        // Save records a version (EDITOR section 9): the edits join
+        // history and can be returned to. Publishing is a separate,
+        // later act.
+        async saveVersion ( force = false )
+        {
+            if ( this.saveState === 'saving' ) { return; }
+
+            // Save-level validation is a speed bump, not a wall
+            // (Mikey's rule + the draft doctrine): incomplete content
+            // asks before joining history, and "Save anyway" is always
+            // there - a half-finished day is a legitimate version.
+            if ( !force )
+            {
+                const check = await fetch( '/api/problems' );
+                const found = check.ok ? ( await check.json() ).problems ?? [] : [];
+
+                if ( found.length > 0 )
+                {
+                    this.saveProblems = found;
+                    this.saveConfirmOpen = true;
+                    return;
+                }
+            }
+
+            this.saveConfirmOpen = false;
+            this.saveState = 'saving';
+
+            const response = await fetch( '/api/save', { method: 'POST' } );
+
+            this.saveState = response.ok ? 'saved' : 'idle';
+            void this.refresh();
+
+            if ( this.saveState === 'saved' )
+            {
+                setTimeout( () =>
+                {
+                    this.saveState = 'idle';
+                }, 1600 );
+            }
+        },
+
+        get saveLabel ()
+        {
+            return t( this.saveState === 'saved' ? 'saved' : 'save' );
+        },
+
+        async publishNow ()
+        {
+            if ( this.publishState === 'publishing' ) { return; }
+
+            this.publishState = 'publishing';
+            this.publishProblems = [];
+            this.suppressReloadUntil = Date.now() + 8000;
+
+            const response = await fetch( '/api/publish', { method: 'POST' } );
+
+            // A refused publish names its reasons (required fields,
+            // unavailable components): the enforcement moment is here,
+            // never while drafting, so the reasons must be visible.
+            if ( !response.ok )
+            {
+                const body = await response.json().catch( () => ( {} ) );
+
+                this.publishProblems = Array.isArray( body.issues ) ? body.issues : [];
+            }
+
+            this.publishState = response.ok ? 'published' : 'failed';
+            this.suppressReloadUntil = Date.now() + 1500;
+            void this.refresh();
+            setTimeout( () =>
+            {
+                this.publishState = 'idle';
+            }, 2200 );
+        },
+
+        // Restored content (a journal step, a discard) morphs in -
+        // never a reload, never a blank. The watcher's echo is
+        // suppressed like an own save; the editor refetches directly.
+        applyRestoredContent ()
+        {
+            // Pending debounced saves carry pre-restore state and
+            // would resurrect what was just discarded - they die here,
+            // draft timers included.
+            clearTimeout( this.saveTimer );
+            clearTimeout( this.themeSaveTimer );
+            clearTimeout( this.metaSaveTimer );
+            clearTimeout( this.entrySaveTimer );
+            clearTimeout( this.menusSaveTimer );
+
+            this.suppressReloadUntil = Date.now() + 1800;
+            this.sendToCanvas( { kind: 'refresh' } );
+
+            // A second refresh moments later is idempotent (the disk
+            // is the truth) and absorbs any in-flight write racing
+            // the restore.
+            setTimeout( () => this.sendToCanvas( { kind: 'refresh' } ), 450 );
+
+            this.blockEditor = null;
+
+            // The open workspace's drafts resync once the fresh
+            // snapshot lands - a restore is real only when the screen
+            // shows it (Mikey's undo-a-color report).
+            void this.refresh().then( () =>
+            {
+                if ( this.workspace === 'settings' ) { this.syncSettingsDrafts(); }
+                if ( this.workspace === 'menu' ) { this.syncMenuEditor(); }
+                if ( this.workspace === 'collection' ) { void this.loadCollection(); }
+                if ( this.workspace === 'taxonomy' ) { void this.loadTaxonomy(); }
+            } );
+
+            if ( this.selectedBlock !== null ) { void this.loadBlock( this.selectedBlock ); }
+        },
+
+        async stepJournal ( direction )
+        {
+            const response = await fetch( `/api/${direction}`, { method: 'POST' } );
+            const step = await response.json();
+
+            if ( step.stepped !== true ) { return; }
+
+            this.applyRestoredContent();
+        },
+
+        async discardChanges ()
+        {
+            this.discardOpen = false;
+
+            const response = await fetch( '/api/discard', { method: 'POST' } );
+
+            if ( response.ok ) { this.applyRestoredContent(); }
+        },
+
+        get status ()
+        {
+            return this.snapshot?.status ?? '';
+        },
+
+        // The chip appears only when something needs the user: unsaved
+        // edits, or saved work not yet published. A published, clean
+        // site says nothing - quiet is the resting state.
+        get statusLabel ()
+        {
+            if ( this.status === 'unsaved' ) { return t( 'statusUnsaved' ); }
+            if ( this.status === 'saved' ) { return t( 'statusSaved' ); }
+
+            return '';
+        },
+
+        // The nav dots: which rows hold changes not yet in a saved
+        // version. The server derives both lists from git on every
+        // snapshot, so they clear on Save without bookkeeping here.
+        pageIsDirty ( id )
+        {
+            return ( this.snapshot?.changedPageIds ?? [] ).includes( id );
+        },
+
+        fileIsDirty ( file )
+        {
+            return ( this.snapshot?.changedFiles ?? [] ).includes( file );
+        },
+
+        get statusDotClass ()
+        {
+            return this.status === 'unsaved' ? 'bg-amber' : 'bg-shell-muted';
+        },
+
+        get publishLabel ()
+        {
+            if ( this.publishState === 'publishing' ) { return t( 'publishing' ); }
+            if ( this.publishState === 'published' ) { return t( 'published' ); }
+            if ( this.publishState === 'failed' ) { return t( 'publishFailed' ); }
+
+            return t( 'publish' );
+        },
+
+        // Every edit takes two paths: the morph is immediate (the
+        // render-and-morph loop, DEVELOPMENT section 5) and the disk
+        // write debounces behind it.
+        markDirty ()
+        {
+            this.markBlockDirty();
+        },
+
+        markBlockDirty ()
+        {
+            this.dirty += 1;
+            void this.renderAndMorph();
+            clearTimeout( this.saveTimer );
+            this.saveTimer = setTimeout( () => void this.saveBlock(), 400 );
+        },
+
+        async renderAndMorph ()
+        {
+            const editor = this.blockEditor;
+
+            if ( editor === null ) { return; }
+
+            // Everything is captured BEFORE the await: a caller inside
+            // a menu that closes itself (setBinding) has its element -
+            // and with it this scope chain - torn down while the
+            // renderer loads, and post-await lookups on a dead scope
+            // silently resolve to nothing.
+            // The getter builds a fresh object per read, so capturing
+            // by reference is safe - and a JSON round-trip here would
+            // flatten the bind-through String objects to primitives.
+            const scope = this.surface !== null ? this.sampleEntryScope : null;
+            const canvas = this.$refs.canvas ?? null;
+
+            const renderer = await rendererFor(
+                editor.reference,
+                JSON.parse( JSON.stringify( editor.fields ) ),
+                editor.template,
+            );
+
+            // On the template canvas, bound props morph through the
+            // same sample entry the server previews with.
+            let props = JSON.parse( JSON.stringify( editor.props ) );
+
+            if ( scope !== null )
+            {
+                props = resolveBoundProps( props, scope );
+            }
+
+            const html = renderer.render( props );
+
+            canvas?.contentWindow?.postMessage( { casomerStudio: true, kind: 'morph-block', path: editor.path, html }, '*' );
+        },
+
+        async saveBlock ()
+        {
+            const editor = this.blockEditor;
+
+            if ( editor === null ) { return; }
+
+            // Region blocks address by region name - without it the
+            // write resolves no target and edits silently vanish.
+            const target = editor.region !== undefined
+                ? { region: editor.region }
+                : ( editor.doc === undefined
+                        ? { pageId: editor.pageId }
+                        : { doc: editor.doc, surface: editor.surface } );
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/block', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( {
+                    ...target,
+                    path: editor.path,
+                    props: JSON.parse( JSON.stringify( editor.props ) ),
+                } ),
+            } );
+        },
+
+        clearSelection ()
+        {
+            this.applyDeselect();
+            this.sendToCanvas( { kind: 'deselect' } );
+        },
+
+        // ---- The repeat inspector (SCHEMA 13.5, the Repeat board) ----
+
+        get repeatSource ()
+        {
+            return this.repeatEditor?.repeat?.source ?? {};
+        },
+
+        get repeatIsCurated ()
+        {
+            return Array.isArray( this.repeatSource.entries );
+        },
+
+        get repeatIsMenu ()
+        {
+            return typeof this.repeatSource.menu === 'string';
+        },
+
+        get repeatIsTaxonomy ()
+        {
+            return typeof this.repeatSource.taxonomy === 'string';
+        },
+
+        // One Source picker for every kind (Mikey: a repeater selects
+        // from any source): collections, menus, and public
+        // taxonomies, grouped, on every surface. The value encodes
+        // kind and name.
+        get repeatSourceChoice ()
+        {
+            if ( this.repeatIsMenu ) { return `menu:${this.repeatSource.menu}`; }
+            if ( this.repeatIsTaxonomy ) { return `taxonomy:${this.repeatSource.taxonomy}`; }
+
+            return `collection:${this.repeatSource.collection ?? ''}`;
+        },
+
+        setRepeatSourceChoice ( value )
+        {
+            const divider = value.indexOf( ':' );
+            const kind = value.slice( 0, divider );
+            const name = value.slice( divider + 1 );
+            const source = this.repeatEditor.repeat.source;
+
+            // Order and term scoping belong to collection sources;
+            // limit carries across every kind.
+            for ( const stale of [ 'collection', 'menu', 'taxonomy', 'entries', 'order', 'term' ] ) { delete source[ stale ]; }
+
+            source[ kind ] = name;
+            this.markRepeatDirty();
+        },
+
+        // The source's fields, for order and wiring options: a menu
+        // wires from the fixed item shape, a taxonomy from the fixed
+        // term shape, a collection from its own fields.
+        get repeatCollectionFields ()
+        {
+            if ( this.repeatIsMenu ) { return this.repeatEditor?.menuFields ?? {}; }
+            if ( this.repeatIsTaxonomy ) { return this.repeatEditor?.taxonomyFields ?? {}; }
+
+            const stem = this.repeatSource.collection;
+
+            return this.repeatEditor?.collections?.find( ( candidate ) => candidate.stem === stem )?.fields ?? {};
+        },
+
+        get repeatOrderField ()
+        {
+            return ( this.repeatSource.order ?? '' ).replace( /^-?entry\./, '' );
+        },
+
+        get repeatOrderDescending ()
+        {
+            return ( this.repeatSource.order ?? '' ).startsWith( '-' );
+        },
+
+        // The term-scoped repeat (SCHEMA 13.3): on a term template,
+        // the source narrows to entries classified under the current
+        // term (descendants included).
+        get repeatTermScoped ()
+        {
+            return this.repeatSource.term === 'current';
+        },
+
+        toggleRepeatTermScope ()
+        {
+            const source = this.repeatEditor.repeat.source;
+
+            if ( source.term === 'current' ) { delete source.term; }
+            else { source.term = 'current'; }
+
+            this.markRepeatDirty();
+        },
+
+        setRepeatOrder ( fieldKey, descending )
+        {
+            const source = this.repeatEditor.repeat.source;
+
+            if ( fieldKey === '' ) { delete source.order; }
+            else { source.order = `${descending ? '-' : ''}entry.${fieldKey}`; }
+
+            this.markRepeatDirty();
+        },
+
+        // "filter" narrows the query with the conditions grammar
+        // (SCHEMA 3.1); "empty" is the author-owned message when the
+        // repeat matches nothing.
+        setRepeatFilter ( raw )
+        {
+            const source = this.repeatEditor.repeat.source;
+
+            if ( raw.trim() === '' ) { delete source.filter; }
+            else { source.filter = raw.trim(); }
+
+            this.markRepeatDirty();
+        },
+
+        setRepeatEmpty ( raw )
+        {
+            if ( raw === '' ) { delete this.repeatEditor.repeat.empty; }
+            else { this.repeatEditor.repeat.empty = raw; }
+
+            this.markRepeatDirty();
+        },
+
+        setRepeatLimit ( raw )
+        {
+            const source = this.repeatEditor.repeat.source;
+            const limit = Number( raw );
+
+            if ( Number.isInteger( limit ) && limit > 0 ) { source.limit = limit; }
+            else { delete source.limit; }
+
+            this.markRepeatDirty();
+        },
+
+        get repeatShownLabel ()
+        {
+            const editor = this.repeatEditor;
+
+            if ( editor === null ) { return ''; }
+
+            return tFill( 'repeatShown', { shown: editor.shownCount, total: editor.entryCount } );
+        },
+
+        // Wiring uses the ESTABLISHED field linking (Mikey): each
+        // component field renders its normal editor with the link
+        // control; linked draws per item from the source, unlinked
+        // is a value used for every item. The rows live in
+        // tpl-field-row - bindSourceFields is repeat-aware.
+        wiringFieldLabel ( fieldKey )
+        {
+            return this.repeatCollectionFields[ fieldKey ]?.label ?? fieldKey;
+        },
+
+        markRepeatDirty ()
+        {
+            this.dirty += 1;
+            clearTimeout( this.repeatSaveTimer );
+            this.repeatSaveTimer = setTimeout( () => void this.saveRepeat(), 400 );
+        },
+
+        async saveRepeat ()
+        {
+            const editor = this.repeatEditor;
+
+            if ( editor === null ) { return; }
+
+            // Region repeats address by region name, like saveBlock.
+            const target = editor.region !== undefined
+                ? { region: editor.region }
+                : ( editor.doc === undefined
+                        ? { pageId: editor.pageId }
+                        : { doc: editor.doc, surface: editor.surface } );
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/block', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { ...target, path: editor.path, repeat: JSON.parse( JSON.stringify( editor.repeat ) ) } ),
+            } );
+
+            // A repeat re-renders server-side; the bridge refetches and
+            // morphs, so the canvas updates without a reload.
+            this.sendToCanvas( { kind: 'refresh' } );
+        },
+
+        // ---- The add-block seam and the component picker ----
+
+        pinSeam ()
+        {
+            this.seamPinned = true;
+        },
+
+        unpinSeam ()
+        {
+            this.seamPinned = false;
+            this.seamInfo = null;
+        },
+
+        get canvasBlockCount ()
+        {
+            return this.surface !== null ? this.surfaceBlocks.length : ( this.selectedPage?.blocks ?? [] ).length;
+        },
+
+        async openPicker ( index, container = '' )
+        {
+            this.pickerInsertIndex = index;
+            this.pickerContainer = container;
+            this.pickerKind = 'component';
+            this.pickerSwapRepeat = false;
+            this.pickerQuery = '';
+            this.pickerOpen = true;
+            this.seamInfo = null;
+            this.seamPinned = false;
+
+            if ( this.pickerComponents === null )
+            {
+                const response = await fetch( '/api/components' );
+
+                if ( response.ok ) { this.pickerComponents = ( await response.json() ).components; }
+            }
+        },
+
+        // Swapping the repeated component (Mikey): the same picker,
+        // in swap mode - the choice replaces repeat.component instead
+        // of inserting a block. Wiring survives where it still fits.
+        async openRepeatComponentSwap ()
+        {
+            if ( this.repeatEditor === null ) { return; }
+
+            this.pickerKind = 'component';
+            this.pickerSwapRepeat = true;
+            this.pickerQuery = '';
+            this.pickerOpen = true;
+
+            if ( this.pickerComponents === null )
+            {
+                const response = await fetch( '/api/components' );
+
+                if ( response.ok ) { this.pickerComponents = ( await response.json() ).components; }
+            }
+        },
+
+        async swapRepeatComponent ( component )
+        {
+            this.pickerOpen = false;
+            this.pickerSwapRepeat = false;
+
+            const editor = this.repeatEditor;
+
+            if ( editor === null || typeof component.reference !== 'string' || component.reference.startsWith( 'partial:' ) ) { return; }
+
+            // Props whose key exists on the new component with the
+            // same field type carry over - a title wire keeps
+            // wiring; anything without a home drops.
+            const kept = {};
+
+            for ( const [ key, value ] of Object.entries( editor.repeat.props ?? {} ) )
+            {
+                const newType = component.fieldTypes?.[ key ];
+                const oldType = editor.componentFields[ key ]?.type;
+
+                if ( newType !== undefined && newType === oldType ) { kept[ key ] = value; }
+            }
+
+            editor.repeat.component = component.reference;
+            editor.repeat.props = kept;
+            clearTimeout( this.repeatSaveTimer );
+            await this.saveRepeat();
+
+            // The canvas re-renders through the new component and the
+            // editor reloads so the wiring rows match its fields.
+            this.contentVersion += 1;
+            await this.loadBlock( editor.path );
+        },
+
+        // A repeat needs a collection to draw from; without one the
+        // kind is offered disabled.
+        get repeatKindAvailable ()
+        {
+            return this.collections.length > 0;
+        },
+
+        // Partials are a first-class kind (Mikey): a saved
+        // arrangement of components, sections, and repeats, reused as
+        // one block. Disabled until a partial exists; never offered
+        // inside a partial's own canvas (self-nesting is a loop).
+        get partialKindAvailable ()
+        {
+            // The 404 is a page-like surface; regions and partials
+            // themselves never nest partials.
+            return ( this.snapshot?.partials ?? [] ).length > 0
+                && ( this.workspace !== 'settings' || this.surface === 'notFound' );
+        },
+
+        // The picker leads with the grammar (SCHEMA section 11): a
+        // block is a component, a section, or a repeat. Components go
+        // into sections; a repeat renders entries through a component,
+        // so both component-ish kinds share the grid.
+        choosePickerKind ( kind )
+        {
+            if ( kind === 'section' )
+            {
+                void this.insertPickedBlock( { section: {}, blocks: [] } );
+                return;
+            }
+
+            if ( kind === 'repeat' && !this.repeatKindAvailable ) { return; }
+            if ( kind === 'partial' && !this.partialKindAvailable ) { return; }
+
+            this.pickerKind = kind;
+        },
+
+        // A ghost preview earns the card only when the component
+        // declares an example; anything else keeps the plate glyph
+        // (partial pseudo-entries carry no exampleProps at all).
+        componentHasGhost ( component )
+        {
+            return Object.keys( component.exampleProps ?? {} ).length > 0;
+        },
+
+        get pickerGroups ()
+        {
+            // Partials are their own picker kind (Mikey): the
+            // component grid shows components, the partial grid shows
+            // partials, inserted as { partial } blocks.
+            const components = this.pickerKind === 'partial'
+                ? ( this.snapshot?.partials ?? [] ).map( ( name ) => ( {
+                        reference: `partial:${name}`,
+                        title: name,
+                        packageName: t( 'partialsGroupWord' ),
+                        fieldTypes: {},
+                    } ) )
+                : ( this.pickerComponents ?? [] );
+            const query = this.pickerQuery.trim().toLowerCase();
+            const matching = query === ''
+                ? components
+                : components.filter( ( component ) =>
+                        component.title.toLowerCase().includes( query ) || component.reference.toLowerCase().includes( query ) );
+            const names = [ ...new Set( matching.map( ( component ) => component.packageName ) ) ]
+                .sort( ( a, b ) => ( a === 'core' ? -1 : b === 'core' ? 1 : a.localeCompare( b ) ) );
+
+            return names.map( ( name ) => ( {
+                name,
+                components: matching.filter( ( component ) => component.packageName === name ),
+            } ) );
+        },
+
+        // A picked component becomes a component block, or - when the
+        // picker was opened on the repeat kind - the component a new
+        // repeat renders its entries through, seeded with the first
+        // collection and its title wired to the first text-like prop.
+        // At the ROOT a component lands wrapped in a section (Mikey's
+        // rule: sections and repeats dictate the spacing around
+        // components, never the components themselves); inside a
+        // section it lands bare.
+        async insertComponent ( component )
+        {
+            // Swap mode replaces the repeat's component in place.
+            if ( this.pickerSwapRepeat )
+            {
+                await this.swapRepeatComponent( component );
+                return;
+            }
+
+            // A partial inserts as its own block kind, top-level bare
+            // (its blocks carry their own sections).
+            if ( typeof component.reference === 'string' && component.reference.startsWith( 'partial:' ) )
+            {
+                await this.insertPickedBlock( { partial: component.reference.slice( 'partial:'.length ) } );
+                return;
+            }
+
+            if ( this.pickerKind === 'repeat' )
+            {
+                const stem = ( this.collections[ 0 ]?.file ?? '' ).replace( /\.json$/, '' );
+                const textProp = Object.entries( component.fieldTypes ?? {} )
+                    .find( ( [ , type ] ) => [ 'text', 'markdown', 'textarea' ].includes( type ) )?.[ 0 ];
+
+                // A collection surface repeats its own collection; a
+                // taxonomy's term template seeds the term-scoped
+                // filter (SCHEMA 13.3); a REGION seeds the primary
+                // menu through the picked component - navigation in
+                // one gesture (SCHEMA 12.5).
+                const onTaxonomy = this.workspace === 'taxonomy';
+
+                // The 404 surface is a page, not navigation chrome:
+                // its repeats seed like a page's, not a menu.
+                const onRegion = this.workspace === 'settings' && this.surface !== 'notFound';
+                const own = this.surface !== null && !onTaxonomy && !onRegion ? this.stem : stem;
+
+                if ( onRegion )
+                {
+                    const isLink = component.reference === 'core/link';
+
+                    await this.insertPickedBlock( {
+                        repeat: {
+                            source: { menu: this.menuNames[ 0 ] ?? 'primary' },
+                            component: component.reference,
+                            props: isLink
+                                ? { label: { $bind: 'entry.label' }, url: { $bind: 'entry.url' } }
+                                : ( textProp === undefined ? {} : { [ textProp ]: { $bind: 'entry.label' } } ),
+                        },
+                    } );
+                    return;
+                }
+
+                await this.insertPickedBlock( {
+                    repeat: {
+                        source: {
+                            collection: own,
+                            ...( onTaxonomy && this.surface === 'template' ? { term: 'current' } : {} ),
+                        },
+                        component: component.reference,
+                        props: textProp === undefined ? {} : { [ textProp ]: { $bind: 'entry.title' } },
+                    },
+                } );
+                return;
+            }
+
+            const componentBlock = { component: component.reference, props: component.exampleProps ?? {} };
+
+            if ( this.pickerContainer === '' )
+            {
+                await this.insertPickedBlock( { section: {}, blocks: [ componentBlock ] }, '.blocks[0]' );
+                return;
+            }
+
+            await this.insertPickedBlock( componentBlock );
+        },
+
+        async insertPickedBlock ( block, selectSuffix = '' )
+        {
+            // One insert per picker opening: a doubled click or a
+            // replayed handler must never land the block twice.
+            if ( !this.pickerOpen ) { return; }
+
+            const index = this.pickerInsertIndex;
+            const container = this.pickerContainer;
+
+            this.pickerOpen = false;
+
+            await fetch( '/api/block', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { ...this.blockTarget, container, index, block } ),
+            } );
+
+            // The watcher reloads the canvas; the new block selects
+            // itself when the fresh document announces itself.
+            const base = container === '' ? `blocks[${index}]` : `${container}.blocks[${index}]`;
+
+            const freshPath = `${base}${selectSuffix}`;
+
+            this.focusFreshPath = freshPath;
+            setTimeout( () =>
+            {
+                if ( this.focusFreshPath === freshPath ) { this.focusFreshPath = null; }
+            }, 4000 );
+            this.selectedBlock = freshPath;
+
+            if ( this.workspace === 'collection' ) { await this.loadCollection(); }
+
+            void this.refresh();
+        },
+
+        async removeSelectedBlock ()
+        {
+            const path = this.selectedBlock;
+
+            if ( path === null ) { return; }
+
+            await fetch( '/api/block', {
+                method: 'DELETE',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { ...this.blockTarget, path } ),
+            } );
+
+            // A structural change reloads the canvas explicitly: the
+            // morph loop only covers prop edits, and the confirm flow
+            // suppresses the watcher reload this used to lean on.
+            this.contentVersion += 1;
+            this.applyDeselect();
+
+            if ( this.workspace === 'collection' ) { await this.loadCollection(); }
+
+            void this.refresh();
+        },
+
+        async refresh ()
+        {
+            try
+            {
+                const response = await fetch( '/api/site' );
+
+                if ( !response.ok ) { throw new Error( t( 'serverUnreachable' ) ); }
+
+                const loaded = await response.json();
+
+                this.snapshot = loaded;
+                this.error = null;
+
+                if ( !loaded.pages.some( ( page ) => page.id === this.selectedPageId ) )
+                {
+                    this.selectedPageId = loaded.pages[ 0 ]?.id ?? null;
+                    this.syncPageTitleDraft();
+                }
+            }
+            catch ( failure )
+            {
+                this.error = failure.message;
+            }
+        },
+
+        // The route, spelled as a hash: which workspace, which file,
+        // which surface or view. Selection within a view is session
+        // state and deliberately not routed.
+        get routeHash ()
+        {
+            if ( this.workspace === 'settings' )
+            {
+                // The settings surfaces (404, regions, partials) are
+                // their own places: Back must return to settings
+                // (Mikey's 404 report).
+                return this.surface === null ? '#/settings' : `#/settings/${this.surface}`;
+            }
+
+            if ( this.workspace === 'media' ) { return this.mediaView === 'trash' ? '#/media/trash' : '#/media'; }
+
+            if ( this.workspace === 'collection' && this.workspaceFile !== null )
+            {
+                if ( this.surface === 'entry' && this.sampleEntryId !== null ) { return `#/collection/${this.stem}/entry/${this.sampleEntryId}`; }
+                if ( this.surface !== null ) { return `#/collection/${this.stem}/${this.surface}`; }
+                if ( this.collectionView === 'fields' ) { return `#/collection/${this.stem}/fields`; }
+
+                return `#/collection/${this.stem}`;
+            }
+
+            if ( this.workspace === 'taxonomy' && this.workspaceFile !== null )
+            {
+                return this.surface === null ? `#/taxonomy/${this.stem}` : `#/taxonomy/${this.stem}/${this.surface}`;
+            }
+
+            if ( this.workspace === 'menu' && this.menuName !== null ) { return `#/menu/${this.menuName}`; }
+
+            return this.selectedPageId === null ? '#/' : `#/page/${this.selectedPageId}`;
+        },
+
+        async applyRoute ()
+        {
+            const parts = window.location.hash.replace( /^#\/?/, '' ).split( '/' ).filter( ( part ) => part !== '' );
+
+            if ( parts[ 0 ] === 'settings' )
+            {
+                this.openSettings();
+
+                if ( parts[ 1 ] !== undefined ) { this.openSurface( parts[ 1 ] ); }
+
+                return;
+            }
+
+            if ( parts[ 0 ] === 'media' )
+            {
+                this.openMediaWorkspace();
+
+                if ( parts[ 1 ] === 'trash' ) { this.setMediaView( 'trash' ); }
+
+                return;
+            }
+
+            if ( parts[ 0 ] === 'page' && this.pages.some( ( page ) => page.id === parts[ 1 ] ) )
+            {
+                this.selectedPageId = parts[ 1 ];
+                this.syncPageTitleDraft();
+                return;
+            }
+
+            if ( parts[ 0 ] === 'collection' && this.collections.some( ( candidate ) => candidate.file === `${parts[ 1 ]}.json` ) )
+            {
+                this.enterWorkspace( 'collection', `${parts[ 1 ]}.json` );
+                await this.loadCollection();
+
+                if ( parts[ 2 ] === 'fields' ) { this.openFields(); }
+                if ( parts[ 2 ] === 'index' || parts[ 2 ] === 'template' ) { this.openSurface( parts[ 2 ] ); }
+                if ( parts[ 2 ] === 'entry' && parts[ 3 ] !== undefined ) { this.openEntryLayout( parts[ 3 ] ); }
+
+                return;
+            }
+
+            if ( parts[ 0 ] === 'taxonomy' && this.taxonomies.some( ( candidate ) => candidate.file === `${parts[ 1 ]}.json` ) )
+            {
+                this.openTaxonomy( `${parts[ 1 ]}.json` );
+
+                if ( parts[ 2 ] === 'index' || parts[ 2 ] === 'template' ) { this.openSurface( parts[ 2 ] ); }
+            }
+
+            if ( parts[ 0 ] === 'menu' && this.menuNames.includes( parts[ 1 ] ) )
+            {
+                this.openMenu( parts[ 1 ] );
+            }
+        },
+
+        // Switching pages clears the selection: a path from one page
+        // means nothing on another. A content reload of the SAME page
+        // keeps it - the canvas re-selects when the new document loads.
+        selectPage ( id )
+        {
+            if ( !this.confirmEntryLeave( () => this.selectPage( id ) ) ) { return; }
+
+            this.enterWorkspace( 'page' );
+
+            if ( id === this.selectedPageId ) { return; }
+
+            this.selectedPageId = id;
+            this.syncPageTitleDraft();
+            this.applyDeselect();
+        },
+
+        // The center is a workspace (EDITOR section 1): the canvas is
+        // its usual tenant, and data surfaces - a collection head-on,
+        // taxonomy terms, site settings - take the same room.
+        enterWorkspace ( kind, file = null )
+        {
+            this.workspace = kind;
+            this.workspaceFile = file;
+            this.tab = 'content';
+            this.collectionEditor = null;
+            this.selectedEntryId = null;
+            this.taxonomyEditor = null;
+            this.selectedTermId = null;
+            this.confirmTarget = null;
+            this.surface = null;
+            this.collectionView = 'entries';
+            this.selectedFieldKey = null;
+            this.fieldsDraft = null;
+            this.sampleEntryId = null;
+            this.samplePickerOpen = false;
+            this.menuName = null;
+            this.menuEditor = null;
+            this.selectedMenuKey = null;
+            this.menuAddOpen = false;
+            this.outlineOpen = false;
+            this.selectedMediaFile = null;
+
+            if ( kind !== 'page' ) { this.applyDeselect(); }
+        },
+
+        get stem ()
+        {
+            return ( this.workspaceFile ?? '' ).replace( /\.json$/, '' );
+        },
+
+        // The canvas serves two masters: a page, or a collection's
+        // index or template surface (EDITOR: one canvas, many rooms).
+        get canvasActive ()
+        {
+            return this.workspace === 'page' || this.surface !== null;
+        },
+
+        openSurface ( kind )
+        {
+            if ( !this.confirmEntryLeave( () => this.openSurface( kind ) ) ) { return; }
+
+            this.surface = kind;
+
+            // A fresh partial starts small and grows to its content
+            // once the region canvas reports in - never inheriting
+            // whatever height the last surface left behind.
+            if ( this.workspace === 'settings' ) { this.canvasFitHeight = 200; }
+
+            this.collectionView = 'entries';
+            this.selectedEntryId = null;
+            this.selectedFieldKey = null;
+            this.confirmTarget = null;
+            this.tab = 'content';
+            this.samplePickerOpen = false;
+            this.applyDeselect();
+        },
+
+        closeSurface ()
+        {
+            this.surface = null;
+            this.samplePickerOpen = false;
+            this.applyDeselect();
+        },
+
+        // Diverged-entry editing (SCHEMA 13.4, Mikey's "break out of
+        // the mold"): divergence copies the CURRENT template into the
+        // entry, then its own canvas opens; adopting returns it to
+        // the template (the confirm flow owns the discard).
+        async divergeEntry ( id )
+        {
+            const file = this.workspaceFile;
+
+            if ( file === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/entry-layout', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file, id, action: 'diverge' } ),
+            } );
+            await this.loadCollection();
+            this.openEntryLayout( id );
+            void this.refresh();
+        },
+
+        openPartialFromBlock ()
+        {
+            const name = this.blockEditor?.name;
+
+            if ( typeof name !== 'string' ) { return; }
+
+            this.openSettings();
+            this.openSurface( name );
+        },
+
+        openEntryLayout ( id )
+        {
+            if ( !this.confirmEntryLeave( () => this.openEntryLayout( id ) ) ) { return; }
+
+            this.openSurface( 'entry' );
+            this.sampleEntryId = id;
+        },
+
+        // The template canvas renders through one sample entry; the
+        // cap-bar chip picks which (EDITOR: "with data from ...").
+        // The table's per-entry page actions (Mikey): the eye opens
+        // the rendered page a visitor would see, the pencil opens the
+        // template canvas through this entry's data. Row click stays
+        // the data editor.
+        openEntryPage ( id )
+        {
+            if ( !this.confirmEntryLeave( () => this.openEntryPage( id ) ) ) { return; }
+
+            this.openSurface( 'template' );
+            this.sampleEntryId = id;
+        },
+
+        // Row previews open the HUMAN preview at the thing's real
+        // address (Mikey): /preview/about/events/talk-of-the-town/,
+        // never the internal per-id routes. The slug derivation
+        // mirrors emission - title slug, collision suffixes in entry
+        // order, drafts and page-less entries skipped.
+        entryAddressOf ( id )
+        {
+            const editor = this.collectionEditor;
+            const taken = new Set();
+            let slug = null;
+
+            for ( const entry of editor?.entries ?? [] )
+            {
+                if ( entry.draft === true ) { continue; }
+                if ( entry.hasOwnBlocks !== true && editor?.templateBlocks === undefined ) { continue; }
+
+                const base = String( entry.values?.title ?? '' ).toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' ) || entry.id.slice( 0, 8 );
+                let candidate = base;
+                let suffix = 2;
+
+                while ( taken.has( candidate ) )
+                {
+                    candidate = `${base}-${suffix}`;
+                    suffix += 1;
+                }
+
+                taken.add( candidate );
+
+                if ( entry.id === id ) { slug = candidate; }
+            }
+
+            return slug === null ? null : `${this.collectionAddress}${slug}/`;
+        },
+
+        termAddressOf ( id )
+        {
+            const terms = this.taxonomyEditor?.terms ?? [];
+            const target = terms.find( ( term ) => term.id === id );
+
+            if ( target === undefined ) { return null; }
+
+            const slugOf = ( term ) => String( term.name ?? '' ).toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' ) || term.id.slice( 0, 8 );
+            const segments = [ slugOf( target ) ];
+            const visited = new Set( [ id ] );
+            let parent = target.parent;
+
+            while ( parent !== undefined && !visited.has( parent ) )
+            {
+                visited.add( parent );
+
+                const parentTerm = terms.find( ( term ) => term.id === parent );
+
+                if ( parentTerm === undefined ) { break; }
+
+                segments.unshift( slugOf( parentTerm ) );
+                parent = parentTerm.parent;
+            }
+
+            return `/${[ this.stem, ...segments ].join( '/' )}/`;
+        },
+
+        previewTermPage ( id )
+        {
+            const address = this.termAddressOf( id );
+
+            if ( address !== null ) { window.open( `/preview${address}`, '_blank' ); }
+        },
+
+        previewEntryPage ( id )
+        {
+            const address = this.entryAddressOf( id );
+
+            if ( address === null ) { return; }
+
+            window.open( `/preview${address}`, '_blank' );
+        },
+
+        // On a taxonomy's template canvas the sample is a TERM; the
+        // sampleEntryId state doubles as the sample term id there.
+        get sampleTerm ()
+        {
+            const terms = this.taxonomyEditor?.terms ?? [];
+
+            return terms.find( ( term ) => term.id === this.sampleEntryId ) ?? terms[ 0 ] ?? null;
+        },
+
+        get sampleEntry ()
+        {
+            const entries = this.collectionEditor?.entries ?? [];
+
+            return entries.find( ( entry ) => entry.id === this.sampleEntryId ) ?? entries[ 0 ] ?? null;
+        },
+
+        get sampleEntryLabel ()
+        {
+            if ( this.workspace === 'taxonomy' )
+            {
+                const name = this.sampleTerm?.name;
+
+                return name === '' || name === undefined ? t( 'kindTerm' ) : name;
+            }
+
+            const title = this.sampleEntry?.values?.title;
+
+            return title === undefined || title === '' ? t( 'kindEntry' ) : String( title );
+        },
+
+        chooseSampleEntry ( id )
+        {
+            this.sampleEntryId = id;
+            this.samplePickerOpen = false;
+            this.contentVersion += 1;
+        },
+
+        get surfaceBlocks ()
+        {
+            if ( this.workspace === 'settings' ) { return this.snapshot?.regionBlocks?.[ this.surface ] ?? []; }
+
+            const editor = this.workspace === 'taxonomy' ? this.taxonomyEditor : this.collectionEditor;
+
+            if ( this.surface === 'template' ) { return editor?.templateBlocks ?? []; }
+            if ( this.surface === 'index' ) { return editor?.indexBlocks ?? []; }
+            if ( this.surface === 'entry' ) { return editor?.entryLayouts?.[ this.sampleEntryId ] ?? []; }
+
+            return [];
+        },
+
+        get surfaceLabel ()
+        {
+            if ( this.surface === 'header' ) { return t( 'surfaceHeader' ); }
+            if ( this.surface === 'footer' ) { return t( 'surfaceFooter' ); }
+            if ( this.surface === 'notFound' ) { return t( 'surfaceNotFound' ); }
+            if ( this.surface === 'entry' ) { return t( 'surfaceEntryLayout' ); }
+            if ( this.surface === 'index' ) { return t( 'surfaceIndex' ); }
+
+            // A user-defined partial's surface speaks its own name.
+            if ( this.workspace === 'settings' && this.surface !== null ) { return this.surface; }
+
+            return t( this.workspace === 'taxonomy' ? 'surfaceTermTemplate' : 'surfaceTemplate' );
+        },
+
+        // The center header's meta line: "3 entries · index at /events/".
+        get collectionMeta ()
+        {
+            const editor = this.collectionEditor;
+
+            if ( editor === null ) { return ''; }
+
+            if ( this.collectionView === 'fields' ) { return t( 'fieldsMeta' ); }
+
+            const count = tCount( 'entriesMeta', editor.entries.length );
+            const indexPart = editor.index === false ? t( 'noPublicIndex' ) : tFill( 'indexAt', { stem: this.collectionAddress.replace( /^\/|\/$/g, '' ) } );
+
+            return `${count} · ${indexPart}`;
+        },
+
+        get taxonomyMeta ()
+        {
+            const editor = this.taxonomyEditor;
+
+            return editor === null ? '' : tCount( 'termsMeta', editor.terms.length );
+        },
+
+        // How far a template edit reaches: the conforming entries.
+        get templateReachLabel ()
+        {
+            const count = ( this.collectionEditor?.entries ?? [] ).filter( ( entry ) => entry.hasOwnBlocks !== true ).length;
+
+            return tCount( 'templateReach', count );
+        },
+
+        // A field row's right-hand summary: "text · required · the
+        // label", "taxonomy · Venue", "reference · Venues".
+        fieldSummary ( fieldRow )
+        {
+            const parts = [ fieldRow.type ];
+
+            if ( fieldRow.refTarget !== undefined && fieldRow.refTarget !== '' && this.fieldNeedsTarget( fieldRow ) )
+            {
+                const pool = fieldRow.type === 'taxonomy' ? this.taxonomyOptions : this.collectionRefOptions;
+
+                parts.push( pool.find( ( option ) => option.stem === fieldRow.refTarget )?.label ?? fieldRow.refTarget );
+            }
+
+            if ( fieldRow.required ) { parts.push( t( 'fieldRequiredMark' ) ); }
+            if ( fieldRow.help !== '' ) { parts.push( fieldRow.help ); }
+
+            return parts.join( ' · ' );
+        },
+
+        openCollection ( file )
+        {
+            if ( !this.confirmEntryLeave( () => this.openCollection( file ) ) ) { return; }
+
+            this.enterWorkspace( 'collection', file );
+            void this.loadCollection();
+        },
+
+        async loadCollection ()
+        {
+            const file = this.workspaceFile;
+
+            if ( file === null ) { return; }
+
+            const query = new URLSearchParams( { file } );
+            const response = await fetch( `/api/collection?${query.toString()}` );
+
+            if ( !response.ok || this.workspaceFile !== file ) { return; }
+
+            const loaded = await response.json();
+
+            for ( const entry of loaded.entries )
+            {
+                for ( const [ key, field ] of Object.entries( loaded.fields ) )
+                {
+                    if ( entry.values[ key ] === undefined ) { entry.values[ key ] = emptyValueFor( field ); }
+                }
+            }
+
+            this.collectionEditor = loaded;
+
+            if ( this.selectedEntryId !== null && !loaded.entries.some( ( entry ) => entry.id === this.selectedEntryId ) )
+            {
+                this.selectedEntryId = null;
+            }
+        },
+
+        get entryEditor ()
+        {
+            if ( this.collectionEditor === null || this.selectedEntryId === null ) { return null; }
+
+            return this.collectionEditor.entries.find( ( entry ) => entry.id === this.selectedEntryId ) ?? null;
+        },
+
+        get entryFieldKeys ()
+        {
+            return Object.keys( this.collectionEditor?.fields ?? {} );
+        },
+
+        // The entry table's columns (SCHEMA section 13.1): the header's
+        // table list when given, else the title plus the first scalar
+        // fields; the layout-state column always rides along.
+        get entryColumns ()
+        {
+            const editor = this.collectionEditor;
+
+            if ( editor === null ) { return []; }
+            if ( Array.isArray( editor.table ) ) { return editor.table; }
+
+            const scalar = [ 'text', 'date', 'number', 'select', 'url', 'email' ];
+            const extras = Object.entries( editor.fields )
+                .filter( ( [ key, field ] ) => key !== 'title' && scalar.includes( field.type ) )
+                .map( ( [ key ] ) => key )
+                .slice( 0, 2 );
+
+            return [ 'title', ...extras ];
+        },
+
+        columnLabel ( key )
+        {
+            return this.collectionEditor?.fields?.[ key ]?.label ?? key;
+        },
+
+        // References resolve to labels everywhere in the editor
+        // (SCHEMA 13.3): an id never reaches the user's eyes - a term
+        // shows its name, an entry its title.
+        referenceLabelFor ( field, id )
+        {
+            // A multiple reference labels as its targets, joined.
+            if ( Array.isArray( id ) )
+            {
+                return id.map( ( one ) => this.referenceLabelFor( field, one ) ).filter( ( name ) => name !== '' ).join( ', ' );
+            }
+
+            if ( typeof field.rules?.taxonomy === 'string' )
+            {
+                const taxonomy = this.collectionEditor?.taxonomies?.find( ( candidate ) => candidate.stem === field.rules.taxonomy );
+
+                return taxonomy?.terms.find( ( term ) => term.id === id )?.name ?? '';
+            }
+
+            const target = this.collectionEditor?.collectionRefs?.find( ( candidate ) => candidate.stem === field.rules?.type );
+
+            return target?.entries.find( ( entry ) => entry.id === id )?.title ?? '';
+        },
+
+        cellText ( entry, key )
+        {
+            const value = entry.values[ key ];
+
+            if ( value === undefined || value === null || value === '' ) { return ''; }
+
+            const field = this.collectionEditor?.fields?.[ key ];
+
+            if ( field?.type === 'reference' )
+            {
+                return this.referenceLabelFor( field, value );
+            }
+
+            return String( value );
+        },
+
+        // ---- Abandon-level validation (Mikey's rule) ----
+        // Leaving an entry whose required fields are empty stops for
+        // a choice: keep it as a draft (publish will name it) or
+        // discard it. Never a silent loss, never a silent keep. The
+        // entry is already on disk - edits write through - so "keep"
+        // costs nothing and "discard" is journal-undoable.
+
+        get entryMissingRequired ()
+        {
+            const entry = this.entryEditor;
+            const fields = this.collectionEditor?.fields;
+
+            if ( entry === null || fields === undefined ) { return []; }
+
+            return Object.entries( fields )
+                .filter( ( [ key, field ] ) =>
+                {
+                    if ( field.required !== true ) { return false; }
+
+                    const value = entry.values[ key ];
+
+                    if ( value === undefined || value === null ) { return true; }
+                    if ( typeof value === 'string' ) { return value.trim() === ''; }
+                    if ( Array.isArray( value ) ) { return value.length === 0; }
+
+                    return false;
+                } )
+                .map( ( [ , field ] ) => field.label );
+        },
+
+        // Returns true when leaving is fine; otherwise stashes the
+        // navigation and opens the prompt. Callers begin with
+        // `if ( !this.confirmEntryLeave( () => this.x() ) ) return;`.
+        confirmEntryLeave ( retry )
+        {
+            if ( this.abandonBypass ) { return true; }
+            if ( this.workspace !== 'collection' || this.surface !== null || this.entryEditor === null ) { return true; }
+            if ( this.entryMissingRequired.length === 0 ) { return true; }
+
+            const title = this.entryEditor.values?.title;
+
+            this.abandonName = title === undefined || title === '' ? t( 'kindEntry' ) : String( title );
+            this.pendingAbandon = retry;
+            return false;
+        },
+
+        cancelAbandon ()
+        {
+            this.pendingAbandon = null;
+        },
+
+        get tFillAbandonTitle ()
+        {
+            return tFill( 'abandonTitle', { name: this.abandonName } );
+        },
+
+        get abandonMissingLine ()
+        {
+            return tFill( 'abandonMissing', { fields: this.entryMissingRequired.join( ', ' ) } );
+        },
+
+        // Keep draft is literal (Mikey's rule): the entry gains
+        // "draft": true - kept, editable, and omitted from the
+        // published site and from enforcement until the switch clears.
+        async keepDraftAndGo ()
+        {
+            const retry = this.pendingAbandon;
+            const file = this.workspaceFile;
+            const id = this.selectedEntryId;
+
+            this.pendingAbandon = null;
+
+            if ( file !== null && id !== null )
+            {
+                this.suppressReloadUntil = Date.now() + 1500;
+                await fetch( '/api/entry', {
+                    method: 'PUT',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file, id, draft: true } ),
+                } );
+                await this.loadCollection();
+            }
+
+            this.abandonBypass = true;
+
+            try { retry?.(); }
+            finally { this.abandonBypass = false; }
+
+            void this.refresh();
+        },
+
+        async toggleEntryDraft ()
+        {
+            const entry = this.entryEditor;
+
+            if ( entry === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/entry', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, id: entry.id, draft: entry.draft !== true } ),
+            } );
+            await this.loadCollection();
+            void this.refresh();
+        },
+
+        async togglePageDraft ()
+        {
+            const page = this.selectedPage;
+
+            if ( page === undefined ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/page', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { id: page.id, patch: { draft: page.draft !== true } } ),
+            } );
+            void this.refresh();
+        },
+
+        async discardEntryAndGo ()
+        {
+            await fetch( '/api/entry', {
+                method: 'DELETE',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, id: this.selectedEntryId } ),
+            } );
+            this.selectedEntryId = null;
+            await this.loadCollection();
+            this.keepDraftAndGo();
+            void this.refresh();
+        },
+
+        selectEntry ( id )
+        {
+            if ( id !== this.selectedEntryId && !this.confirmEntryLeave( () => this.selectEntry( id ) ) ) { return; }
+
+            this.selectedEntryId = id;
+            this.collectionView = 'entries';
+            this.selectedFieldKey = null;
+            this.tab = 'content';
+            this.confirmTarget = null;
+            void this.loadUsage( id, { kind: 'entry', id } );
+            this.focusInspector();
+        },
+
+        // Creation always begins in a modal (Mikey's rule, matching
+        // the boards): the essential name first, then the right-side
+        // bar - which is for EDITING existing things - takes over.
+        // An entry's create modal carries the WHOLE form (Mikey's
+        // preference): every field, required nags included, so an
+        // entry can be born complete.
+        openCreate ( kind )
+        {
+            this.createKind = kind;
+            this.createLabel = '';
+
+            if ( kind === 'field' ) { this.createFieldDraft = { type: 'text', required: false, refTarget: '' }; }
+
+            if ( kind === 'entry' )
+            {
+                const values = {};
+
+                for ( const [ key, field ] of Object.entries( this.collectionEditor?.fields ?? {} ) )
+                {
+                    values[ key ] = emptyValueFor( field );
+                }
+
+                this.createValues = values;
+            }
+
+            this.focusCreateForm();
+        },
+
+        focusCreateForm ()
+        {
+            const attempt = ( delay ) => setTimeout( () =>
+            {
+                const target = this.$refs.createForm?.querySelector( 'input:not([type="color"]), textarea, select' );
+
+                if ( target !== undefined && target !== null && document.activeElement !== target )
+                {
+                    target.focus();
+                }
+            }, delay );
+
+            attempt( 120 );
+            attempt( 400 );
+        },
+
+        get createTitleLine ()
+        {
+            const titles = { page: t( 'createPageTitle' ), entry: t( 'createEntryTitle' ), term: t( 'createTermTitle' ), field: t( 'createFieldTitle' ) };
+
+            return titles[ this.createKind ] ?? '';
+        },
+
+        get createPlaceholder ()
+        {
+            const placeholders = { page: t( 'pageTitlePlaceholder' ), entry: t( 'entryTitlePlaceholder' ), term: t( 'termNamePlaceholder' ), field: t( 'fieldNamePlaceholder' ) };
+
+            return placeholders[ this.createKind ] ?? '';
+        },
+
+        get createConfirmLine ()
+        {
+            const labels = { page: t( 'createPageConfirm' ), entry: t( 'createEntryConfirm' ), term: t( 'createTermConfirm' ), field: t( 'addField' ) };
+
+            return labels[ this.createKind ] ?? '';
+        },
+
+        get createSlugPreview ()
+        {
+            if ( this.createKind !== 'page' ) { return ''; }
+
+            const slug = this.createLabel.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' );
+
+            return slug === '' ? '' : tFill( 'createPageSlugNote', { slug } );
+        },
+
+        async submitCreate ()
+        {
+            const kind = this.createKind;
+            const label = kind === 'entry' ? String( this.createValues.title ?? '' ).trim() : this.createLabel.trim();
+
+            if ( kind === null || label === '' ) { return; }
+
+            this.createKind = null;
+
+            // A field never leaves the chrome here: it joins the
+            // fields draft and rides the debounced fields save.
+            if ( kind === 'field' )
+            {
+                const draft = this.createFieldDraft ?? { type: 'text', required: false, refTarget: '' };
+                const words = label.toLowerCase().replace( /[^a-z0-9]+/g, ' ' ).trim().split( ' ' ).filter( ( word ) => word !== '' );
+                const base = words.map( ( word, index ) => index === 0 ? word : word.charAt( 0 ).toUpperCase() + word.slice( 1 ) ).join( '' ) || 'field';
+                let key = base;
+                let suffix = 2;
+
+                while ( this.fieldsDraft?.some( ( field ) => field.key === key ) )
+                {
+                    key = `${base}${suffix}`;
+                    suffix += 1;
+                }
+
+                this.fieldsDraft?.push( { key, label, type: draft.type, required: draft.required, help: '', column: false, refTarget: draft.refTarget, format: '' } );
+                this.selectField( key );
+                this.markFieldsDirty();
+                this.createFieldDraft = null;
+                return;
+            }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            if ( kind === 'page' )
+            {
+                const response = await fetch( '/api/page', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { title: label } ),
+                } );
+
+                if ( !response.ok ) { return; }
+
+                const created = await response.json();
+
+                await this.refresh();
+                this.selectPage( created.id );
+                return;
+            }
+
+            if ( kind === 'entry' )
+            {
+                const response = await fetch( '/api/entry', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, values: JSON.parse( JSON.stringify( this.createValues ) ) } ),
+                } );
+
+                if ( !response.ok ) { return; }
+
+                const created = await response.json();
+
+                await this.loadCollection();
+                this.selectEntry( created.id );
+                void this.refresh();
+                return;
+            }
+
+            const response = await fetch( '/api/term', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, name: label } ),
+            } );
+
+            if ( !response.ok ) { return; }
+
+            const created = await response.json();
+
+            await this.loadTaxonomy();
+            this.selectTerm( created.id );
+            void this.refresh();
+        },
+
+        // Choosing to edit something focuses its first input. The
+        // inspector's field templates stamp asynchronously and the
+        // surrounding refresh can re-render right after, so it tries
+        // once early and once after the churn settles - the second
+        // pass only acts if the first got stomped.
+        focusInspector ()
+        {
+            const attempt = ( delay ) => setTimeout( () =>
+            {
+                // The user beat us to a field - never fight them
+                // (Mikey: clicking Description lost to the delayed
+                // name autofocus). Any focused control or the canvas
+                // itself means their hands are already somewhere.
+                const active = document.activeElement;
+
+                if ( active instanceof HTMLElement
+                    && active.matches( 'input, textarea, select, [contenteditable], iframe' ) ) { return; }
+
+                const target = this.$refs.inspectorContent
+                    ?.querySelector( 'input:not([type="color"]), textarea, select' );
+
+                if ( target !== undefined && target !== null && document.activeElement !== target )
+                {
+                    target.focus();
+                }
+            }, delay );
+
+            attempt( 120 );
+            attempt( 450 );
+        },
+
+        markEntryDirty ()
+        {
+            this.dirty += 1;
+            clearTimeout( this.entrySaveTimer );
+            this.entrySaveTimer = setTimeout( () => void this.saveEntry(), 400 );
+        },
+
+        async saveEntry ()
+        {
+            const entry = this.entryEditor;
+
+            if ( entry === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/entry', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( {
+                    file: this.workspaceFile,
+                    id: entry.id,
+                    values: JSON.parse( JSON.stringify( entry.values ) ),
+                } ),
+            } );
+            void this.refresh();
+        },
+
+        // The Settings tab owns what the creation modal offered
+        // (Mikey's rule): the name and the public-index choice live
+        // there, editable after the fact. Renaming changes the label
+        // people see; the file keeps its stem.
+        markMetaDirty ()
+        {
+            this.dirty += 1;
+
+            // The nav follows the rename instantly - the snapshot row
+            // is patched optimistically, the debounced write and the
+            // refresh confirm it a moment later.
+            const isTaxonomy = this.workspace === 'taxonomy';
+            const label = isTaxonomy ? this.taxonomyEditor?.label : this.collectionEditor?.label;
+            const rows = isTaxonomy ? this.snapshot?.taxonomies : this.snapshot?.collections;
+            const row = rows?.find( ( candidate ) => candidate.file === this.workspaceFile );
+
+            if ( row !== undefined && typeof label === 'string' && label.trim() !== '' ) { row.label = label.trim(); }
+
+            clearTimeout( this.metaSaveTimer );
+            this.metaSaveTimer = setTimeout( () => void this.saveMeta(), 500 );
+        },
+
+        async saveMeta ()
+        {
+            const isTaxonomy = this.workspace === 'taxonomy';
+            const label = isTaxonomy ? this.taxonomyEditor?.label : this.collectionEditor?.label;
+
+            if ( typeof label !== 'string' || label.trim() === '' ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( isTaxonomy ? '/api/taxonomy' : '/api/collection', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { label: label.trim() } } ),
+            } );
+            void this.refresh();
+        },
+
+        // The name is required (it is how the collection or taxonomy
+        // is listed everywhere). Emptying it never persists - saveMeta
+        // refuses blanks - so blurring an emptied name raises a guard
+        // that either restores the last good name or refocuses the
+        // input to finish typing a new one.
+        get metaNameMissing ()
+        {
+            if ( this.workspace === 'page' )
+            {
+                return this.selectedPage !== undefined && typeof this.pageTitleDraft === 'string' && this.pageTitleDraft.trim() === '';
+            }
+
+            const label = this.workspace === 'taxonomy' ? this.taxonomyEditor?.label : this.collectionEditor?.label;
+
+            return typeof label === 'string' && label.trim() === '';
+        },
+
+        get metaLastGoodLabel ()
+        {
+            // The snapshot only ever holds valid names - an empty one
+            // never persists - so it is the restore point everywhere.
+            if ( this.workspace === 'page' ) { return this.selectedPage?.title ?? ''; }
+
+            const rows = this.workspace === 'taxonomy' ? this.snapshot?.taxonomies : this.snapshot?.collections;
+            const row = rows?.find( ( candidate ) => candidate.file === this.workspaceFile );
+
+            if ( typeof row?.label === 'string' && row.label.trim() !== '' ) { return row.label; }
+
+            return ( this.workspaceFile ?? '' ).replace( /\.json$/, '' );
+        },
+
+        // What the rest of the chrome speaks while the name is being
+        // edited (Mikey's rule): an emptied name never leaks - the
+        // breadcrumbs, headers, titles, and confirms keep the last
+        // valid name until a real one replaces it.
+        get collectionDisplayLabel ()
+        {
+            const label = this.collectionEditor?.label;
+
+            if ( typeof label === 'string' && label.trim() !== '' ) { return label; }
+
+            const row = this.snapshot?.collections?.find( ( candidate ) => candidate.file === this.workspaceFile );
+
+            if ( typeof row?.label === 'string' && row.label.trim() !== '' ) { return row.label; }
+
+            return this.stem ?? '';
+        },
+
+        get taxonomyDisplayLabel ()
+        {
+            const label = this.taxonomyEditor?.label;
+
+            if ( typeof label === 'string' && label.trim() !== '' ) { return label; }
+
+            const row = this.snapshot?.taxonomies?.find( ( candidate ) => candidate.file === this.workspaceFile );
+
+            if ( typeof row?.label === 'string' && row.label.trim() !== '' ) { return row.label; }
+
+            return this.stem ?? '';
+        },
+
+        get nameRequiredTitleLine ()
+        {
+            const kind = this.workspace === 'page' ? 'kindPage' : this.workspace === 'taxonomy' ? 'kindTaxonomy' : 'kindCollection';
+
+            return tFill( 'nameRequiredTitle', { kind: t( kind ) } );
+        },
+
+        get restoreNameLine ()
+        {
+            return tFill( 'restoreName', { name: this.metaLastGoodLabel } );
+        },
+
+        metaNameBlurred ()
+        {
+            if ( this.metaNameMissing )
+            {
+                this.metaNameGuardFile = this.workspace === 'page' ? this.selectedPageId : this.workspaceFile;
+                this.metaNameGuardOpen = true;
+            }
+        },
+
+        revertMetaName ()
+        {
+            // A click that navigated away in the same gesture as the
+            // blur leaves the guard aimed at the old workspace; the
+            // restore only applies while it is still the one on screen.
+            if ( this.workspace === 'page' )
+            {
+                if ( this.selectedPageId === this.metaNameGuardFile ) { this.pageTitleDraft = this.metaLastGoodLabel; }
+
+                this.metaNameGuardOpen = false;
+                return;
+            }
+
+            const editor = this.workspace === 'taxonomy' ? this.taxonomyEditor : this.collectionEditor;
+
+            if ( editor !== null && editor !== undefined && this.workspaceFile === this.metaNameGuardFile )
+            {
+                editor.label = this.metaLastGoodLabel;
+                this.markMetaDirty();
+            }
+
+            this.metaNameGuardOpen = false;
+        },
+
+        keepEditingMetaName ()
+        {
+            // Captured before the flag flips: the modal button unmounts
+            // itself, and $refs resolved after that lands in the dead
+            // scope (DEVELOPMENT section 6, the post-await gotcha).
+            const input = this.$refs.metaNameInput;
+
+            this.metaNameGuardOpen = false;
+            setTimeout( () => input?.focus(), 50 );
+        },
+
+        // The page's name rides the same rules as a collection's: the
+        // input edits a draft, only valid names reach the nav and the
+        // disk, and the required guard covers the rest.
+        syncPageTitleDraft ()
+        {
+            this.pageTitleDraft = this.pages.find( ( page ) => page.id === this.selectedPageId )?.title ?? '';
+        },
+
+        markPageTitleDirty ()
+        {
+            const title = typeof this.pageTitleDraft === 'string' ? this.pageTitleDraft.trim() : '';
+            const page = this.selectedPage;
+
+            if ( title === '' || page === undefined ) { return; }
+
+            page.title = title;
+
+            const id = page.id;
+
+            clearTimeout( this.pageTitleTimer );
+            this.pageTitleTimer = setTimeout( () => void this.savePageTitle( id, title ), 500 );
+        },
+
+        async savePageTitle ( id, title )
+        {
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/page', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { id, patch: { title } } ),
+            } );
+            void this.refresh();
+        },
+
+        // The offered address change (SCHEMA 13.6: renames move
+        // subtrees - offered, never silent): when the title's slug
+        // and the page's address diverge, Settings offers the move.
+        get pageAddressOffer ()
+        {
+            const page = this.selectedPage;
+
+            if ( page === undefined || page.slug === 'home' ) { return ''; }
+
+            const slug = ( page.title ?? '' ).toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' );
+
+            if ( slug === '' || slug === page.slug ) { return ''; }
+            if ( this.pages.some( ( candidate ) => candidate.id !== page.id && candidate.slug === slug ) ) { return ''; }
+
+            return slug;
+        },
+
+        pageAddressWith ( slug )
+        {
+            const segments = this.selectedPage === undefined ? [] : this.pagePathOf( this.selectedPage.id );
+
+            if ( segments.length === 0 ) { return `/${slug}/`; }
+
+            return '/' + [ ...segments.slice( 0, -1 ), slug ].join( '/' ) + '/';
+        },
+
+        get addressOfferLine ()
+        {
+            return tFill( 'addressOffer', { path: this.pageAddressWith( this.pageAddressOffer ) } );
+        },
+
+        get addressTitleLine ()
+        {
+            return tFill( 'addressTitle', {
+                old: this.pageAddressWith( this.selectedPage?.slug ?? '' ),
+                new: this.pageAddressWith( this.pageAddressOffer ),
+            } );
+        },
+
+        async confirmAddressChange ()
+        {
+            this.addressConfirmOpen = false;
+
+            const id = this.selectedPageId;
+            const slug = this.pageAddressOffer;
+
+            if ( id === null || slug === '' ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/page', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { id, patch: { slug } } ),
+            } );
+            void this.refresh();
+        },
+
+        // Deleting a page refuses while anything is nested under it
+        // (server-enforced too); the chrome says so up front.
+        get pageHasNested ()
+        {
+            const id = this.selectedPageId;
+
+            if ( id === null ) { return false; }
+
+            return this.pages.some( ( page ) => page.parent === id )
+                || this.collections.some( ( collection ) => collection.parent === id );
+        },
+
+        // The offered file rename (SCHEMA 13.3: offer, never
+        // silently): when the label's slug and the file's stem
+        // diverge, Settings offers the move; accepting rewrites every
+        // repeat and reference that names the old stem, one undo
+        // reverses it all.
+        get renameOfferFile ()
+        {
+            const label = this.workspace === 'taxonomy' ? this.taxonomyEditor?.label : this.collectionEditor?.label;
+
+            if ( typeof label !== 'string' || label.trim() === '' ) { return ''; }
+
+            const slug = label.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' );
+
+            if ( slug === '' || `${slug}.json` === this.workspaceFile ) { return ''; }
+
+            return `${slug}.json`;
+        },
+
+        get tFillRenameOffer ()
+        {
+            return tFill( 'renameOffer', { file: this.renameOfferFile } );
+        },
+
+        get renameTitleLine ()
+        {
+            return tFill( 'renameTitle', { old: this.workspaceFile ?? '', new: this.renameOfferFile } );
+        },
+
+        get renameBodyLine ()
+        {
+            if ( this.workspace === 'taxonomy' ) { return t( 'renameBodyTaxonomy' ); }
+
+            return tFill( 'renameBodyCollection', {
+                oldStem: this.stem,
+                newStem: this.renameOfferFile.replace( /\.json$/, '' ),
+            } );
+        },
+
+        async confirmRename ()
+        {
+            this.renameConfirmOpen = false;
+
+            const isTaxonomy = this.workspace === 'taxonomy';
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const response = await fetch( isTaxonomy ? '/api/taxonomy' : '/api/collection', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { renameFile: true } } ),
+            } );
+
+            if ( response.ok )
+            {
+                const body = await response.json();
+
+                if ( typeof body.file === 'string' ) { this.workspaceFile = body.file; }
+            }
+
+            if ( isTaxonomy ) { await this.loadTaxonomy(); }
+            else { await this.loadCollection(); }
+
+            void this.refresh();
+        },
+
+        async toggleTaxonomySetting ()
+        {
+            const editor = this.taxonomyEditor;
+
+            if ( editor === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/taxonomy', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { index: editor.index === false } } ),
+            } );
+            await this.loadTaxonomy();
+        },
+
+        // Hierarchy turns on freely; turning it off is locked while
+        // any term is nested (the server refuses it too) - structure
+        // is never severed silently.
+        async toggleTaxonomyHierarchical ()
+        {
+            const editor = this.taxonomyEditor;
+
+            if ( editor === null ) { return; }
+            if ( editor.hierarchical === true && this.taxonomyHasNested ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/taxonomy', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { hierarchical: editor.hierarchical !== true } } ),
+            } );
+            await this.loadTaxonomy();
+        },
+
+        async toggleCollectionSetting ( key )
+        {
+            const editor = this.collectionEditor;
+
+            if ( editor === null ) { return; }
+
+            const patch = key === 'index'
+                ? { index: editor.index === false }
+                : { locked: editor.locked !== true };
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/collection', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch } ),
+            } );
+            await this.loadCollection();
+        },
+
+        // The Fields workspace (EDITOR section 5): the collection's
+        // shape as an editable list. The draft carries the simple keys
+        // (label, type, required, help, table column); a field's
+        // options or nested fields stay in the file, untouched.
+        openFields ()
+        {
+            if ( !this.confirmEntryLeave( () => this.openFields() ) ) { return; }
+
+            this.collectionView = 'fields';
+            this.selectedEntryId = null;
+            this.selectedFieldKey = null;
+            this.confirmTarget = null;
+            this.buildFieldsDraft();
+        },
+
+        buildFieldsDraft ()
+        {
+            const editor = this.collectionEditor;
+
+            if ( editor === null )
+            {
+                this.fieldsDraft = null;
+                return;
+            }
+
+            const columns = Array.isArray( editor.table ) ? editor.table : this.entryColumns;
+
+            // The chrome speaks two types where the schema has one
+            // (Mikey's vocabulary): "taxonomy" pulls a taxonomy's
+            // terms, "reference" pulls a collection's entries - both
+            // stored as the reference type with the matching rule.
+            this.fieldsDraft = Object.entries( editor.fields ).map( ( [ key, field ] ) => ( {
+                key,
+                label: field.label,
+                type: field.type === 'reference' && typeof field.rules?.taxonomy === 'string' ? 'taxonomy' : field.type,
+                required: field.required === true,
+                help: field.help ?? '',
+                column: columns.includes( key ),
+                refTarget: field.rules?.taxonomy ?? field.rules?.type ?? '',
+                format: field.rules?.format ?? '',
+                multiple: field.rules?.multiple === true,
+            } ) );
+        },
+
+        setFieldDateFormat ( value )
+        {
+            if ( this.fieldEditor === null ) { return; }
+
+            this.fieldEditor.format = value;
+            this.markFieldsDirty();
+        },
+
+        // The key IS a slug of the label (Mikey): when the label
+        // input settles, the key follows - "Location / Venue" becomes
+        // locationVenue, collisions suffix to locationVenue2 - and
+        // the server sweeps every reference (binds, inline tokens,
+        // order, entry values, table, conditions). Title stays title:
+        // it is the contract key. The whole sequence rides the fields
+        // chain so no debounced save interleaves it.
+        async syncFieldKey ()
+        {
+            const from = this.fieldEditor?.key;
+            const file = this.workspaceFile;
+
+            if ( from === undefined || file === null || from === 'title' ) { return; }
+
+            clearTimeout( this.fieldsSaveTimer );
+
+            await this.queueFieldsOp( async () =>
+            {
+                // Re-read inside the chain: an earlier queued rename
+                // may have already moved this field.
+                const editor = this.fieldsDraft?.find( ( field ) => field.key === from );
+
+                if ( editor === undefined || this.workspaceFile !== file ) { return; }
+
+                const words = editor.label.toLowerCase().replace( /[^a-z0-9]+/g, ' ' ).trim().split( ' ' ).filter( ( word ) => word !== '' );
+                const target = words.map( ( word, index ) => ( index === 0 ? word : word.charAt( 0 ).toUpperCase() + word.slice( 1 ) ) ).join( '' );
+
+                if ( target === '' || !/^[a-z]/.test( target ) || target === from ) { return; }
+
+                let unique = target;
+                let suffix = 2;
+
+                while ( this.fieldsDraft?.some( ( field ) => field.key === unique ) )
+                {
+                    unique = `${target}${suffix}`;
+                    suffix += 1;
+                }
+
+                // The pending label save settles first, so the rename
+                // lands on the document it expects.
+                await this.saveFields();
+
+                this.suppressReloadUntil = Date.now() + 1500;
+
+                const response = await fetch( '/api/field-rename', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file, from, to: unique } ),
+                } );
+
+                if ( !response.ok ) { return; }
+
+                await this.loadCollection();
+                this.buildFieldsDraft();
+
+                if ( this.selectedFieldKey === from ) { this.selectedFieldKey = unique; }
+
+                void this.refresh();
+            } );
+        },
+
+        get fieldEditor ()
+        {
+            if ( this.fieldsDraft === null || this.selectedFieldKey === null ) { return null; }
+
+            return this.fieldsDraft.find( ( field ) => field.key === this.selectedFieldKey ) ?? null;
+        },
+
+        // The simple types a field can become from the chrome; select,
+        // list, and group keep their richer shape and stay put. Two of
+        // these are the chrome's spelling of SCHEMA 13.3 references:
+        // "taxonomy" (term picker) and "reference" (entry picker).
+        get simpleFieldTypes ()
+        {
+            return [ 'text', 'textarea', 'markdown', 'number', 'date', 'url', 'email', 'toggle', 'image', 'taxonomy', 'reference' ];
+        },
+
+        fieldTypeEditable ( field )
+        {
+            return this.simpleFieldTypes.includes( field.type );
+        },
+
+        get taxonomyOptions ()
+        {
+            return this.collectionEditor?.taxonomies ?? [];
+        },
+
+        get collectionRefOptions ()
+        {
+            return this.collectionEditor?.collectionRefs ?? [];
+        },
+
+        // What the selected field's References picker offers: the
+        // taxonomies for a taxonomy field, the OTHER collections for a
+        // reference field (an entry never references its own shape).
+        get fieldTargetOptions ()
+        {
+            if ( this.fieldEditor?.type === 'taxonomy' )
+            {
+                return this.taxonomyOptions.map( ( option ) => ( { value: option.stem, label: option.label } ) );
+            }
+
+            return this.collectionRefOptions
+                .filter( ( option ) => option.stem !== this.stem )
+                .map( ( option ) => ( { value: option.stem, label: option.label } ) );
+        },
+
+        fieldNeedsTarget ( field )
+        {
+            return field.type === 'taxonomy' || field.type === 'reference';
+        },
+
+        get createFieldTargetOptions ()
+        {
+            if ( this.createFieldDraft?.type === 'taxonomy' )
+            {
+                return this.taxonomyOptions.map( ( option ) => ( { value: option.stem, label: option.label } ) );
+            }
+
+            return this.collectionRefOptions
+                .filter( ( option ) => option.stem !== this.stem )
+                .map( ( option ) => ( { value: option.stem, label: option.label } ) );
+        },
+
+        setCreateFieldType ( value )
+        {
+            const draft = this.createFieldDraft;
+
+            if ( draft === null ) { return; }
+
+            draft.type = value;
+
+            if ( this.fieldNeedsTarget( draft ) )
+            {
+                const valid = this.createFieldTargetOptions.some( ( option ) => option.value === draft.refTarget );
+
+                if ( !valid ) { draft.refTarget = this.createFieldTargetOptions[ 0 ]?.value ?? ''; }
+            }
+        },
+
+        setFieldType ( value )
+        {
+            const field = this.fieldEditor;
+
+            if ( field === null ) { return; }
+
+            field.type = value;
+
+            if ( this.fieldNeedsTarget( field ) )
+            {
+                const valid = this.fieldTargetOptions.some( ( option ) => option.value === field.refTarget );
+
+                if ( !valid ) { field.refTarget = this.fieldTargetOptions[ 0 ]?.value ?? ''; }
+            }
+
+            this.markFieldsDirty();
+        },
+
+        setFieldReferenceTarget ( value )
+        {
+            const field = this.fieldEditor;
+
+            if ( field === null ) { return; }
+
+            field.refTarget = value;
+            this.markFieldsDirty();
+        },
+
+        showEntriesView ()
+        {
+            this.collectionView = 'entries';
+            this.selectedFieldKey = null;
+        },
+
+        toggleFieldFlag ( flag )
+        {
+            const field = this.fieldEditor;
+
+            if ( field === null ) { return; }
+
+            field[ flag ] = field[ flag ] !== true;
+            this.markFieldsDirty();
+        },
+
+        selectField ( key )
+        {
+            this.selectedFieldKey = key;
+            this.tab = 'content';
+            this.confirmTarget = null;
+            this.focusInspector();
+        },
+
+        addField ()
+        {
+            if ( this.fieldsDraft === null ) { return; }
+
+            let suffix = this.fieldsDraft.length + 1;
+
+            while ( this.fieldsDraft.some( ( field ) => field.key === `field${suffix}` ) ) { suffix += 1; }
+
+            const key = `field${suffix}`;
+
+            this.fieldsDraft.push( { key, label: t( 'newFieldLabel' ), type: 'text', required: false, help: '', column: false, refTarget: '' } );
+            this.selectField( key );
+            this.markFieldsDirty();
+        },
+
+        removeField ( key )
+        {
+            if ( this.fieldsDraft === null || key === 'title' ) { return; }
+
+            this.fieldsDraft = this.fieldsDraft.filter( ( field ) => field.key !== key );
+
+            if ( this.selectedFieldKey === key ) { this.selectedFieldKey = null; }
+
+            this.markFieldsDirty();
+        },
+
+        markFieldsDirty ()
+        {
+            this.dirty += 1;
+            clearTimeout( this.fieldsSaveTimer );
+            this.fieldsSaveTimer = setTimeout( () => this.queueFieldsOp( () => this.saveFields() ), 500 );
+        },
+
+        // Every fields write rides ONE chain (Mikey's split-rename
+        // incident): the debounced whole-record save and the key
+        // rename both mutate the same document, and interleaving them
+        // let a stale draft resurrect a renamed key - fields said
+        // field4 while the entries said image. Serialized, each
+        // operation sees the previous one's finished document.
+        queueFieldsOp ( operation )
+        {
+            this.fieldsOpChain = ( this.fieldsOpChain ?? Promise.resolve() ).then( operation ).catch( () => undefined );
+            return this.fieldsOpChain;
+        },
+
+        async saveFields ()
+        {
+            const draft = this.fieldsDraft;
+
+            if ( draft === null ) { return; }
+
+            // The chrome's taxonomy/reference pair both store as the
+            // schema's reference type, distinguished by the rule.
+            const fields = Object.fromEntries( draft.map( ( field ) => [ field.key, {
+                type: field.type === 'taxonomy' ? 'reference' : field.type,
+                label: field.label,
+                required: field.required,
+                ...( field.help === '' ? {} : { help: field.help } ),
+                ...( field.type === 'taxonomy' && field.refTarget !== '' ? { taxonomy: field.refTarget } : {} ),
+                ...( field.type === 'reference' && field.refTarget !== '' ? { collection: field.refTarget } : {} ),
+                ...( field.type === 'date' && ( field.format ?? '' ) !== '' ? { format: field.format } : {} ),
+                ...( ( field.type === 'reference' || field.type === 'taxonomy' ) && field.multiple === true ? { multiple: true } : {} ),
+            } ] ) );
+            const table = draft.filter( ( field ) => field.column ).map( ( field ) => field.key );
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/collection', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { fields, table } } ),
+            } );
+            await this.loadCollection();
+        },
+
+        openTaxonomy ( file )
+        {
+            if ( !this.confirmEntryLeave( () => this.openTaxonomy( file ) ) ) { return; }
+
+            this.enterWorkspace( 'taxonomy', file );
+            void this.loadTaxonomy();
+        },
+
+        async loadTaxonomy ()
+        {
+            const file = this.workspaceFile;
+
+            if ( file === null ) { return; }
+
+            const query = new URLSearchParams( { file } );
+            const response = await fetch( `/api/taxonomy?${query.toString()}` );
+
+            if ( !response.ok || this.workspaceFile !== file ) { return; }
+
+            this.taxonomyEditor = await response.json();
+
+            if ( this.selectedTermId !== null && !this.taxonomyEditor.terms.some( ( term ) => term.id === this.selectedTermId ) )
+            {
+                this.selectedTermId = null;
+            }
+        },
+
+        // The terms in display order: tree order with depths for a
+        // hierarchical taxonomy, stored order (all depth 0) otherwise.
+        get termRows ()
+        {
+            const editor = this.taxonomyEditor;
+
+            if ( editor === null ) { return []; }
+
+            if ( editor.hierarchical !== true )
+            {
+                return editor.terms.map( ( term ) => ( { term, depth: 0 } ) );
+            }
+
+            return termTree( editor.terms );
+        },
+
+        get taxonomyHasNested ()
+        {
+            return ( this.taxonomyEditor?.terms ?? [] ).some( ( term ) => term.parent !== undefined );
+        },
+
+        // Parent options for the selected term: every term except
+        // itself and its own descendants - a hierarchy is a tree.
+        // The derived slug (SCHEMA 13.3: from the name, entry-slug
+        // rules, never stored) and the address it produces - shown
+        // only while term pages are public.
+        get termSlug ()
+        {
+            const name = this.termEditor?.name ?? '';
+            const slug = name.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' );
+
+            return slug === '' ? ( this.termEditor?.id ?? '' ).slice( 0, 8 ) : slug;
+        },
+
+        get termAddress ()
+        {
+            const segments = [ this.termSlug ];
+            const terms = this.taxonomyEditor?.terms ?? [];
+            const visited = new Set( [ this.termEditor?.id ] );
+            let parent = this.termEditor?.parent;
+
+            while ( parent !== undefined && !visited.has( parent ) )
+            {
+                visited.add( parent );
+
+                const parentTerm = terms.find( ( term ) => term.id === parent );
+                const name = parentTerm?.name ?? '';
+
+                segments.unshift( name.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' ) || ( parent ?? '' ).slice( 0, 8 ) );
+                parent = parentTerm?.parent;
+            }
+
+            return '/' + [ this.stem, ...segments ].join( '/' ) + '/';
+        },
+
+        get termAddressLine ()
+        {
+            return tFill( 'termAddressLabel', { address: this.termAddress } );
+        },
+
+        get termParentOptions ()
+        {
+            const editor = this.termEditor;
+
+            if ( editor === null ) { return []; }
+
+            const excluded = new Set( [ editor.id ] );
+            let grew = true;
+
+            while ( grew )
+            {
+                grew = false;
+
+                for ( const term of this.taxonomyEditor?.terms ?? [] )
+                {
+                    if ( term.parent !== undefined && excluded.has( term.parent ) && !excluded.has( term.id ) )
+                    {
+                        excluded.add( term.id );
+                        grew = true;
+                    }
+                }
+            }
+
+            return this.termRows.filter( ( row ) => !excluded.has( row.term.id ) );
+        },
+
+        async setTermParent ( value )
+        {
+            const term = this.termEditor;
+
+            if ( term === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/term', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, id: term.id, parent: value === '' ? null : value } ),
+            } );
+            await this.loadTaxonomy();
+            void this.refresh();
+        },
+
+        get termEditor ()
+        {
+            if ( this.taxonomyEditor === null || this.selectedTermId === null ) { return null; }
+
+            return this.taxonomyEditor.terms.find( ( term ) => term.id === this.selectedTermId ) ?? null;
+        },
+
+        selectTerm ( id )
+        {
+            this.selectedTermId = id;
+            this.tab = 'content';
+            this.confirmTarget = null;
+            this.focusInspector();
+            void this.loadUsage( id, { kind: 'term', id } );
+        },
+
+        // The relational "used by" list (Mikey): what references the
+        // selected thing, as jump links. Self-mentions filter out -
+        // a term's own definition is not a use of it.
+        async loadUsage ( target, self = null )
+        {
+            this.usageRows = null;
+            this.usageTarget = typeof target === 'string' ? target : null;
+
+            if ( typeof target !== 'string' || target.length < 4 ) { return; }
+
+            const response = await fetch( `/api/usage?${new URLSearchParams( { target } ).toString()}` );
+
+            if ( !response.ok ) { return; }
+
+            const rows = ( await response.json() ).rows ?? [];
+
+            this.usageRows = rows.filter( ( row ) => !( self !== null && row.kind === self.kind && row.id === self.id ) );
+        },
+
+        get usageTabAvailable ()
+        {
+            return ( this.usageRows ?? [] ).length > 0
+                && ( ( this.workspace === 'taxonomy' && this.termEditor !== null )
+                    || ( this.workspace === 'collection' && this.entryEditor !== null ) );
+        },
+
+        usageRowTitle ( row )
+        {
+            if ( row.kind === 'site' )
+            {
+                if ( row.area === 'header' ) { return t( 'usageAreaHeader' ); }
+                if ( row.area === 'footer' ) { return t( 'usageAreaFooter' ); }
+                if ( row.area === 'notFound' ) { return t( 'usageAreaNotFound' ); }
+                if ( String( row.area ).startsWith( 'partial:' ) ) { return String( row.area ).slice( 'partial:'.length ); }
+
+                return t( 'navSiteSettings' );
+            }
+
+            return String( row.title ?? '' ) || t( `kind${row.kind.charAt( 0 ).toUpperCase()}${row.kind.slice( 1 )}` );
+        },
+
+        usageRowKind ( row )
+        {
+            if ( row.kind === 'site' )
+            {
+                return String( row.area ?? '' ).startsWith( 'partial:' ) ? t( 'kindPartial' ) : t( 'kindSite' );
+            }
+
+            return t( `kind${row.kind.charAt( 0 ).toUpperCase()}${row.kind.slice( 1 )}` );
+        },
+
+        // The landing flash (Mikey): after a usage jump, find the
+        // rendered field rows whose value carries the traced target,
+        // scroll the first into view, and bloom the wash behind them.
+        // Sweeping the DOM after arrival - with retries while the
+        // destination loads - works whether the inspector re-stamped
+        // its rows or reused them.
+        flashUsageLanding ( traced )
+        {
+            if ( typeof traced !== 'string' || traced === '' ) { return; }
+
+            let attempts = 0;
+            const sweep = () =>
+            {
+                attempts += 1;
+
+                const rows = [ ...document.querySelectorAll( '[x-component="tpl-field-row"]' ) ].filter( ( el ) =>
+                {
+                    if ( el.offsetParent === null ) { return false; }
+
+                    try
+                    {
+                        return JSON.stringify( window.Alpine.$data( el ).value ?? null ).includes( traced );
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                } );
+
+                if ( rows.length === 0 )
+                {
+                    if ( attempts < 12 ) { setTimeout( sweep, 250 ); }
+
+                    return;
+                }
+
+                rows[ 0 ].scrollIntoView( { behavior: 'smooth', block: 'center' } );
+
+                for ( const el of rows )
+                {
+                    el.classList.remove( 'cs-jump-flash' );
+
+                    // Restart the animation even on a repeated jump
+                    // to the same row.
+                    void el.offsetWidth;
+                    el.classList.add( 'cs-jump-flash' );
+                    setTimeout( () => el.classList.remove( 'cs-jump-flash' ), 2800 );
+                }
+            };
+
+            setTimeout( sweep, 350 );
+        },
+
+        // Where the user is RIGHT NOW, precisely enough to return:
+        // routes deliberately do not carry selection, so a jump
+        // checkpoints it onto the current history entry instead.
+        currentSpot ()
+        {
+            return {
+                workspace: this.workspace,
+                file: this.workspaceFile,
+                pageId: this.selectedPageId,
+                entryId: this.selectedEntryId,
+                termId: this.selectedTermId,
+                menuName: this.menuName,
+                mediaView: this.mediaView,
+                mediaFile: this.selectedMediaFile,
+                surface: this.surface,
+                sampleEntryId: this.sampleEntryId,
+            };
+        },
+
+        restoreSpot ( spot )
+        {
+            if ( spot.workspace === 'settings' )
+            {
+                this.openSettings();
+
+                if ( typeof spot.surface === 'string' ) { this.openSurface( spot.surface ); }
+
+                return;
+            }
+
+            if ( spot.workspace === 'media' )
+            {
+                this.openMediaWorkspace();
+
+                if ( spot.mediaView === 'trash' ) { this.setMediaView( 'trash' ); }
+                if ( typeof spot.mediaFile === 'string' ) { this.selectMediaFile( spot.mediaFile ); }
+
+                return;
+            }
+
+            if ( spot.workspace === 'collection' && typeof spot.file === 'string' )
+            {
+                this.openCollection( spot.file );
+
+                if ( spot.surface === 'entry' && typeof spot.sampleEntryId === 'string' ) { this.openEntryLayout( spot.sampleEntryId ); }
+                else if ( typeof spot.surface === 'string' ) { this.openSurface( spot.surface ); }
+                else if ( typeof spot.entryId === 'string' ) { this.selectEntry( spot.entryId ); }
+
+                return;
+            }
+
+            if ( spot.workspace === 'taxonomy' && typeof spot.file === 'string' )
+            {
+                this.openTaxonomy( spot.file );
+
+                if ( typeof spot.surface === 'string' ) { this.openSurface( spot.surface ); }
+                else if ( typeof spot.termId === 'string' ) { this.selectTerm( spot.termId ); }
+
+                return;
+            }
+
+            if ( spot.workspace === 'menu' && typeof spot.menuName === 'string' )
+            {
+                this.openMenu( spot.menuName );
+                return;
+            }
+
+            if ( typeof spot.pageId === 'string' )
+            {
+                this.selectPage( spot.pageId );
+                return;
+            }
+
+            void this.applyRoute();
+        },
+
+        openUsageRow ( row )
+        {
+            // The current entry remembers the exact pre-jump spot
+            // (routes omit selection); the route watcher pushes the
+            // jump's own entry - so Back returns precisely.
+            history.replaceState( { casomerSpot: this.currentSpot() }, '', this.routeHash );
+
+            this.flashUsageLanding( this.usageTarget );
+
+            if ( row.kind === 'page' )
+            {
+                this.selectPage( row.id );
+                return;
+            }
+
+            if ( row.kind === 'entry' )
+            {
+                this.openCollection( row.file );
+                this.selectEntry( row.id );
+                return;
+            }
+
+            if ( row.kind === 'collection' )
+            {
+                this.openCollection( row.file );
+                return;
+            }
+
+            if ( row.kind === 'term' )
+            {
+                this.openTaxonomy( row.file );
+                this.selectTerm( row.id );
+                return;
+            }
+
+            if ( row.kind === 'taxonomy' )
+            {
+                this.openTaxonomy( row.file );
+                return;
+            }
+
+            const area = String( row.area ?? '' );
+
+            if ( area === 'header' || area === 'footer' || area === 'notFound' )
+            {
+                this.openSettings();
+                this.openSurface( area );
+                return;
+            }
+
+            if ( area.startsWith( 'partial:' ) )
+            {
+                this.openSettings();
+                this.openSurface( area.slice( 'partial:'.length ) );
+                return;
+            }
+
+            this.openSettings();
+        },
+
+        // Drag-and-drop sort order (Mikey): rows lift and the list
+        // shuffles live underneath (Alpine's sort plugin, vendored;
+        // the same pattern as the yw-webapp steps list). The DOM
+        // order after the drop IS the new sort order - read it,
+        // mirror it into state, persist it.
+        get sortConfig ()
+        {
+            return {
+                animation: 220,
+                easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+                forceFallback: true,
+
+                // The clone rides on <body>: appended inside the
+                // overflow-hidden card it positions against the wrong
+                // ancestor and floats offset from the cursor.
+                fallbackOnBody: true,
+                fallbackClass: 'sort-drag-clone',
+                ghostClass: 'sort-drop-slot',
+            };
+        },
+
+        sortedIdsIn ( container )
+        {
+            return [ ...container.querySelectorAll( '[data-sort-id]' ) ].map( ( row ) => row.dataset.sortId );
+        },
+
+        applyRowOrder ( list, key, ids )
+        {
+            const byId = new Map( list.map( ( item ) => [ String( item[ key ] ), item ] ) );
+            const ordered = ids.map( ( id ) => byId.get( id ) ).filter( ( item ) => item !== undefined );
+            const rest = list.filter( ( item ) => !ordered.includes( item ) );
+
+            list.splice( 0, list.length, ...ordered, ...rest );
+        },
+
+        async sortRows ( kind, container )
+        {
+            const ids = this.sortedIdsIn( container );
+
+            // The MDP pattern (yw-webapp gotcha 2): Sortable moved the
+            // DOM nodes; busting every x-for key makes Alpine rebuild
+            // the rows from data order instead of trusting them.
+            this.sortEpoch += 1;
+
+            if ( kind === 'field' && this.fieldsDraft !== null )
+            {
+                this.applyRowOrder( this.fieldsDraft, 'key', ids );
+                this.markFieldsDirty();
+                return;
+            }
+
+            if ( kind === 'term' && this.taxonomyEditor !== null )
+            {
+                this.applyRowOrder( this.taxonomyEditor.terms, 'id', ids );
+                this.suppressReloadUntil = Date.now() + 1500;
+                await fetch( '/api/taxonomy', {
+                    method: 'PUT',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, patch: { termOrder: this.taxonomyEditor.terms.map( ( term ) => term.id ) } } ),
+                } );
+                void this.refresh();
+                return;
+            }
+
+            if ( kind === 'entry' && this.collectionEditor !== null )
+            {
+                this.applyRowOrder( this.collectionEditor.entries, 'id', ids );
+                this.suppressReloadUntil = Date.now() + 1500;
+                await fetch( '/api/collection', {
+                    method: 'PUT',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, patch: { entryOrder: this.collectionEditor.entries.map( ( entry ) => entry.id ) } } ),
+                } );
+                void this.refresh();
+            }
+        },
+
+        markTermDirty ()
+        {
+            this.dirty += 1;
+            clearTimeout( this.entrySaveTimer );
+            this.entrySaveTimer = setTimeout( () => void this.saveTerm(), 400 );
+        },
+
+        async saveTerm ()
+        {
+            const term = this.termEditor;
+
+            if ( term === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/term', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                // The image rides only when the editor actually holds
+                // one: absent leaves the document's value alone, so a
+                // hand-authored image survives a rename (the picker UI
+                // arrives with the media work).
+                body: JSON.stringify( {
+                    file: this.workspaceFile,
+                    id: term.id,
+                    name: term.name,
+                    description: term.description ?? '',
+                    ...( typeof term.image?.src === 'string' && term.image.src !== '' ? { image: term.image } : {} ),
+                } ),
+            } );
+            void this.refresh();
+        },
+
+        openSettings ()
+        {
+            if ( !this.confirmEntryLeave( () => this.openSettings() ) ) { return; }
+
+            this.enterWorkspace( 'settings' );
+            this.syncSettingsDrafts();
+            void this.loadMediaLibrary();
+        },
+
+        // The media library is a first-class workspace in the left
+        // rail (Mikey): browse, upload, rename, inspect usage - and a
+        // TRASH view (Mikey's model): library deletes move to trash/,
+        // restorable until someone empties it. Binaries are never
+        // journaled; labels in site.json are the tracked metadata.
+        openMediaWorkspace ()
+        {
+            if ( !this.confirmEntryLeave( () => this.openMediaWorkspace() ) ) { return; }
+
+            this.enterWorkspace( 'media' );
+            this.mediaView = 'library';
+            this.mediaQuery = '';
+            void this.loadMediaLibrary();
+        },
+
+        setMediaView ( view )
+        {
+            this.mediaView = view;
+            this.selectedMediaFile = null;
+            this.usageRows = null;
+        },
+
+        selectMediaFile ( file )
+        {
+            this.selectedMediaFile = file;
+            this.usageRows = null;
+
+            if ( this.mediaView === 'library' ) { void this.loadUsage( `/media/${file}` ); }
+        },
+
+        get selectedMedia ()
+        {
+            const list = this.mediaView === 'trash' ? this.mediaTrash : this.mediaLibrary;
+
+            return ( list ?? [] ).find( ( file ) => file.file === this.selectedMediaFile ) ?? null;
+        },
+
+        mediaLabelOf ( mediaFile )
+        {
+            return mediaFile.label ?? mediaFile.file;
+        },
+
+        mediaMatches ( mediaFile, query )
+        {
+            return this.mediaLabelOf( mediaFile ).toLowerCase().includes( query )
+                || mediaFile.file.toLowerCase().includes( query );
+        },
+
+        get filteredMedia ()
+        {
+            const query = this.mediaQuery.trim().toLowerCase();
+            const list = ( this.mediaView === 'trash' ? this.mediaTrash : this.mediaLibrary ) ?? [];
+
+            return query === '' ? list : list.filter( ( file ) => this.mediaMatches( file, query ) );
+        },
+
+        get mediaCountLine ()
+        {
+            if ( this.mediaView === 'trash' ) { return tFill( 'mediaCountFiles', { count: ( this.mediaTrash ?? [] ).length } ); }
+
+            const count = ( this.mediaLibrary ?? [] ).length;
+            const unused = this.unusedMediaCount;
+
+            return unused === 0
+                ? tFill( 'mediaCountFiles', { count } )
+                : tFill( 'mediaCountFilesUnused', { count, unused } );
+        },
+
+        async uploadLibraryFile ( event )
+        {
+            const file = event?.target?.files?.[ 0 ];
+
+            if ( file === undefined || file === null ) { return; }
+
+            this.mediaUploading = true;
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const response = await fetch( '/api/media', {
+                method: 'POST',
+                headers: {
+                    'content-type': file.type === '' ? 'application/octet-stream' : file.type,
+                    'x-casomer-name': encodeURIComponent( file.name ),
+                },
+                body: file,
+            } );
+
+            this.mediaUploading = false;
+            event.target.value = '';
+
+            if ( !response.ok ) { return; }
+
+            const body = await response.json();
+
+            await this.loadMediaLibrary();
+            this.mediaView = 'library';
+            this.selectMediaFile( String( body.src ?? '' ).split( '/' ).pop() ?? '' );
+        },
+
+        // The media library (SCHEMA 13.4): what lives in media/, its
+        // labels, usage counts, and what waits in the trash.
+        async loadMediaLibrary ()
+        {
+            const response = await fetch( '/api/media-library' );
+
+            if ( !response.ok ) { return; }
+
+            const body = await response.json();
+
+            this.mediaLibrary = body.files;
+            this.mediaTrash = body.trash ?? [];
+        },
+
+        // The media-tracking choice (Mikey: "let the user decide"):
+        // off keeps binaries out of git via managed .gitignore lines;
+        // labels and metadata always version.
+        get mediaTracked ()
+        {
+            return this.snapshot?.config?.media?.track !== false;
+        },
+
+        async toggleMediaTracking ()
+        {
+            const track = !this.mediaTracked;
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/media-tracking', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { track } ),
+            } );
+            void this.refresh();
+        },
+
+        // Label edits propagate on the KEYSTROKE (Mikey: "can that be
+        // more responsive?"): the local library entry updates
+        // immediately - card, header, and search react live - and the
+        // journaled write debounces behind it.
+        setMediaLabel ( file, label )
+        {
+            const entry = ( this.mediaLibrary ?? [] ).find( ( candidate ) => candidate.file === file );
+
+            if ( entry !== undefined )
+            {
+                if ( label.trim() === '' ) { delete entry.label; }
+                else { entry.label = label; }
+            }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            clearTimeout( this.mediaLabelTimer );
+            this.mediaLabelTimer = setTimeout( () => void this.saveMediaLabel( file, label ), 400 );
+        },
+
+        async saveMediaLabel ( file, label )
+        {
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/media', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file, label } ),
+            } );
+        },
+
+        // Moving to trash is reversible, so it asks no confirm; the
+        // permanent verbs in the trash view do.
+        async trashMedia ( file )
+        {
+            await fetch( '/api/media', {
+                method: 'DELETE',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file } ),
+            } );
+            await this.loadMediaLibrary();
+
+            if ( this.selectedMediaFile === file && this.mediaView === 'library' ) { this.selectedMediaFile = null; }
+        },
+
+        async trashUnusedMedia ()
+        {
+            for ( const file of ( this.mediaLibrary ?? [] ).filter( ( candidate ) => candidate.references === 0 ) )
+            {
+                await this.trashMedia( file.file );
+            }
+        },
+
+        async restoreMedia ( file )
+        {
+            await fetch( '/api/media-trash', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file, action: 'restore' } ),
+            } );
+            await this.loadMediaLibrary();
+
+            if ( this.selectedMediaFile === file ) { this.selectedMediaFile = null; }
+        },
+
+        mediaSizeLabel ( size )
+        {
+            if ( size < 1024 ) { return `${size} B`; }
+            if ( size < 1024 * 1024 ) { return `${Math.round( size / 1024 )} KB`; }
+
+            return `${( size / ( 1024 * 1024 ) ).toFixed( 1 )} MB`;
+        },
+
+        mediaIsImage ( name )
+        {
+            return /\.(png|jpe?g|gif|webp|avif|svg)$/i.test( name );
+        },
+
+        get unusedMediaCount ()
+        {
+            return ( this.mediaLibrary ?? [] ).filter( ( file ) => file.references === 0 ).length;
+        },
+
+        // The settings drafts read from the snapshot. Split out of
+        // openSettings so a journal undo can resync them in place
+        // (Mikey's report: a restored color came back on disk but not
+        // on screen until a reload).
+        syncSettingsDrafts ()
+        {
+            this.siteNameDraft = this.snapshot?.config?.name ?? '';
+
+            const theme = this.snapshot?.config?.theme;
+
+            const textDraft = {};
+
+            for ( const element of [ 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ] )
+            {
+                textDraft[ element ] = {
+                    size: theme?.text?.[ element ]?.size ?? '',
+                    font: theme?.text?.[ element ]?.font ?? '',
+                };
+            }
+
+            this.themeDraft = {
+                colors: JSON.parse( JSON.stringify( theme?.families?.colors ?? {} ) ),
+                spacing: JSON.parse( JSON.stringify( theme?.families?.spacing ?? {} ) ),
+                layout: {
+                    gutter: theme?.layout?.gutter ?? '',
+                    width: theme?.layout?.width ?? '',
+                },
+                text: textDraft,
+                resources: JSON.parse( JSON.stringify( theme?.resources ?? [] ) ),
+                pendingColors: [],
+                removedColors: [],
+            };
+        },
+
+        // ---- Site meta: the creation-time choices, revisitable ----
+
+        // Site identity (Mikey's note): a display name that overrides
+        // the folder-derived project name everywhere and joins every
+        // page's document title, and the one-square-image site icon.
+        // The media picker (SCHEMA 13.4): one modal for every image
+        // and file field - drop or browse, caption and alt for
+        // images, and the derived-alt chain previewed honestly.
+        openMediaPicker ( kind, target, key, notify )
+        {
+            const current = target[ key ];
+            const value = current !== null && typeof current === 'object' ? current : {};
+
+            this.mediaPicker = {
+                kind,
+                target,
+                key,
+                notify,
+                uploading: false,
+                dropActive: false,
+                hadValue: typeof value.src === 'string' && value.src !== '',
+                draft: {
+                    src: typeof value.src === 'string' ? value.src : '',
+                    alt: typeof value.alt === 'string' ? value.alt : '',
+                    caption: typeof value.caption === 'string' ? value.caption : '',
+                    name: typeof value.name === 'string' ? value.name : '',
+                    size: typeof value.size === 'number' ? value.size : 0,
+                },
+            };
+            void this.loadMediaLibrary();
+        },
+
+        // The library inside the picker (SCHEMA 13.4's owed piece):
+        // pick an existing upload instead of re-uploading. Image
+        // slots offer only images; file slots offer everything.
+        get mediaPickerLibrary ()
+        {
+            const files = this.mediaLibrary ?? [];
+
+            return this.mediaPicker?.kind === 'file' ? files : files.filter( ( file ) => this.mediaIsImage( file.file ) );
+        },
+
+        pickLibraryMedia ( mediaFile )
+        {
+            const picker = this.mediaPicker;
+
+            if ( picker === null ) { return; }
+
+            picker.draft.src = mediaFile.url;
+            picker.draft.name = this.mediaLabelOf( mediaFile );
+            picker.draft.size = mediaFile.size;
+        },
+
+        // "Choose from media library" (Mikey): a button on the picker
+        // opening a searchable modal of every library thumb.
+        openMediaBrowse ()
+        {
+            this.mediaBrowse = { query: '' };
+            void this.loadMediaLibrary();
+            this.$nextTick( () => this.$refs.mediaBrowseInput?.focus() );
+        },
+
+        get mediaBrowseResults ()
+        {
+            const query = ( this.mediaBrowse?.query ?? '' ).trim().toLowerCase();
+
+            return query === ''
+                ? this.mediaPickerLibrary
+                : this.mediaPickerLibrary.filter( ( file ) => this.mediaMatches( file, query ) );
+        },
+
+        chooseBrowseMedia ( mediaFile )
+        {
+            this.pickLibraryMedia( mediaFile );
+            this.mediaBrowse = null;
+        },
+
+        async mediaFileChosen ( chosen )
+        {
+            const picker = this.mediaPicker;
+            const file = chosen instanceof File ? chosen : chosen?.target?.files?.[ 0 ];
+
+            if ( picker === null || file === undefined || file === null ) { return; }
+
+            picker.uploading = true;
+
+            const response = await fetch( '/api/media', {
+                method: 'POST',
+                headers: {
+                    'content-type': file.type === '' ? 'application/octet-stream' : file.type,
+                    'x-casomer-name': encodeURIComponent( file.name ),
+                },
+                body: file,
+            } );
+
+            picker.uploading = false;
+
+            if ( !response.ok ) { return; }
+
+            const body = await response.json();
+
+            picker.draft.src = body.src;
+            picker.draft.name = body.name;
+            picker.draft.size = body.size;
+        },
+
+        mediaDropped ( event )
+        {
+            const file = event.dataTransfer?.files?.[ 0 ];
+
+            if ( this.mediaPicker !== null ) { this.mediaPicker.dropActive = false; }
+            if ( file !== undefined ) { void this.mediaFileChosen( file ); }
+        },
+
+        applyMediaPicker ()
+        {
+            const picker = this.mediaPicker;
+
+            if ( picker === null || picker.draft.src === '' ) { return; }
+
+            const draft = picker.draft;
+
+            picker.target[ picker.key ] = picker.kind === 'file'
+                ? { src: draft.src, name: draft.name, ...( draft.size > 0 ? { size: draft.size } : {} ) }
+                : {
+                        src: draft.src,
+                        ...( draft.name === '' ? {} : { name: draft.name } ),
+                        ...( draft.alt.trim() === '' ? {} : { alt: draft.alt.trim() } ),
+                        ...( draft.caption.trim() === '' ? {} : { caption: draft.caption.trim() } ),
+                    };
+            picker.notify();
+            this.mediaPicker = null;
+        },
+
+        clearMediaPicker ()
+        {
+            const picker = this.mediaPicker;
+
+            if ( picker === null ) { return; }
+
+            picker.target[ picker.key ] = { src: '' };
+            picker.notify();
+            this.mediaPicker = null;
+        },
+
+        // What a screen reader would actually get, spoken up front:
+        // the same chain the compiler derives at render time.
+        get mediaAltPreview ()
+        {
+            const draft = this.mediaPicker?.draft;
+
+            if ( draft === undefined ) { return ''; }
+
+            const spoken = draft.alt.trim() !== ''
+                ? draft.alt.trim()
+                : ( draft.caption.trim() !== '' ? draft.caption.trim() : this.humanizedMediaName( draft.name ) );
+
+            return spoken === '' ? t( 'mediaAltSilent' ) : tFill( 'mediaAltHear', { alt: spoken } );
+        },
+
+        humanizedMediaName ( name )
+        {
+            if ( typeof name !== 'string' ) { return ''; }
+
+            const base = name.replace( /\.[A-Za-z0-9]+$/, '' );
+
+            if ( /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test( base ) ) { return ''; }
+
+            const spoken = base.replace( /[-_]+/g, ' ' ).trim();
+
+            return /[a-zA-Z]/.test( spoken ) ? spoken : '';
+        },
+
+        // ---- Menus (SCHEMA 12.5): their own workspace, like ----
+        // collections and taxonomies. The nav lists every menu; the
+        // center shows one menu's item tree; the inspector edits the
+        // selected item. Items nest freely: rows indent by depth,
+        // drag reorders (a family travels with its parent), and the
+        // indent/outdent buttons nest and un-nest.
+        get menuNames ()
+        {
+            return Object.keys( this.snapshot?.config?.menus ?? {} );
+        },
+
+        openMenu ( name )
+        {
+            if ( !this.confirmEntryLeave( () => this.openMenu( name ) ) ) { return; }
+
+            this.enterWorkspace( 'menu' );
+            this.menuName = name;
+            this.syncMenuEditor();
+        },
+
+        // The draft mirrors the stored record with transient row keys
+        // (x-for and Sortable both need stable identities). The
+        // pre-nesting spelling - a bare item array - reads as items.
+        syncMenuEditor ()
+        {
+            const record = this.snapshot?.config?.menus?.[ this.menuName ];
+
+            if ( record === undefined )
+            {
+                this.menuEditor = null;
+                return;
+            }
+
+            const tag = ( items ) => ( Array.isArray( items ) ? items : [] ).map( ( item ) => ( {
+                key: `mi-${this.menuKeySeq += 1}`,
+                page: item.page ?? '',
+                collection: item.collection ?? '',
+                taxonomy: item.taxonomy ?? '',
+                label: item.label ?? '',
+                url: item.url ?? '',
+                auto: item.auto ?? '',
+                items: tag( item.items ),
+            } ) );
+
+            this.menuEditor = {
+                topLevelPages: !Array.isArray( record ) && record.topLevelPages === true,
+                childPages: !Array.isArray( record ) && record.childPages === true,
+                collectionIndexes: !Array.isArray( record ) && record.collectionIndexes === true,
+                taxonomyIndexes: !Array.isArray( record ) && record.taxonomyIndexes === true,
+                items: tag( Array.isArray( record ) ? record : record.items ),
+            };
+            this.menuNameDraft = this.menuName ?? '';
+            this.applyMenuAutoRules();
+        },
+
+        // Materialize and prune (SCHEMA 12.5, Mikey: auto-included
+        // items are real reorderable rows). Each rule adds rows the
+        // user can reorder and relabel; a row whose target stops
+        // qualifying for its rule is pruned. Nothing here marks the
+        // editor dirty - the rows persist with the user's next edit.
+        applyMenuAutoRules ()
+        {
+            const editor = this.menuEditor;
+
+            if ( editor === null ) { return; }
+
+            const freshItem = ( fields ) => ( {
+                key: `mi-${this.menuKeySeq += 1}`,
+                page: '',
+                collection: '',
+                taxonomy: '',
+                label: '',
+                url: '',
+                auto: '',
+                items: [],
+                ...fields,
+            } );
+            const pageQualifies = ( id, topLevel ) =>
+            {
+                const page = this.pages.find( ( candidate ) => candidate.id === id );
+
+                return page !== undefined && page.draft !== true && ( !topLevel || page.parent === undefined );
+            };
+            const prune = ( items ) =>
+            {
+                for ( let index = items.length - 1; index >= 0; index -= 1 )
+                {
+                    const item = items[ index ];
+
+                    prune( item.items );
+
+                    const stale
+                        = ( item.auto === 'topLevelPages' && !pageQualifies( item.page, true ) )
+                            || ( item.auto === 'childPages' && !pageQualifies( item.page, false ) )
+                            || ( item.auto === 'collectionIndexes' && !this.collections.some( ( doc ) => doc.file === `${item.collection}.json` && doc.index !== false ) )
+                            || ( item.auto === 'taxonomyIndexes' && !this.taxonomies.some( ( doc ) => doc.file === `${item.taxonomy}.json` && doc.index !== false ) );
+
+                    if ( stale ) { items.splice( index, 1 ); }
+                }
+            };
+
+            prune( editor.items );
+
+            const referencedPages = new Set();
+            const referencedCollections = new Set();
+            const referencedTaxonomies = new Set();
+            const collect = ( items ) =>
+            {
+                for ( const item of items )
+                {
+                    if ( item.page !== '' ) { referencedPages.add( item.page ); }
+                    if ( item.collection !== '' ) { referencedCollections.add( item.collection ); }
+                    if ( item.taxonomy !== '' ) { referencedTaxonomies.add( item.taxonomy ); }
+
+                    collect( item.items );
+                }
+            };
+
+            collect( editor.items );
+
+            if ( editor.childPages )
+            {
+                for ( const item of editor.items )
+                {
+                    if ( item.page === '' ) { continue; }
+
+                    for ( const page of this.pages )
+                    {
+                        if ( page.parent !== item.page || referencedPages.has( page.id ) || page.draft === true ) { continue; }
+
+                        item.items.push( freshItem( { page: page.id, auto: 'childPages' } ) );
+                        referencedPages.add( page.id );
+                    }
+                }
+            }
+
+            if ( editor.topLevelPages )
+            {
+                for ( const page of this.pages )
+                {
+                    if ( page.parent !== undefined || page.draft === true || referencedPages.has( page.id ) ) { continue; }
+
+                    editor.items.push( freshItem( { page: page.id, auto: 'topLevelPages' } ) );
+                    referencedPages.add( page.id );
+                }
+            }
+
+            if ( editor.collectionIndexes )
+            {
+                for ( const doc of this.collections )
+                {
+                    const stem = doc.file.replace( '.json', '' );
+
+                    if ( doc.index === false || referencedCollections.has( stem ) ) { continue; }
+
+                    editor.items.push( freshItem( { collection: stem, auto: 'collectionIndexes' } ) );
+                    referencedCollections.add( stem );
+                }
+            }
+
+            if ( editor.taxonomyIndexes )
+            {
+                for ( const doc of this.taxonomies )
+                {
+                    const stem = doc.file.replace( '.json', '' );
+
+                    if ( doc.index === false || referencedTaxonomies.has( stem ) ) { continue; }
+
+                    editor.items.push( freshItem( { taxonomy: stem, auto: 'taxonomyIndexes' } ) );
+                    referencedTaxonomies.add( stem );
+                }
+            }
+        },
+
+        get menuMeta ()
+        {
+            const count = this.menuRows.length;
+
+            return tFill( count === 1 ? 'menuMetaOne' : 'menuMetaMany', { count } );
+        },
+
+        get menuRows ()
+        {
+            const rows = [];
+            const walk = ( items, depth ) =>
+            {
+                for ( const item of items )
+                {
+                    rows.push( { item, depth } );
+                    walk( item.items, depth + 1 );
+                }
+            };
+
+            walk( this.menuEditor?.items ?? [], 0 );
+            return rows;
+        },
+
+        menuFind ( key, items = null, parent = null )
+        {
+            const list = items ?? this.menuEditor?.items ?? [];
+
+            for ( const [ index, item ] of list.entries() )
+            {
+                if ( item.key === key ) { return { item, list, index, parent }; }
+
+                const found = this.menuFind( key, item.items, item );
+
+                if ( found !== null ) { return found; }
+            }
+
+            return null;
+        },
+
+        get selectedMenuItem ()
+        {
+            return this.selectedMenuKey === null ? null : this.menuFind( this.selectedMenuKey )?.item ?? null;
+        },
+
+        menuItemKind ( item )
+        {
+            if ( item.page !== '' ) { return 'page'; }
+            if ( item.collection !== '' ) { return 'collection'; }
+            if ( item.taxonomy !== '' ) { return 'taxonomy'; }
+            if ( item.url !== '' || this.menuItemIsLink( item ) ) { return 'url'; }
+
+            return 'group';
+        },
+
+        // A custom-link row stays a link while its url is still being
+        // typed; the marker keeps it from reading as a group.
+        menuItemIsLink ( item )
+        {
+            return item.isLink === true;
+        },
+
+        // The row's display name: the override, or the target's own.
+        menuItemTitle ( item )
+        {
+            if ( item.label !== '' ) { return item.label; }
+
+            const kind = this.menuItemKind( item );
+
+            if ( kind === 'page' ) { return this.pages.find( ( page ) => page.id === item.page )?.title ?? t( 'kindPage' ); }
+            if ( kind === 'collection' ) { return this.collections.find( ( candidate ) => candidate.file === `${item.collection}.json` )?.label ?? item.collection; }
+            if ( kind === 'taxonomy' ) { return this.taxonomies.find( ( candidate ) => candidate.file === `${item.taxonomy}.json` )?.label ?? item.taxonomy; }
+            if ( kind === 'url' ) { return item.url; }
+
+            return t( 'menuGroupWord' );
+        },
+
+        // The row's second line: the public address, or the kind.
+        menuItemNote ( item )
+        {
+            const kind = this.menuItemKind( item );
+
+            if ( kind === 'page' )
+            {
+                const path = this.pagePathOf( item.page );
+
+                return path.length === 0 ? '/' : `/${path.join( '/' )}/`;
+            }
+
+            if ( kind === 'collection' )
+            {
+                const doc = this.collections.find( ( candidate ) => candidate.file === `${item.collection}.json` );
+                const segments = typeof doc?.parent === 'string' ? this.pagePathOf( doc.parent ) : [];
+
+                return `/${[ ...segments, item.collection ].join( '/' )}/`;
+            }
+
+            if ( kind === 'taxonomy' ) { return `/${item.taxonomy}/`; }
+            if ( kind === 'url' ) { return item.url === '' ? t( 'menuUrlPlaceholder' ) : item.url; }
+
+            return t( 'menuGroupNote' );
+        },
+
+        // Only public targets are offered: a private index has no
+        // address for a menu to point at (13.5).
+        get menuAddCollections ()
+        {
+            return this.collections.filter( ( candidate ) => candidate.index !== false );
+        },
+
+        get menuAddTaxonomies ()
+        {
+            return this.taxonomies.filter( ( candidate ) => candidate.index !== false );
+        },
+
+        addMenuEntry ( kind, value = '' )
+        {
+            if ( this.menuEditor === null ) { return; }
+
+            const item = {
+                key: `mi-${this.menuKeySeq += 1}`,
+                page: kind === 'page' ? value : '',
+                collection: kind === 'collection' ? value : '',
+                taxonomy: kind === 'taxonomy' ? value : '',
+                label: kind === 'group' ? t( 'menuNewGroup' ) : '',
+                url: '',
+                auto: '',
+                ...( kind === 'url' ? { isLink: true } : {} ),
+                items: [],
+            };
+
+            this.menuEditor.items.push( item );
+            this.selectMenuRow( item.key );
+            this.menuAddOpen = false;
+            this.sortEpoch += 1;
+            this.markMenuEditorDirty();
+        },
+
+        selectMenuRow ( key )
+        {
+            this.selectedMenuKey = key;
+            this.tab = 'content';
+        },
+
+        // The item's TYPE lives on its Settings tab (Mikey): page,
+        // collection, taxonomy, custom link, heading. Switching keeps
+        // the label and the family, resets the target, and makes an
+        // auto row an ordinary one.
+        get menuKindOptions ()
+        {
+            return [
+                { kind: 'page', label: t( 'typePage' ), available: this.pages.length > 0 },
+                { kind: 'collection', label: t( 'typeCollection' ), available: this.menuAddCollections.length > 0 },
+                { kind: 'taxonomy', label: t( 'typeTaxonomy' ), available: this.menuAddTaxonomies.length > 0 },
+                { kind: 'url', label: t( 'typeCustom' ), available: true },
+                { kind: 'group', label: t( 'typeHeading' ), available: true },
+            ].filter( ( option ) => option.available );
+        },
+
+        setMenuItemKind ( kind )
+        {
+            const item = this.selectedMenuItem;
+
+            if ( item === null || this.menuItemKind( item ) === kind ) { return; }
+
+            item.page = kind === 'page' ? ( this.pages[ 0 ]?.id ?? '' ) : '';
+            item.collection = kind === 'collection' ? ( this.menuAddCollections[ 0 ]?.file.replace( '.json', '' ) ?? '' ) : '';
+            item.taxonomy = kind === 'taxonomy' ? ( this.menuAddTaxonomies[ 0 ]?.file.replace( '.json', '' ) ?? '' ) : '';
+            item.url = '';
+            item.isLink = kind === 'url';
+            item.auto = '';
+
+            if ( kind === 'group' && item.label === '' ) { item.label = t( 'menuNewGroup' ); }
+
+            this.markMenuEditorDirty();
+        },
+
+        // The menu's name is a setting (Mikey): token-shaped, and a
+        // rename sweeps every repeat source referencing it so nothing
+        // strands. Empty, invalid, or colliding input restores the
+        // current name quietly.
+        async renameMenu ()
+        {
+            const from = this.menuName;
+            const slug = this.menuNameDraft.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' );
+
+            if ( from === null || slug === '' || slug === from )
+            {
+                this.menuNameDraft = from ?? '';
+                return;
+            }
+
+            const existing = this.snapshot?.config?.menus ?? {};
+            let unique = slug;
+            let suffix = 2;
+
+            while ( existing[ unique ] !== undefined )
+            {
+                unique = `${slug}-${suffix}`;
+                suffix += 1;
+            }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const response = await fetch( '/api/menu-rename', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { from, to: unique } ),
+            } );
+
+            if ( !response.ok )
+            {
+                this.menuNameDraft = from;
+                return;
+            }
+
+            this.menuName = unique;
+            this.menuNameDraft = unique;
+            void this.refresh();
+        },
+
+        menuCanIndent ( key )
+        {
+            const found = this.menuFind( key );
+
+            return found !== null && found.index > 0;
+        },
+
+        menuCanOutdent ( key )
+        {
+            return ( this.menuFind( key )?.parent ?? null ) !== null;
+        },
+
+        // Indent nests under the previous sibling; outdent lifts to a
+        // following sibling of the parent. The family rides along.
+        indentMenuRow ( key )
+        {
+            const found = this.menuFind( key );
+
+            if ( found === null || found.index === 0 ) { return; }
+
+            const previous = found.list[ found.index - 1 ];
+
+            found.list.splice( found.index, 1 );
+            previous.items.push( found.item );
+            this.sortEpoch += 1;
+            this.markMenuEditorDirty();
+        },
+
+        outdentMenuRow ( key )
+        {
+            const found = this.menuFind( key );
+
+            if ( found === null || found.parent === null ) { return; }
+
+            const parentFound = this.menuFind( found.parent.key );
+
+            if ( parentFound === null ) { return; }
+
+            found.list.splice( found.index, 1 );
+            parentFound.list.splice( parentFound.index + 1, 0, found.item );
+            this.sortEpoch += 1;
+            this.markMenuEditorDirty();
+        },
+
+        // Drag semantics: the dragged row lands after the nearest row
+        // above it that is outside its own family. An open parent
+        // there means the drop becomes its first child (that is where
+        // it sits visually); anything else means a following sibling
+        // at that row's depth. The family travels with its parent.
+        sortMenuRows ( key, element )
+        {
+            const found = this.menuFind( key );
+
+            if ( found === null ) { return; }
+
+            const family = new Set();
+            const collect = ( item ) =>
+            {
+                family.add( item.key );
+                for ( const child of item.items ) { collect( child ); }
+            };
+
+            collect( found.item );
+
+            const domKeys = [ ...element.querySelectorAll( '[data-sort-id]' ) ].map( ( row ) => row.dataset.sortId );
+            const at = domKeys.indexOf( key );
+            let aboveKey = null;
+
+            for ( let position = at - 1; position >= 0; position -= 1 )
+            {
+                if ( !family.has( domKeys[ position ] ) )
+                {
+                    aboveKey = domKeys[ position ];
+                    break;
+                }
+            }
+
+            found.list.splice( found.index, 1 );
+
+            if ( aboveKey === null )
+            {
+                this.menuEditor.items.unshift( found.item );
+            }
+            else
+            {
+                const above = this.menuFind( aboveKey );
+
+                if ( above === null ) { this.menuEditor.items.push( found.item ); }
+                else if ( above.item.items.length > 0 ) { above.item.items.unshift( found.item ); }
+                else { above.list.splice( above.index + 1, 0, found.item ); }
+            }
+
+            this.sortEpoch += 1;
+            this.markMenuEditorDirty();
+        },
+
+        menuRuleLabel ( rule )
+        {
+            return t( `menuRule_${rule}` );
+        },
+
+        get tFillMenuAutoNote ()
+        {
+            return tFill( 'menuAutoNote', { rule: this.menuRuleLabel( this.selectedMenuItem?.auto ?? '' ) } );
+        },
+
+        // One toggle per auto-include rule: on materializes the
+        // rule's rows, off withdraws exactly that rule's rows.
+        toggleMenuRule ( rule )
+        {
+            const editor = this.menuEditor;
+
+            if ( editor === null ) { return; }
+
+            editor[ rule ] = !editor[ rule ];
+
+            if ( editor[ rule ] )
+            {
+                this.applyMenuAutoRules();
+            }
+            else
+            {
+                const strip = ( items ) =>
+                {
+                    for ( let index = items.length - 1; index >= 0; index -= 1 )
+                    {
+                        strip( items[ index ].items );
+
+                        if ( items[ index ].auto === rule ) { items.splice( index, 1 ); }
+                    }
+                };
+
+                strip( editor.items );
+            }
+
+            if ( this.selectedMenuKey !== null && this.menuFind( this.selectedMenuKey ) === null ) { this.selectedMenuKey = null; }
+
+            this.sortEpoch += 1;
+            this.markMenuEditorDirty();
+        },
+
+        markMenuEditorDirty ()
+        {
+            clearTimeout( this.menusSaveTimer );
+            this.menusSaveTimer = setTimeout( () => void this.saveMenuEditor(), 500 );
+        },
+
+        // The whole menus record saves together: the open menu from
+        // the draft (row keys stripped), every other menu passed
+        // through - the server migrates any bare-array spellings.
+        async saveMenuEditor ()
+        {
+            if ( this.menuEditor === null || this.menuName === null ) { return; }
+
+            const strip = ( items ) => items.map( ( item ) => ( {
+                ...( item.page === '' ? {} : { page: item.page } ),
+                ...( item.collection === '' ? {} : { collection: item.collection } ),
+                ...( item.taxonomy === '' ? {} : { taxonomy: item.taxonomy } ),
+                ...( item.label === '' ? {} : { label: item.label } ),
+                ...( item.url === '' ? {} : { url: item.url } ),
+                ...( item.auto === '' ? {} : { auto: item.auto } ),
+                ...( item.items.length === 0 ? {} : { items: strip( item.items ) } ),
+            } ) );
+
+            const menus = { ...( this.snapshot?.config?.menus ?? {} ) };
+
+            menus[ this.menuName ] = {
+                ...Object.fromEntries( [ 'topLevelPages', 'childPages', 'collectionIndexes', 'taxonomyIndexes' ]
+                    .filter( ( rule ) => this.menuEditor[ rule ] === true )
+                    .map( ( rule ) => [ rule, true ] ) ),
+                items: strip( this.menuEditor.items ),
+            };
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/menus', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { menus } ),
+            } );
+            void this.refresh();
+        },
+
+        // Chrome dark mode: the boot script in index.html resolves
+        // the first paint (stored choice, else the OS preference);
+        // the toggle stores an explicit choice per browser. Only the
+        // chrome re-voices - site previews keep the site's own look.
+        toggleTheme ()
+        {
+            this.themeDark = !this.themeDark;
+
+            if ( this.themeDark ) { document.documentElement.dataset.theme = 'dark'; }
+            else { delete document.documentElement.dataset.theme; }
+
+            // In private mode the choice just does not persist.
+            try
+            {
+                localStorage.setItem( 'studio-theme', this.themeDark ? 'dark' : 'light' );
+            }
+            catch
+            {
+                /* storage blocked */
+            }
+        },
+
+        get folderName ()
+        {
+            return this.snapshot?.folderName ?? '';
+        },
+
+        get siteIcon ()
+        {
+            return this.snapshot?.siteIcon ?? '';
+        },
+
+        get siteNameNoteLine ()
+        {
+            return tFill( 'siteNameNote', { folder: this.folderName } );
+        },
+
+        markSiteNameDirty ()
+        {
+            const draft = typeof this.siteNameDraft === 'string' ? this.siteNameDraft.trim() : '';
+
+            if ( this.snapshot !== null ) { this.snapshot.projectName = draft === '' ? this.folderName : draft; }
+
+            clearTimeout( this.siteNameTimer );
+            this.siteNameTimer = setTimeout( () => void this.saveSiteName( this.siteNameDraft ), 500 );
+        },
+
+        async saveSiteName ( name )
+        {
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/site-meta', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { name: typeof name === 'string' ? name : '' } ),
+            } );
+            void this.refresh();
+        },
+
+        async uploadSiteIcon ( event )
+        {
+            const file = event.target.files?.[ 0 ];
+
+            if ( file === undefined ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/site-icon', {
+                method: 'POST',
+                headers: { 'content-type': file.type },
+                body: file,
+            } );
+            event.target.value = '';
+            void this.refresh();
+        },
+
+        async removeSiteIcon ()
+        {
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/site-icon', { method: 'DELETE' } );
+            void this.refresh();
+        },
+
+        get declaredUse ()
+        {
+            return this.snapshot?.declaredUse ?? 'personal';
+        },
+
+        // Switching to commercial repeats the micro-assent the CLI
+        // collects at init (BUSINESS 5.4); back to personal is direct.
+        requestUseChange ( value )
+        {
+            if ( value === this.declaredUse ) { return; }
+
+            if ( value === 'commercial' )
+            {
+                this.commercialAssentOpen = true;
+                return;
+            }
+
+            void this.setDeclaredUse( 'personal' );
+        },
+
+        async setDeclaredUse ( value )
+        {
+            this.commercialAssentOpen = false;
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/site-meta', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { use: value } ),
+            } );
+            void this.refresh();
+        },
+
+        get remoteUrl ()
+        {
+            return this.snapshot?.remoteUrl ?? '';
+        },
+
+        openRemoteEdit ()
+        {
+            this.remoteDraft = this.remoteUrl;
+            this.remoteEditOpen = true;
+        },
+
+        async saveRemote ()
+        {
+            this.remoteEditOpen = false;
+            await fetch( '/api/remote', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { url: this.remoteDraft.trim() } ),
+            } );
+            void this.refresh();
+        },
+
+        get lastPublishedLabel ()
+        {
+            const at = this.snapshot?.lastPublishedAt;
+
+            if ( at === undefined || at === '' ) { return t( 'neverPublished' ); }
+
+            return new Date( at ).toLocaleString();
+        },
+
+        get spacingTokenNames ()
+        {
+            return Object.keys( this.snapshot?.config?.theme?.families?.spacing ?? {} );
+        },
+
+        // Typography settings (Mikey): per-element size and font for
+        // p and h1-h6, plus the third-party resources repeater.
+        // Custom theme colors (Mikey): unbounded, custom-named; the
+        // guaranteed three edit but never delete.
+        get coreColorRoles ()
+        {
+            return [ 'primary', 'secondary', 'accent' ];
+        },
+
+        addThemeColor ()
+        {
+            this.themeDraft?.pendingColors?.push( { name: '', value: '#cccccc' } );
+        },
+
+        removePendingColor ( index )
+        {
+            this.themeDraft?.pendingColors?.splice( index, 1 );
+        },
+
+        removeThemeColor ( name )
+        {
+            if ( this.coreColorRoles.includes( name ) || this.themeDraft === null ) { return; }
+
+            delete this.themeDraft.colors[ name ];
+            this.themeDraft.removedColors.push( name );
+            this.markThemeDirty();
+        },
+
+        get typeElements ()
+        {
+            return [ 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ];
+        },
+
+        typeElementLabel ( element )
+        {
+            return element === 'p' ? t( 'typeParagraph' ) : element.toUpperCase();
+        },
+
+        // The same formula the compiler uses for the default scale,
+        // shown as placeholders so "default" is a number, not a word.
+        typeDefaultSize ( element )
+        {
+            const raw = Number.parseFloat( this.snapshot?.config?.theme?.families?.typography?.scale ?? '1.25' );
+            const scale = Number.isFinite( raw ) && raw > 1 ? raw : 1.25;
+            const powers = { p: 0, h6: 0, h5: 1, h4: 2, h3: 3, h2: 4, h1: 5 };
+
+            return `${Number( Math.pow( scale, powers[ element ] ?? 0 ).toFixed( 3 ) )}rem`;
+        },
+
+        get typeDefaultFont ()
+        {
+            return this.snapshot?.config?.theme?.families?.typography?.sans ?? 'sans-serif';
+        },
+
+        get typographyFontTokens ()
+        {
+            return Object.keys( this.snapshot?.config?.theme?.families?.typography ?? {} ).filter( ( token ) => token !== 'scale' );
+        },
+
+        addThemeResource ()
+        {
+            this.themeDraft?.resources?.push( '' );
+        },
+
+        removeThemeResource ( index )
+        {
+            this.themeDraft?.resources?.splice( index, 1 );
+            this.markThemeDirty();
+        },
+
+        get widthTokenNames ()
+        {
+            return Object.keys( this.snapshot?.config?.theme?.families?.widths ?? {} );
+        },
+
+        markThemeDirty ()
+        {
+            this.dirty += 1;
+            clearTimeout( this.themeSaveTimer );
+            this.themeSaveTimer = setTimeout( () => void this.saveTheme(), 400 );
+        },
+
+        async saveTheme ()
+        {
+            const draft = this.themeDraft;
+
+            if ( draft === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/theme', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( {
+                    colors: {
+                        ...JSON.parse( JSON.stringify( draft.colors ) ),
+                        ...Object.fromEntries( ( draft.pendingColors ?? [] )
+                            .filter( ( pending ) => /^[a-z][a-z0-9-]*$/.test( pending.name ) && draft.colors[ pending.name ] === undefined )
+                            .map( ( pending ) => [ pending.name, pending.value ] ) ),
+                    },
+                    removeColors: JSON.parse( JSON.stringify( draft.removedColors ?? [] ) ),
+                    families: { spacing: JSON.parse( JSON.stringify( draft.spacing ) ) },
+                    layout: JSON.parse( JSON.stringify( draft.layout ) ),
+                    text: JSON.parse( JSON.stringify( draft.text ?? {} ) ),
+                    resources: ( draft.resources ?? [] ).map( ( url ) => String( url ).trim() ).filter( ( url ) => url !== '' ),
+                } ),
+            } );
+
+            for ( const pending of draft.pendingColors ?? [] )
+            {
+                if ( /^[a-z][a-z0-9-]*$/.test( pending.name ) && draft.colors[ pending.name ] === undefined )
+                {
+                    draft.colors[ pending.name ] = pending.value;
+                }
+            }
+
+            draft.pendingColors = ( draft.pendingColors ?? [] ).filter( ( pending ) => draft.colors[ pending.name ] === undefined );
+            draft.removedColors = [];
+            void this.refresh();
+        },
+
+        // Creating a collection or taxonomy: the + opens the creation
+        // modal - a name and the public-index choice - and a new
+        // collection lands on its Fields view (EDITOR section 5).
+        startNavCreate ( kind )
+        {
+            this.navCreate = kind;
+            this.navCreateLabel = '';
+            this.navCreateIndex = true;
+            this.navCreateHierarchical = false;
+        },
+
+        // The modal's live caption: "Saved as events.json ...". The
+        // server owns the real name (collision suffixes); this mirrors
+        // its slugging for the preview.
+        get navCreateStem ()
+        {
+            const slug = this.navCreateLabel
+                .toLowerCase()
+                .replace( /[^a-z0-9]+/g, '-' )
+                .replace( /^-+|-+$/g, '' );
+
+            return slug === '' ? '…' : slug;
+        },
+
+        get navCreateSavedAs ()
+        {
+            if ( this.navCreate === 'menu' ) { return tFill( 'createSavedAsMenu', { name: this.navCreateStem } ); }
+            if ( this.navCreate === 'partial' ) { return tFill( 'createSavedAsPartial', { name: this.navCreateStem } ); }
+
+            return tFill( 'createSavedAs', { file: `${this.navCreateStem}.json` } );
+        },
+
+        get navCreateIndexNote ()
+        {
+            return this.navCreate === 'collection'
+                ? tFill( 'createPublicIndexNote', { stem: this.navCreateStem } )
+                : t( 'createPublicIndexNoteTaxonomy' );
+        },
+
+        async submitNavCreate ()
+        {
+            const kind = this.navCreate;
+            const label = this.navCreateLabel.trim();
+
+            this.navCreate = null;
+
+            if ( kind === null || label === '' ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            // A partial lives in site.json too; the server derives
+            // and dedupes the token name.
+            if ( kind === 'partial' )
+            {
+                const response = await fetch( '/api/partial', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { name: label } ),
+                } );
+
+                if ( !response.ok ) { return; }
+
+                const created = await response.json();
+
+                await this.refresh();
+                this.openSettings();
+                this.openSurface( created.name );
+                return;
+            }
+
+            // A menu is not a file: it lives in site.json under a
+            // token-shaped name derived from the label, suffixed on
+            // collision like the file kinds are.
+            if ( kind === 'menu' )
+            {
+                const stem = label.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' );
+
+                if ( stem === '' ) { return; }
+
+                const existing = this.snapshot?.config?.menus ?? {};
+                let unique = stem;
+                let suffix = 2;
+
+                while ( existing[ unique ] !== undefined )
+                {
+                    unique = `${stem}-${suffix}`;
+                    suffix += 1;
+                }
+
+                await fetch( '/api/menus', {
+                    method: 'PUT',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { menus: { ...existing, [ unique ]: { items: [] } } } ),
+                } );
+                await this.refresh();
+                this.openMenu( unique );
+                return;
+            }
+
+            const response = await fetch( kind === 'collection' ? '/api/collection' : '/api/taxonomy', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( {
+                    label,
+                    ...( this.navCreateIndex ? {} : { index: false } ),
+                    ...( kind === 'taxonomy' && this.navCreateHierarchical ? { hierarchical: true } : {} ),
+                } ),
+            } );
+
+            if ( !response.ok ) { return; }
+
+            const created = await response.json();
+
+            await this.refresh();
+
+            if ( kind === 'collection' )
+            {
+                this.openCollection( created.file );
+                await this.loadCollection();
+                this.openFields();
+            }
+            else { this.openTaxonomy( created.file ); }
+        },
+
+        // The delete dialog names its target: 'Delete "Latte art night"?'
+        // Row-level deletes aim the confirm modal at a specific row
+        // without selecting it first; everything else falls back to
+        // the current selection.
+        openRowDelete ( kind, id )
+        {
+            // An auto-included menu row cannot be deleted directly:
+            // the confirm offers to turn its rule off instead, keeping
+            // the siblings the rule added (Mikey).
+            if ( kind === 'menuItem' && ( this.menuFind( id )?.item.auto ?? '' ) !== '' ) { kind = 'menuAutoItem'; }
+
+            this.confirmRowId = id;
+            this.confirmTarget = kind;
+        },
+
+        cancelConfirm ()
+        {
+            this.confirmTarget = null;
+            this.confirmRowId = null;
+        },
+
+        get confirmName ()
+        {
+            if ( this.confirmTarget === 'block' ) { return this.selectionLabel; }
+            if ( this.confirmTarget === 'page' ) { return String( this.selectedPage?.title ?? '' ) || t( 'kindPage' ); }
+
+            if ( this.confirmTarget === 'entry' )
+            {
+                const row = this.confirmRowId === null ? undefined : this.collectionEditor?.entries?.find( ( entry ) => entry.id === this.confirmRowId );
+                const title = row !== undefined ? row.values?.title : this.entryEditor?.values?.title;
+
+                return String( title ?? '' ) || t( 'kindEntry' );
+            }
+
+            if ( this.confirmTarget === 'term' )
+            {
+                const row = this.confirmRowId === null ? undefined : this.taxonomyEditor?.terms?.find( ( term ) => term.id === this.confirmRowId );
+                const name = row !== undefined ? row.name : this.termEditor?.name;
+
+                return name === '' || name === undefined ? t( 'kindTerm' ) : name;
+            }
+
+            if ( this.confirmTarget === 'field' )
+            {
+                return this.fieldsDraft?.find( ( field ) => field.key === this.confirmRowId )?.label ?? t( 'kindField' );
+            }
+            if ( this.confirmTarget === 'collection' ) { return this.collectionDisplayLabel; }
+            if ( this.confirmTarget === 'taxonomy' ) { return this.taxonomyDisplayLabel; }
+            if ( this.confirmTarget === 'menu' ) { return this.menuName ?? ''; }
+            if ( this.confirmTarget === 'partial' ) { return String( this.confirmRowId ?? '' ); }
+            if ( this.confirmTarget === 'mediaForever' )
+            {
+                if ( this.confirmRowId === 'all' ) { return tFill( 'trashAllWord', { count: ( this.mediaTrash ?? [] ).length } ); }
+
+                const trashed = ( this.mediaTrash ?? [] ).find( ( file ) => file.file === this.confirmRowId );
+
+                return trashed === undefined ? String( this.confirmRowId ?? '' ) : this.mediaLabelOf( trashed );
+            }
+            if ( this.confirmTarget === 'entryLayout' )
+            {
+                const id = this.confirmRowId ?? this.sampleEntryId;
+                const entry = this.collectionEditor?.entries?.find( ( candidate ) => candidate.id === id );
+
+                return String( entry?.values?.title ?? '' ) || t( 'kindEntry' );
+            }
+            if ( this.confirmTarget === 'menuItem' || this.confirmTarget === 'menuAutoItem' )
+            {
+                const found = typeof this.confirmRowId === 'string' ? this.menuFind( this.confirmRowId ) : null;
+
+                return found === null ? '' : this.menuItemTitle( found.item );
+            }
+
+            return '';
+        },
+
+        get confirmQuestion ()
+        {
+            return tFill( 'deleteQuestionNamed', { name: this.confirmName } );
+        },
+
+        get confirmDetail ()
+        {
+            const autoRule = typeof this.confirmRowId === 'string'
+                ? ( this.menuFind( this.confirmRowId )?.item.auto ?? '' )
+                : '';
+            const questions = {
+                block: t( 'deleteBlockQuestion' ),
+                page: t( 'deletePageQuestion' ),
+                field: t( 'deleteFieldQuestion' ),
+                collection: t( 'deleteCollectionQuestion' ),
+                entry: t( 'deleteEntryQuestion' ),
+                taxonomy: t( 'deleteTaxonomyQuestion' ),
+                term: t( 'deleteTermQuestion' ),
+                menu: t( 'deleteMenuQuestion' ),
+                menuItem: t( 'deleteMenuItemQuestion' ),
+                menuAutoItem: tFill( 'deleteMenuAutoQuestion', { rule: this.menuRuleLabel( autoRule ) } ),
+                entryLayout: t( 'adoptTemplateQuestion' ),
+                mediaForever: t( 'deleteMediaForeverQuestion' ),
+                partial: t( 'deletePartialQuestion' ),
+            };
+
+            return questions[ this.confirmTarget ] ?? '';
+        },
+
+        get confirmActionLabel ()
+        {
+            const labels = {
+                block: t( 'removeBlock' ),
+                page: t( 'deleteConfirmPage' ),
+                field: t( 'deleteConfirmField' ),
+                collection: t( 'deleteConfirmCollection' ),
+                entry: t( 'deleteConfirmEntry' ),
+                taxonomy: t( 'deleteConfirmTaxonomy' ),
+                term: t( 'deleteConfirmTerm' ),
+                menu: t( 'deleteConfirmMenu' ),
+                menuItem: t( 'deleteConfirmMenuItem' ),
+                menuAutoItem: t( 'deleteConfirmMenuAuto' ),
+                entryLayout: t( 'adoptTemplateConfirm' ),
+                mediaForever: t( 'deleteConfirmMediaForever' ),
+                partial: t( 'deleteConfirmPartial' ),
+            };
+
+            return labels[ this.confirmTarget ] ?? t( 'deleteConfirm' );
+        },
+
+        async runConfirmedDelete ()
+        {
+            const target = this.confirmTarget;
+            const rowId = this.confirmRowId;
+
+            // The modal closes at the END, deliberately: setting
+            // confirmTarget null first unmounts the button this call
+            // came from, and every post-await write then lands in the
+            // dead scope (DEVELOPMENT section 6) - the server delete
+            // succeeded while the canvas never heard about it.
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            if ( target === 'block' )
+            {
+                await this.removeSelectedBlock();
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                return;
+            }
+
+            if ( target === 'field' )
+            {
+                if ( typeof rowId === 'string' ) { this.removeField( rowId ); }
+
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                return;
+            }
+
+            if ( target === 'menuItem' )
+            {
+                const found = typeof rowId === 'string' ? this.menuFind( rowId ) : null;
+
+                if ( found !== null )
+                {
+                    found.list.splice( found.index, 1 );
+
+                    // The selection may have been inside the family.
+                    if ( this.selectedMenuKey !== null && this.menuFind( this.selectedMenuKey ) === null ) { this.selectedMenuKey = null; }
+
+                    this.sortEpoch += 1;
+                    this.markMenuEditorDirty();
+                }
+
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                return;
+            }
+
+            // Deleting a partial: pages inserting it report an issue
+            // until re-pointed - offered, never silent (the confirm).
+            if ( target === 'partial' )
+            {
+                await fetch( '/api/partial', {
+                    method: 'DELETE',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { name: rowId } ),
+                } );
+
+                if ( this.surface === rowId ) { this.closeSurface(); }
+
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                void this.refresh();
+                return;
+            }
+
+            // Unused media cleanup (SCHEMA 13.4): the delete re-checks
+            // usage server-side; journaled like any content change.
+            // The permanent trash verbs: one file forever, or the
+            // whole trash - the only unrecoverable deletes in Studio.
+            if ( target === 'mediaForever' )
+            {
+                await fetch( '/api/media-trash', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( rowId === 'all' ? { action: 'empty' } : { file: rowId, action: 'delete' } ),
+                } );
+                await this.loadMediaLibrary();
+
+                if ( rowId === 'all' || this.selectedMediaFile === rowId ) { this.selectedMediaFile = null; }
+
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                return;
+            }
+
+            // Returning a diverged entry to the template discards its
+            // own layout - the confirm modal owns the moment.
+            if ( target === 'entryLayout' )
+            {
+                const id = rowId ?? this.sampleEntryId;
+
+                await fetch( '/api/entry-layout', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, id, action: 'adopt' } ),
+                } );
+
+                if ( this.surface === 'entry' && this.sampleEntryId === id ) { this.closeSurface(); }
+
+                await this.loadCollection();
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                void this.refresh();
+                return;
+            }
+
+            // Deleting an auto row turns its rule off: the siblings
+            // the rule added stay as ordinary items; only this row is
+            // removed (Mikey).
+            if ( target === 'menuAutoItem' )
+            {
+                const found = typeof rowId === 'string' ? this.menuFind( rowId ) : null;
+
+                if ( found !== null && this.menuEditor !== null )
+                {
+                    const rule = found.item.auto;
+
+                    this.menuEditor[ rule ] = false;
+
+                    const adopt = ( items ) =>
+                    {
+                        for ( const item of items )
+                        {
+                            if ( item.auto === rule ) { item.auto = ''; }
+
+                            adopt( item.items );
+                        }
+                    };
+
+                    adopt( this.menuEditor.items );
+                    found.list.splice( found.index, 1 );
+
+                    if ( this.selectedMenuKey !== null && this.menuFind( this.selectedMenuKey ) === null ) { this.selectedMenuKey = null; }
+
+                    this.sortEpoch += 1;
+                    this.markMenuEditorDirty();
+                }
+
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                return;
+            }
+
+            if ( target === 'menu' )
+            {
+                const menus = { ...( this.snapshot?.config?.menus ?? {} ) };
+
+                delete menus[ this.menuName ];
+                await fetch( '/api/menus', {
+                    method: 'PUT',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { menus } ),
+                } );
+                this.enterWorkspace( 'page' );
+            }
+
+            if ( target === 'entry' )
+            {
+                const id = rowId ?? this.selectedEntryId;
+
+                await fetch( '/api/entry', {
+                    method: 'DELETE',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, id } ),
+                } );
+
+                if ( this.selectedEntryId === id ) { this.selectedEntryId = null; }
+
+                await this.loadCollection();
+            }
+
+            if ( target === 'term' )
+            {
+                const id = rowId ?? this.selectedTermId;
+
+                await fetch( '/api/term', {
+                    method: 'DELETE',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, id } ),
+                } );
+
+                if ( this.selectedTermId === id ) { this.selectedTermId = null; }
+
+                await this.loadTaxonomy();
+            }
+
+            if ( target === 'page' )
+            {
+                await fetch( '/api/page', {
+                    method: 'DELETE',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { id: this.selectedPageId } ),
+                } );
+                this.selectedPageId = this.pages.find( ( page ) => page.slug === 'home' )?.id ?? null;
+                this.syncPageTitleDraft();
+                this.applyDeselect();
+            }
+
+            if ( target === 'collection' || target === 'taxonomy' )
+            {
+                await fetch( target === 'collection' ? '/api/collection' : '/api/taxonomy', {
+                    method: 'DELETE',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile } ),
+                } );
+                this.enterWorkspace( 'page' );
+            }
+
+            this.confirmTarget = null;
+            this.confirmRowId = null;
+            void this.refresh();
+        },
+
+        // The header trash: one delete control that always aims at
+        // what the inspector is showing. Blocks remove directly (the
+        // journal undoes them); everything else routes through its
+        // confirm modal. Home and pages with a subtree never offer it,
+        // matching their Settings rule.
+        get inspectorTrashTarget ()
+        {
+            if ( this.canvasActive && this.selectedBlock !== null ) { return 'block'; }
+            if ( this.workspace === 'collection' && this.entryEditor !== null ) { return 'entry'; }
+            if ( this.workspace === 'taxonomy' && this.termEditor !== null ) { return 'term'; }
+            if ( this.workspace === 'menu' && this.selectedMenuItem !== null ) { return 'menuItem'; }
+            if ( this.workspace === 'menu' && this.menuEditor !== null ) { return 'menu'; }
+            if ( this.workspace === 'collection' && this.fieldEditor !== null ) { return this.fieldEditor.key === 'title' ? '' : 'field'; }
+            if ( this.workspace === 'collection' && this.surface === null && this.fieldEditor === null && this.collectionEditor !== null ) { return 'collection'; }
+            if ( this.workspace === 'taxonomy' && this.taxonomyEditor !== null ) { return 'taxonomy'; }
+
+            if ( this.workspace === 'page' && this.selectedBlock === null
+                && this.selectedPage !== undefined && this.selectedPage.slug !== 'home' && !this.pageHasNested )
+            {
+                return 'page';
+            }
+
+            return '';
+        },
+
+        inspectorTrash ()
+        {
+            const target = this.inspectorTrashTarget;
+
+            if ( target === '' ) { return; }
+
+            if ( target === 'menuItem' )
+            {
+                this.openRowDelete( 'menuItem', this.selectedMenuKey );
+                return;
+            }
+
+            if ( target === 'field' )
+            {
+                this.openRowDelete( 'field', this.selectedFieldKey );
+                return;
+            }
+
+            this.confirmTarget = target;
+        },
+
+        inspectorBack ()
+        {
+            if ( !this.confirmEntryLeave( () => this.inspectorBack() ) ) { return; }
+
+            // A selected block ascends ONE level - to its section,
+            // not to the document root (Mikey's report); the bridge
+            // deselects when there is nothing above.
+            if ( this.selectedBlock !== null ) { this.sendToCanvas( { kind: 'ascend' } ); }
+            else if ( this.surface !== null ) { this.closeSurface(); }
+            else if ( this.selectedFieldKey !== null ) { this.selectedFieldKey = null; }
+            else if ( this.selectedEntryId !== null ) { this.selectedEntryId = null; }
+            else if ( this.selectedTermId !== null ) { this.selectedTermId = null; }
+            else if ( this.selectedMenuKey !== null )
+            {
+                // Back from an item lands on the MENU's settings
+                // (Mikey): the auto-include rules and the name live
+                // there.
+                this.selectedMenuKey = null;
+                this.tab = 'settings';
+            }
+            else if ( this.selectedMediaFile !== null ) { this.selectedMediaFile = null; }
+            else { this.clearSelection(); }
+
+            this.confirmTarget = null;
+        },
+
+        // Backspace and Delete mirror the trash button (Mikey):
+        // whatever the inspector aims at, through the same confirm.
+        // Never while typing, never while a modal is up.
+        deletePressed ( event )
+        {
+            const target = event.target;
+            const tag = target?.tagName;
+
+            if ( tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable === true ) { return; }
+
+            if ( this.createKind !== null || this.pendingAbandon !== null || this.metaNameGuardOpen
+                || this.addressConfirmOpen || this.saveConfirmOpen || this.mediaPicker !== null
+                || this.confirmTarget !== null || this.renameConfirmOpen || this.pickerOpen === true ) { return; }
+
+            if ( this.inspectorTrashTarget === '' ) { return; }
+
+            this.inspectorTrash();
+        },
+
+        escapePressed ()
+        {
+            if ( this.palette !== null )
+            {
+                this.palette = null;
+                return;
+            }
+
+            if ( this.createKind !== null )
+            {
+                this.createKind = null;
+                return;
+            }
+
+            if ( this.pendingAbandon !== null )
+            {
+                this.cancelAbandon();
+                return;
+            }
+
+            if ( this.mediaBrowse !== null )
+            {
+                this.mediaBrowse = null;
+                return;
+            }
+
+            if ( this.mediaPicker !== null )
+            {
+                this.mediaPicker = null;
+                return;
+            }
+
+            if ( this.metaNameGuardOpen )
+            {
+                this.keepEditingMetaName();
+                return;
+            }
+
+            if ( this.addressConfirmOpen )
+            {
+                this.addressConfirmOpen = false;
+                return;
+            }
+
+            if ( this.saveConfirmOpen )
+            {
+                this.saveConfirmOpen = false;
+                return;
+            }
+
+            if ( this.workspace === 'page' )
+            {
+                if ( this.selectedBlock !== null ) { this.sendToCanvas( { kind: 'ascend' } ); }
+                return;
+            }
+
+            if ( this.surface !== null )
+            {
+                if ( this.selectedBlock !== null ) { this.sendToCanvas( { kind: 'ascend' } ); }
+                else { this.closeSurface(); }
+                return;
+            }
+
+            this.inspectorBack();
+        },
+
+        // Morph links (SCHEMA 6): name a block here, give a block on
+        // another page the same name, and their anchored elements
+        // glide into each other during navigation.
+        async setMorphLink ( raw )
+        {
+            const editor = this.blockEditor;
+
+            if ( editor === null ) { return; }
+
+            const slug = raw.toLowerCase().replace( /[^a-z0-9-]+/g, '-' ).replace( /^[^a-z]+/, '' ).replace( /-+$/, '' );
+            const target = editor.region !== undefined
+                ? { region: editor.region }
+                : ( editor.doc === undefined
+                        ? { pageId: editor.pageId }
+                        : { doc: editor.doc, surface: editor.surface } );
+
+            editor.morph = slug;
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/block', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { ...target, path: editor.path, morph: slug === '' ? null : slug } ),
+            } );
+        },
+
+        // The Outline popover (Mikey: it replaces Done in the crumb
+        // bar): the CANVAS DOCUMENT's real heading elements, read on
+        // open - the truth of what a screen reader's rotor will see,
+        // semantic levels after every remap.
+        toggleOutline ()
+        {
+            if ( this.outlineOpen )
+            {
+                this.outlineOpen = false;
+                return;
+            }
+
+            const doc = this.$refs.canvas?.contentDocument;
+
+            if ( doc === null || doc === undefined ) { return; }
+
+            this.outlineItems = [ ...doc.querySelectorAll( 'h1, h2, h3, h4, h5, h6' ) ].map( ( heading ) => ( {
+                level: Number( heading.tagName.slice( 1 ) ),
+                text: ( heading.textContent ?? '' ).trim(),
+            } ) );
+            this.outlineOpen = true;
+        },
+
+        onCanvasLoad ()
+        {
+            if ( this.selectedBlock !== null )
+            {
+                this.sendToCanvas( { kind: 'select-path', path: this.selectedBlock } );
+            }
+        },
+
+        get pages ()
+        {
+            return this.snapshot?.pages ?? [];
+        },
+
+        // The URL tree in the nav (SCHEMA 13.6): pages render as a
+        // tree - children indented under their parent, parents
+        // collapsible. Rows come out depth-first in file order, with
+        // a cycle guard so a broken document degrades, never hangs.
+        // A region canvas reads as a PARTIAL, not a page (Mikey):
+        // slightly narrower, top-aligned, only as tall as its
+        // content - growing as blocks are added.
+        get regionSurfaceActive ()
+        {
+            // The 404 surface is a FULL page, not a partial: visitors
+            // meet it as a real page, so it edits like one.
+            return this.workspace === 'settings' && this.surface !== null && this.surface !== 'notFound';
+        },
+
+        get pageTree ()
+        {
+            const rows = [];
+            const visited = new Set();
+            const childrenOf = ( parentId ) => this.pages.filter( ( page ) => page.parent === parentId );
+            const walk = ( page, depth ) =>
+            {
+                if ( visited.has( page.id ) ) { return; }
+
+                visited.add( page.id );
+                rows.push( { page, depth, hasChildren: childrenOf( page.id ).length > 0 } );
+
+                if ( this.collapsedPages[ page.id ] === true ) { return; }
+
+                for ( const child of childrenOf( page.id ) ) { walk( child, depth + 1 ); }
+            };
+
+            for ( const page of this.pages )
+            {
+                const orphaned = page.parent !== undefined && !this.pages.some( ( candidate ) => candidate.id === page.parent );
+
+                if ( page.parent === undefined || orphaned ) { walk( page, 0 ); }
+            }
+
+            return rows;
+        },
+
+        togglePageCollapse ( id )
+        {
+            this.collapsedPages[ id ] = this.collapsedPages[ id ] !== true;
+        },
+
+        // The URL a page or mounted collection answers at, spoken in
+        // breadcrumbs and settings: the slug chain, cycle-guarded.
+        pagePathOf ( id )
+        {
+            const segments = [];
+            const visited = new Set();
+            let current = this.pages.find( ( page ) => page.id === id );
+
+            while ( current !== undefined && !visited.has( current.id ) )
+            {
+                visited.add( current.id );
+
+                if ( current.slug !== 'home' ) { segments.unshift( current.slug ); }
+
+                current = current.parent === undefined ? undefined : this.pages.find( ( page ) => page.id === current.parent );
+            }
+
+            return segments;
+        },
+
+        // "Nest under" options for a page: never home, never itself,
+        // never its own descendants - nesting there would loop.
+        get pageParentOptions ()
+        {
+            const selected = this.selectedPage;
+
+            if ( selected === undefined ) { return []; }
+
+            const excluded = new Set( [ selected.id ] );
+            let grew = true;
+
+            while ( grew )
+            {
+                grew = false;
+
+                for ( const page of this.pages )
+                {
+                    if ( page.parent !== undefined && excluded.has( page.parent ) && !excluded.has( page.id ) )
+                    {
+                        excluded.add( page.id );
+                        grew = true;
+                    }
+                }
+            }
+
+            return this.pages.filter( ( page ) => page.slug !== 'home' && !excluded.has( page.id ) );
+        },
+
+        get nestAddressLine ()
+        {
+            const id = this.selectedPageId;
+
+            if ( id === null ) { return ''; }
+
+            return tFill( 'nestAddressNote', { path: this.pagePathOf( id ).join( '/' ) } );
+        },
+
+        // The mounted address, '/about/events/' style: what settings
+        // rows and the workspace meta line speak (SCHEMA 13.6).
+        get collectionAddress ()
+        {
+            const parent = this.collectionEditor?.parent;
+            const segments = typeof parent === 'string' ? this.pagePathOf( parent ) : [];
+
+            return '/' + [ ...segments, this.stem ].join( '/' ) + '/';
+        },
+
+        get mountAddressLine ()
+        {
+            return tFill( 'nestAddressNote', { path: this.collectionAddress.replace( /^\/|\/$/g, '' ) } );
+        },
+
+        async setPageParent ( value )
+        {
+            const id = this.selectedPageId;
+
+            if ( id === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/page', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { id, patch: { parent: value === '' ? null : value } } ),
+            } );
+            void this.refresh();
+        },
+
+        // Mount options for a collection: any page but home.
+        get collectionMountOptions ()
+        {
+            return this.pages.filter( ( page ) => page.slug !== 'home' );
+        },
+
+        // Pagination (SCHEMA 13.5): entries per index page; empty
+        // clears it back to one page.
+        async setCollectionPageSize ( raw )
+        {
+            const size = Number( raw );
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/collection', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { pageSize: Number.isInteger( size ) && size >= 1 ? size : null } } ),
+            } );
+            await this.loadCollection();
+            void this.refresh();
+        },
+
+        async setCollectionParent ( value )
+        {
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/collection', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { parent: value === '' ? null : value } } ),
+            } );
+            await this.loadCollection();
+            void this.refresh();
+        },
+
+        get collections ()
+        {
+            return this.snapshot?.collections ?? [];
+        },
+
+        get taxonomies ()
+        {
+            return this.snapshot?.taxonomies ?? [];
+        },
+
+        get issues ()
+        {
+            return this.snapshot?.issues ?? [];
+        },
+
+        get projectName ()
+        {
+            return this.snapshot?.projectName ?? '';
+        },
+
+        get selectedPage ()
+        {
+            return this.pages.find( ( page ) => page.id === this.selectedPageId );
+        },
+
+        get previewSrc ()
+        {
+            if ( this.surface !== null )
+            {
+                if ( this.workspace === 'settings' )
+                {
+                    return this.surface === 'notFound'
+                        ? `/preview-404?v=${this.contentVersion}`
+                        : `/preview-region/${this.surface}?v=${this.contentVersion}`;
+                }
+
+                if ( this.surface === 'entry' )
+                {
+                    return `/canvas-entry/${this.stem}?entry=${this.sampleEntryId}&v=${this.contentVersion}`;
+                }
+
+                const isTaxonomy = this.workspace === 'taxonomy';
+                const sample = this.surface === 'template' && this.sampleEntryId !== null
+                    ? `&${isTaxonomy ? 'term' : 'entry'}=${this.sampleEntryId}`
+                    : '';
+
+                return `/preview-${isTaxonomy ? 'tax-' : ''}${this.surface}/${this.stem}?v=${this.contentVersion}${sample}`;
+            }
+
+            return `/canvas/${this.selectedPage?.slug ?? ''}?v=${this.contentVersion}`;
+        },
+
+        // Breadcrumbs speak labels, never file stems (SCHEMA 13.2:
+        // plumbing stays out of sight); a page's crumb is its slug,
+        // the public spelling of a public page.
+        get canvasRootLabel ()
+        {
+            if ( this.surface !== null )
+            {
+                if ( this.workspace === 'settings' ) { return this.surfaceLabel.toLowerCase(); }
+
+                return this.workspace === 'taxonomy' ? this.taxonomyDisplayLabel : this.collectionDisplayLabel;
+            }
+
+            if ( this.selectedPage === undefined ) { return ''; }
+
+            // A nested page's crumb speaks its whole address.
+            const path = this.pagePathOf( this.selectedPage.id );
+
+            return path.length === 0 ? this.selectedPage.slug : path.join( ' / ' );
+        },
+
+        // The sample scope for local morphs mirrors the server: the
+        // chosen sample entry, or the first one.
+        get sampleEntryScope ()
+        {
+            if ( this.workspace === 'taxonomy' )
+            {
+                const term = this.sampleTerm;
+
+                if ( term === null ) { return {}; }
+
+                return {
+                    id: term.id,
+                    name: term.name,
+                    description: term.description ?? '',
+                    ...( term.image === undefined ? {} : { image: JSON.parse( JSON.stringify( term.image ) ) } ),
+                };
+            }
+
+            const sample = this.sampleEntry;
+
+            if ( sample === null ) { return {}; }
+
+            return { id: sample.id, ...this.presentSampleValues( JSON.parse( JSON.stringify( sample.values ) ), this.collectionEditor?.fields ) };
+        },
+
+        // Presentation mirror (SCHEMA 13.5): the sample scope local
+        // morphs render through speaks like the server's - dates in
+        // their field's format, references as their target's name.
+        presentSampleValues ( values, fields )
+        {
+            const months = [ 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December' ];
+            const presented = { ...values };
+
+            for ( const [ key, field ] of Object.entries( fields ?? {} ) )
+            {
+                const value = presented[ key ];
+
+                if ( field.type === 'date' && typeof value === 'string' && field.rules?.format !== 'iso' )
+                {
+                    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec( value );
+                    const month = match === null ? undefined : months[ Number( match[ 2 ] ) - 1 ];
+
+                    if ( match !== null && month !== undefined )
+                    {
+                        presented[ key ] = field.rules?.format === 'short'
+                            ? `${month.slice( 0, 3 )} ${Number( match[ 3 ] )}, ${match[ 1 ]}`
+                            : `${month} ${Number( match[ 3 ] )}, ${match[ 1 ]}`;
+                    }
+                }
+
+                if ( field.type === 'reference' && Array.isArray( value ) )
+                {
+                    presented[ key ] = this.referenceLabelFor( field, value );
+                }
+                else if ( field.type === 'reference' )
+                {
+                    // Bind-through, mirrored: a String object whose
+                    // coercion is the target's name and whose
+                    // properties are what the chrome knows of the
+                    // target (terms fully; entries only id and title
+                    // here - the server render is the full truth).
+                    const wrap = ( base, extras ) =>
+                    {
+                        const wrapped = new String( base );
+
+                        for ( const [ extraKey, extra ] of Object.entries( extras ) )
+                        {
+                            if ( !( extraKey in wrapped ) ) { wrapped[ extraKey ] = extra; }
+                        }
+
+                        return wrapped;
+                    };
+
+                    if ( typeof field.rules?.taxonomy === 'string' )
+                    {
+                        const terms = this.collectionEditor?.taxonomies?.find( ( candidate ) => candidate.stem === field.rules.taxonomy )?.terms ?? [];
+                        const term = terms.find( ( candidate ) => candidate.id === value );
+
+                        presented[ key ] = term === undefined
+                            ? ''
+                            : wrap( term.name, {
+                                    id: term.id,
+                                    name: term.name,
+                                    description: term.description ?? '',
+                                    ...( term.image === undefined ? {} : { image: term.image } ),
+                                } );
+                    }
+                    else if ( typeof field.rules?.type === 'string' )
+                    {
+                        const target = this.collectionEditor?.collectionRefs?.find( ( candidate ) => candidate.stem === field.rules.type );
+                        const entry = target?.entries.find( ( candidate ) => candidate.id === value );
+
+                        presented[ key ] = entry === undefined ? '' : wrap( entry.title, { id: entry.id, title: entry.title } );
+                    }
+                    else { presented[ key ] = ''; }
+                }
+            }
+
+            return presented;
+        },
+
+        get hasAvatar ()
+        {
+            return this.snapshot?.hasAvatar === true;
+        },
+
+        get shortcutLabel ()
+        {
+            return navigator.platform.toLowerCase().includes( 'mac' ) ? 'Cmd K' : 'Ctrl K';
+        },
+
+        // The Ctrl-K palette: every navigable destination the left
+        // rail and Site settings know, filtered as you type. Entries
+        // carry their own open() so the palette never re-learns the
+        // navigation rules.
+        get paletteEntries ()
+        {
+            const entries = [];
+
+            for ( const page of this.pages )
+            {
+                entries.push( { key: `page:${page.id}`, label: page.title || page.slug, kind: t( 'kindPage' ), open: () => this.selectPage( page.id ) } );
+            }
+
+            for ( const doc of this.collections )
+            {
+                entries.push( { key: `collection:${doc.file}`, label: doc.label, kind: t( 'kindCollection' ), open: () => this.openCollection( doc.file ) } );
+            }
+
+            for ( const doc of this.taxonomies )
+            {
+                entries.push( { key: `taxonomy:${doc.file}`, label: doc.label, kind: t( 'kindTaxonomy' ), open: () => this.openTaxonomy( doc.file ) } );
+            }
+
+            for ( const name of Object.keys( this.snapshot?.config?.menus ?? {} ) )
+            {
+                entries.push( { key: `menu:${name}`, label: name, kind: t( 'kindMenu' ), open: () => this.openMenu( name ) } );
+            }
+
+            for ( const name of this.snapshot?.partials ?? [] )
+            {
+                entries.push( { key: `partial:${name}`, label: name, kind: t( 'kindPartial' ), open: () => this.openSurface( name ) } );
+            }
+
+            entries.push( { key: 'surface:header', label: t( 'editHeader' ), kind: '', open: () => this.openSurface( 'header' ) } );
+            entries.push( { key: 'surface:footer', label: t( 'editFooter' ), kind: '', open: () => this.openSurface( 'footer' ) } );
+            entries.push( { key: 'surface:notFound', label: t( 'editNotFound' ), kind: '', open: () => this.openSurface( 'notFound' ) } );
+            entries.push( { key: 'media', label: t( 'navMedia' ), kind: '', open: () => this.openMediaWorkspace() } );
+            entries.push( { key: 'settings', label: t( 'navSiteSettings' ), kind: '', open: () => this.openSettings() } );
+            entries.push( ...( this.palette?.entryRows ?? [] ) );
+
+            return entries;
+        },
+
+        // Fuzzy: substring matches rank first, then in-order
+        // subsequence matches (EDITOR: "fuzzy search").
+        get paletteResults ()
+        {
+            const query = ( this.palette?.query ?? '' ).trim().toLowerCase();
+
+            if ( query === '' ) { return this.paletteEntries.slice( 0, 12 ); }
+
+            const subsequence = ( label ) =>
+            {
+                let at = 0;
+
+                for ( const character of query )
+                {
+                    at = label.indexOf( character, at );
+
+                    if ( at < 0 ) { return false; }
+
+                    at += 1;
+                }
+
+                return true;
+            };
+            const direct = [];
+            const loose = [];
+
+            for ( const entry of this.paletteEntries )
+            {
+                const label = entry.label.toLowerCase();
+
+                if ( label.includes( query ) || entry.kind.toLowerCase().startsWith( query ) ) { direct.push( entry ); }
+                else if ( subsequence( label ) ) { loose.push( entry ); }
+            }
+
+            return [ ...direct, ...loose ].slice( 0, 12 );
+        },
+
+        togglePalette ()
+        {
+            if ( this.palette !== null )
+            {
+                this.palette = null;
+                return;
+            }
+
+            this.palette = { query: '', index: 0, entryRows: [] };
+            this.$nextTick( () => this.$refs.paletteInput?.focus() );
+            void this.loadPaletteEntries();
+        },
+
+        // Entries join the palette lazily (EDITOR: "every page,
+        // entry, and setting"): titles are not in the snapshot, so
+        // opening the palette fetches each collection once.
+        async loadPaletteEntries ()
+        {
+            const opened = this.palette;
+            const lists = await Promise.all( this.collections.map( async ( doc ) =>
+            {
+                const response = await fetch( `/api/collection?${new URLSearchParams( { file: doc.file } ).toString()}` );
+
+                if ( !response.ok ) { return []; }
+
+                const loaded = await response.json();
+
+                return ( loaded.entries ?? [] )
+                    .map( ( entry ) => ( {
+                        key: `entry:${entry.id}`,
+                        label: String( entry.values?.title ?? '' ),
+                        kind: t( 'kindEntry' ),
+                        open: () => this.openEntryFromPalette( doc.file, entry.id ),
+                    } ) )
+                    .filter( ( row ) => row.label !== '' );
+            } ) );
+
+            if ( this.palette === opened && opened !== null ) { opened.entryRows = lists.flat(); }
+        },
+
+        openEntryFromPalette ( file, id )
+        {
+            this.openCollection( file );
+            this.selectEntry( id );
+        },
+
+        paletteMove ( delta )
+        {
+            const count = this.paletteResults.length;
+
+            if ( this.palette === null || count === 0 ) { return; }
+
+            this.palette.index = ( this.palette.index + delta + count ) % count;
+        },
+
+        paletteRun ( entry = null )
+        {
+            const chosen = entry ?? this.paletteResults[ this.palette?.index ?? 0 ];
+
+            if ( chosen === undefined ) { return; }
+
+            this.palette = null;
+            chosen.open();
+        },
+
+        get previewStyle ()
+        {
+            // A region partial's wrapper hugs its content: as tall as
+            // the canvas reports, never taller. Width follows the
+            // viewport toggle - the tablet and phone widths apply to a
+            // partial exactly as to a page; desktop fills the frame
+            // between equal margins (the container's padding).
+            if ( this.regionSurfaceActive )
+            {
+                const widths = { desktop: '100%', tablet: '768px', phone: '390px' };
+
+                return { width: widths[ this.viewport ], height: `${this.canvasFitHeight}px` };
+            }
+
+            const sizes = {
+                desktop: { width: '100%', height: '100%' },
+                tablet: { width: '768px', height: '92%' },
+                phone: { width: '390px', height: '72%' },
+            };
+
+            return sizes[ this.viewport ];
+        },
+
+        // The ring lives in the chrome's overlay (EDITOR section 3):
+        // 3px offset from the border box, mirroring the element's own
+        // radius, 2px minimum. At the frame's edges it clamps - a ring
+        // edge is always visible, and the site is never padded to
+        // make room for chrome (EDITOR section 2).
+        ringStyle ( rect, radius, offset, border )
+        {
+            if ( rect === null ) { return {}; }
+
+            const frameWidth = this.$refs.canvas?.clientWidth ?? Number.MAX_SAFE_INTEGER;
+            const frameHeight = this.$refs.canvas?.clientHeight ?? Number.MAX_SAFE_INTEGER;
+            const left = Math.max( 0, rect.x - offset );
+            const top = Math.max( 0, rect.y - offset );
+            const right = Math.min( frameWidth, rect.x + rect.width + offset );
+            const bottom = Math.min( frameHeight, rect.y + rect.height + offset );
+
+            return {
+                left: `${left}px`,
+                top: `${top}px`,
+                width: `${Math.max( 0, right - left - border * 2 )}px`,
+                height: `${Math.max( 0, bottom - top - border * 2 )}px`,
+                borderRadius: `${Math.max( 2, radius )}px`,
+            };
+        },
+
+        get selectionRingStyle ()
+        {
+            return this.ringStyle( this.selectionRect, this.selectionRadius, 3, 2 );
+        },
+
+        // Seam geometry: a horizontal band across a column flow, or a
+        // vertical band down a row flow (a section's side-by-side
+        // children get vertical seams).
+        get seamStyle ()
+        {
+            const seam = this.seamInfo;
+
+            if ( seam === null ) { return {}; }
+
+            if ( seam.orientation === 'v' )
+            {
+                return {
+                    left: `${seam.at - 13}px`,
+                    top: `${seam.crossStart}px`,
+                    width: '26px',
+                    height: `${seam.crossSize}px`,
+                };
+            }
+
+            return {
+                left: `${seam.crossStart}px`,
+                top: `${seam.at - 13}px`,
+                width: `${seam.crossSize}px`,
+                height: '26px',
+            };
+        },
+
+        get seamIsVertical ()
+        {
+            return this.seamInfo?.orientation === 'v';
+        },
+
+        // While the handle pill is pinned, the hover outline belongs
+        // to ITS section - the pill and the outline stay together.
+        get hoverLeaf ()
+        {
+            return this.pinnedHandle ?? this.hoverChain[ 0 ] ?? null;
+        },
+
+        get hoverRingStyle ()
+        {
+            const leaf = this.hoverLeaf;
+
+            return leaf === null ? {} : this.ringStyle( leaf.rect, leaf.radius, 3, 1 );
+        },
+
+        // The section handle (EDITOR section 2): while the pointer is
+        // anywhere inside a section, a small pill sits at its top
+        // edge; clicking it selects the section directly.
+        get sectionHandle ()
+        {
+            if ( this.pinnedHandle !== null && this.pinnedHandle.path !== this.selectedBlock )
+            {
+                return this.pinnedHandle;
+            }
+
+            for ( const entry of this.hoverChain )
+            {
+                if ( this.blockInfoAt( entry.path )?.kind === 'section' && entry.path !== this.selectedBlock )
+                {
+                    return entry;
+                }
+            }
+
+            return null;
+        },
+
+        get sectionHandleStyle ()
+        {
+            const handle = this.sectionHandle;
+
+            if ( handle === null ) { return {}; }
+
+            return {
+                left: `${handle.rect.x + handle.rect.width / 2 - 34}px`,
+                top: `${Math.max( 2, handle.rect.y - 11 )}px`,
+            };
+        },
+
+        get chipStyle ()
+        {
+            if ( this.selectionRect === null ) { return {}; }
+
+            const above = this.selectionRect.y - 29;
+
+            return {
+                left: `${Math.max( 2, this.selectionRect.x - 3 )}px`,
+                top: `${above < 2 ? this.selectionRect.y + 5 : above}px`,
+            };
+        },
+
+        // Marker paths are the document addresses ("blocks[1].blocks[0]");
+        // the API's block tree resolves them to kinds and titles.
+        blockInfoAt ( path )
+        {
+            if ( typeof path !== 'string' ) { return undefined; }
+
+            const indexes = [ ...path.matchAll( /blocks\[(\d+)\]/g ) ].map( ( match ) => Number( match[ 1 ] ) );
+            let info;
+            let level = this.surface !== null ? this.surfaceBlocks : this.selectedPage?.blocks;
+
+            for ( const index of indexes )
+            {
+                info = level?.[ index ];
+                level = info?.children;
+            }
+
+            return info;
+        },
+
+        blockLabel ( info )
+        {
+            if ( info === undefined ) { return ''; }
+            if ( info.title !== undefined ) { return info.title; }
+
+            return t( info.kind === 'repeat' ? 'blockRepeat' : 'blockSection' );
+        },
+
+        get selectionLabel ()
+        {
+            return this.blockLabel( this.blockInfoAt( this.selectedBlock ) );
+        },
+
+        // The breadcrumb's ancestor crumbs: every prefix of the
+        // selected path, labeled, the leaf last (EDITOR section 2).
+        get selectionTrail ()
+        {
+            if ( this.selectedBlock === null ) { return []; }
+
+            const parts = [ ...this.selectedBlock.matchAll( /blocks\[\d+\]/g ) ].map( ( match ) => match[ 0 ] );
+            const trail = [];
+            let prefix = '';
+
+            for ( const part of parts )
+            {
+                prefix = prefix === '' ? part : `${prefix}.${part}`;
+                trail.push( { path: prefix, label: this.blockLabel( this.blockInfoAt( prefix ) ) } );
+            }
+
+            return trail;
+        },
+
+        get inspectorTitle ()
+        {
+            if ( this.repeatEditor !== null ) { return t( 'blockRepeat' ); }
+
+            if ( this.surface !== null )
+            {
+                const owner = this.workspace === 'settings'
+                    ? this.surfaceLabel
+                    : ( this.workspace === 'taxonomy' ? this.taxonomyDisplayLabel : this.collectionDisplayLabel );
+
+                return this.selectedBlock !== null ? this.selectionLabel : owner;
+            }
+
+            if ( this.workspace === 'collection' )
+            {
+                if ( this.collectionView === 'fields' )
+                {
+                    return this.fieldEditor !== null ? this.fieldEditor.label : this.collectionDisplayLabel;
+                }
+
+                const entryTitle = this.entryEditor?.values?.title;
+
+                return this.entryEditor !== null
+                    ? ( entryTitle === '' || entryTitle === undefined ? t( 'kindEntry' ) : String( entryTitle ) )
+                    : this.collectionDisplayLabel;
+            }
+
+            if ( this.workspace === 'taxonomy' )
+            {
+                return this.termEditor !== null
+                    ? ( this.termEditor.name === '' ? t( 'kindTerm' ) : this.termEditor.name )
+                    : this.taxonomyDisplayLabel;
+            }
+
+            if ( this.workspace === 'menu' )
+            {
+                return this.selectedMenuItem !== null ? this.menuItemTitle( this.selectedMenuItem ) : this.menuName ?? '';
+            }
+
+            if ( this.workspace === 'media' )
+            {
+                return this.selectedMedia !== null ? this.mediaLabelOf( this.selectedMedia ) : t( 'navMedia' );
+            }
+
+            if ( this.workspace === 'settings' ) { return this.projectName; }
+
+            return this.selectedBlock !== null ? this.selectionLabel : this.selectedPage?.title ?? '';
+        },
+
+        // The identity subtitle, board style: "collection · events.json",
+        // "events · field", "fixture-kit / card".
+        get inspectorKind ()
+        {
+            if ( this.repeatEditor !== null ) { return this.repeatShownLabel; }
+
+            if ( this.surface !== null )
+            {
+                if ( this.selectedBlock !== null )
+                {
+                    const reference = this.blockEditor?.reference;
+
+                    if ( typeof reference === 'string' ) { return reference.replace( '/', ' / ' ); }
+
+                    return t( this.blockInfoAt( this.selectedBlock )?.kind === 'section' ? 'blockSection' : 'kindComponent' ).toLowerCase();
+                }
+
+                if ( this.workspace === 'settings' ) { return `${t( 'kindSite' )} · ${this.surfaceLabel.toLowerCase()}`; }
+
+                return `${this.workspace === 'taxonomy' ? this.taxonomyDisplayLabel : this.collectionDisplayLabel} · ${this.surfaceLabel.toLowerCase()}`;
+            }
+
+            if ( this.workspace === 'collection' && this.collectionView === 'fields' && this.fieldEditor !== null )
+            {
+                return `${this.collectionDisplayLabel} · ${t( 'kindField' )}`;
+            }
+
+            if ( this.workspace === 'collection' )
+            {
+                return this.entryEditor !== null
+                    ? `${this.collectionDisplayLabel} · ${t( 'kindEntry' )}`
+                    : `${t( 'kindCollection' )} · ${this.workspaceFile ?? ''}`;
+            }
+
+            if ( this.workspace === 'taxonomy' )
+            {
+                return this.termEditor !== null
+                    ? `${this.taxonomyDisplayLabel} · ${t( 'kindTerm' )}`
+                    : `${t( 'kindTaxonomy' )} · ${this.workspaceFile ?? ''}`;
+            }
+
+            if ( this.workspace === 'menu' )
+            {
+                return this.selectedMenuItem !== null
+                    ? `${this.menuName ?? ''} · ${t( 'kindMenuItem' )}`
+                    : `${t( 'kindMenu' )} · site.json`;
+            }
+
+            if ( this.workspace === 'media' )
+            {
+                const home = this.mediaView === 'trash' ? 'trash/' : 'media/';
+
+                return this.selectedMedia !== null
+                    ? `${this.mediaSizeLabel( this.selectedMedia.size )} · ${home}`
+                    : `${t( 'kindMediaLibrary' )} · ${home}`;
+            }
+
+            if ( this.workspace === 'settings' ) { return t( 'kindSite' ); }
+
+            if ( this.selectedBlock !== null )
+            {
+                const reference = this.blockEditor?.reference;
+
+                if ( typeof reference === 'string' ) { return reference.replace( '/', ' / ' ); }
+
+                return t( this.blockInfoAt( this.selectedBlock )?.kind === 'section' ? 'blockSection' : 'kindComponent' ).toLowerCase();
+            }
+
+            return t( 'kindPage' );
+        },
+
+        get editorFieldKeys ()
+        {
+            return Object.keys( this.blockEditor?.fields ?? {} );
+        },
+    } ) );
+
+    // One field row's scope: its definition, its target record (the
+    // block's props, or a repeater item), and everything the row's
+    // template needs. Reused at both depths; that reuse is what makes
+    // repeater recursion work.
+    Alpine.data( 'fieldCtx', ( key, fields, target, bindable = false ) => ( {
+        key,
+        fields,
+        target,
+        bindable,
+        bindMenuOpen: false,
+
+        // The searchable picker (Mikey: a select past ~8 options gets
+        // a filter box instead of a raw dropdown).
+        refQuery: '',
+        refPickerOpen: false,
+        newTermDraft: null,
+
+        get field ()
+        {
+            return this.fields[ this.key ];
+        },
+
+        get visible ()
+        {
+            const condition = this.field.showWhen;
+
+            return condition === undefined ? true : evalCondition( condition.source, this.target );
+        },
+
+        get value ()
+        {
+            return this.target[ this.key ];
+        },
+
+        set value ( next )
+        {
+            this.target[ this.key ] = next;
+            this.markDirty();
+        },
+
+        // Where an edit lands depends on whose record this row edits
+        // (Mikey's bug: a Location pick LOOKED saved while only the
+        // block path ever saved - and that path no-ops without a
+        // selected block). Entry values ride the entry save, the
+        // create modal collects until submit, and block props - the
+        // original tenant - keep the morph-and-save path.
+        markDirty ()
+        {
+            if ( this.createKind !== null ) { return; }
+
+            // The repeat wiring's literal editors write into
+            // repeat.props and ride the repeat save (Mikey: "Same for
+            // all" gets a real value editor).
+            if ( this.repeatEditor !== null )
+            {
+                this.markRepeatDirty();
+                return;
+            }
+
+            if ( this.workspace === 'collection' && this.surface === null && this.entryEditor !== null )
+            {
+                this.markEntryDirty();
+                return;
+            }
+
+            this.markBlockDirty();
+        },
+
+        openMedia ()
+        {
+            this.openMediaPicker( this.field.type === 'file' ? 'file' : 'image', this.target, this.key, () => this.markDirty() );
+        },
+
+        // The nag half of required enforcement: the draft never
+        // blocks, but an empty required field says so under itself.
+        // Conditional requireds (requiredWhen) wait for publish, where
+        // the full evaluator runs.
+        get missingRequired ()
+        {
+            if ( this.field.required !== true || !this.visible ) { return false; }
+
+            const value = this.value;
+
+            if ( value === undefined || value === null ) { return true; }
+            if ( typeof value === 'string' ) { return value.trim() === ''; }
+            if ( Array.isArray( value ) ) { return value.length === 0; }
+            if ( this.field.type === 'image' && typeof value === 'object' && !isBindValue( value ) )
+            {
+                return typeof value.src !== 'string' || value.src.trim() === '';
+            }
+
+            return false;
+        },
+
+        // A bound prop shows as a chip, not an input: its value comes
+        // from the entry, per item (SCHEMA 13.5). On a bindable row
+        // (template canvas props), the link control opens the wiring
+        // menu: type-compatible entry fields, or back to a literal.
+        get isBound ()
+        {
+            return isBindValue( this.value );
+        },
+
+        get bindLabel ()
+        {
+            const key = this.isBound ? this.value.$bind.replace( /^(entry|term)\./, '' ) : '';
+
+            return this.bindSourceFields[ key ]?.label ?? key;
+        },
+
+        // What binds can draw from: the collection's fields, or the
+        // FIXED term shape on a taxonomy's template (SCHEMA 13.3).
+        // Inside a repeat's wiring the SOURCE's fields are the menu
+        // (Mikey: the established linking, one idiom everywhere) -
+        // link an item property, or enter a value used for every
+        // item.
+        get bindSourceFields ()
+        {
+            if ( this.repeatEditor !== null ) { return this.repeatCollectionFields; }
+
+            if ( this.workspace === 'taxonomy' )
+            {
+                return {
+                    name: { label: t( 'termName' ), type: 'text' },
+                    description: { label: t( 'termDescription' ), type: 'textarea' },
+                    image: { label: t( 'termImage' ), type: 'image' },
+                };
+            }
+
+            // The inherent entry.url joins the bind menu when this
+            // collection's entries emit pages; a real "url" field
+            // spreads over it.
+            return {
+                ...( this.collectionEditor?.index !== false && this.collectionEditor?.templateBlocks !== undefined
+                    ? { url: { label: 'URL', type: 'url' } }
+                    : {} ),
+                ...Object.fromEntries(
+                    Object.entries( this.collectionEditor?.fields ?? {} )
+                        .map( ( [ fieldKey, field ] ) => [ fieldKey, { label: field.label, type: field.type } ] ),
+                ),
+            };
+        },
+
+        get bindOptions ()
+        {
+            if ( !this.bindable ) { return []; }
+
+            const source = this.bindSourceFields;
+
+            return compatibleFieldKeys( this.field.type, source )
+                .map( ( fieldKey ) => ( { key: fieldKey, label: source[ fieldKey ].label } ) );
+        },
+
+        get showBindControl ()
+        {
+            return this.bindable && ( this.isBound || this.bindOptions.length > 0 );
+        },
+
+        // Unresolvable inline tokens nag under the field (Mikey's
+        // "at on": a silently empty token is the editor lying). No
+        // guessing from labels - the nag states what is missing and
+        // what this scope actually offers.
+        // The inline-token hint speaks this surface's scope: $term on
+        // a term template, $entry everywhere entries flow.
+        get interpolationHintLine ()
+        {
+            const example = this.workspace === 'taxonomy' && this.repeatEditor === null
+                ? '{{ $term.name }}'
+                : '{{ $entry.title }}';
+
+            return tFill( 'interpolationHint', { example } );
+        },
+
+        get interpolationProblems ()
+        {
+            const value = this.value;
+
+            if ( typeof value !== 'string' || !value.includes( '{{' ) ) { return []; }
+
+            const problems = [];
+            const shape = /\{\{\s*\$((entry|term|page|site)((?:\.[A-Za-z_][A-Za-z0-9_]*)+))\s*\}\}/g;
+
+            // Inside a repeat's wiring, entry.* means the repeated
+            // thing and validates against the SOURCE's fields.
+            const inRepeat = this.repeatEditor !== null;
+            const onEntryTemplate = inRepeat || ( this.workspace === 'collection' && this.surface === 'template' );
+            const onTermTemplate = this.workspace === 'taxonomy' && this.surface === 'template';
+            const fields = inRepeat ? this.repeatCollectionFields : ( this.collectionEditor?.fields ?? {} );
+            const entryPaths = () => [ 'id', ...Object.keys( fields ) ].map( ( key ) => `$entry.${key}` ).join( ', ' );
+            let match;
+
+            while ( ( match = shape.exec( value ) ) !== null )
+            {
+                const [ , path, root, tail ] = match;
+                const segments = tail.slice( 1 ).split( '.' );
+                const token = `{{ $${path} }}`;
+
+                if ( root === 'site' ) { continue; }
+
+                if ( root === 'page' )
+                {
+                    if ( ![ 'title', 'slug' ].includes( segments[ 0 ] ) )
+                    {
+                        problems.push( tFill( 'interpolationMissingAmong', { token, paths: '$page.title, $page.slug' } ) );
+                    }
+
+                    continue;
+                }
+
+                if ( root === 'term' )
+                {
+                    // The wrong root on the RIGHT surface deserves
+                    // the fix, not a lecture about surfaces (Mikey's
+                    // screenshot: $entry on a term template).
+                    if ( !onTermTemplate )
+                    {
+                        problems.push( onEntryTemplate
+                            ? tFill( 'interpolationUseEntry', { token, paths: entryPaths() } )
+                            : tFill( 'interpolationNoScope', { token, root: '$term' } ) );
+                    }
+                    else if ( ![ 'id', 'name', 'description', 'image' ].includes( segments[ 0 ] ) )
+                    {
+                        problems.push( tFill( 'interpolationMissingAmong', { token, paths: '$term.name, $term.description, $term.image' } ) );
+                    }
+
+                    continue;
+                }
+
+                if ( !onEntryTemplate )
+                {
+                    if ( onTermTemplate )
+                    {
+                        // Suggest the $term twin outright when the
+                        // path maps ($entry.title speaks $term.name).
+                        const twin = segments[ 0 ] === 'title' ? 'name' : segments[ 0 ];
+                        const mapped = [ 'id', 'name', 'description', 'image' ].includes( twin )
+                            ? `{{ $term.${[ twin, ...segments.slice( 1 ) ].join( '.' )} }}`
+                            : '$term.name, $term.description, $term.image';
+
+                        problems.push( tFill( 'interpolationUseTerm', { token, suggestion: mapped } ) );
+                    }
+                    else
+                    {
+                        problems.push( tFill( 'interpolationNoScope', { token, root: '$entry' } ) );
+                    }
+
+                    continue;
+                }
+
+                const key = segments[ 0 ];
+
+                if ( key !== 'id' && key !== 'url' && fields[ key ] === undefined )
+                {
+                    problems.push( tFill( 'interpolationMissingAmong', { token, paths: entryPaths() } ) );
+                    continue;
+                }
+
+                // Deeper segments ride a reference (bind-through);
+                // anything deeper on a plain field resolves to nothing.
+                if ( segments.length > 1 && fields[ key ]?.type !== 'reference' )
+                {
+                    problems.push( tFill( 'interpolationNotReference', { token } ) );
+                }
+            }
+
+            return problems;
+        },
+
+        setBinding ( fieldKey )
+        {
+            this.bindMenuOpen = false;
+
+            if ( fieldKey === '' )
+            {
+                if ( this.isBound ) { this.value = emptyValueFor( this.field ); }
+                return;
+            }
+
+            // Repeat wiring always speaks entry.* - the repeated
+            // item's scope - whatever workspace the canvas lives in.
+            const root = this.repeatEditor !== null ? 'entry' : ( this.workspace === 'taxonomy' ? 'term' : 'entry' );
+
+            this.value = { $bind: `${root}.${fieldKey}` };
+        },
+
+        get selectOptions ()
+        {
+            const options = this.field.options;
+
+            if ( options === undefined ) { return []; }
+            if ( options.source === 'static' ) { return options.values.map( ( entry ) => entry.value ); }
+            if ( options.source === 'byField' ) { return options.map[ this.target[ options.byField ] ] ?? []; }
+
+            // Token families ride whichever editor hosts this row -
+            // a component block's, or a repeat's wiring.
+            return ( this.blockEditor ?? this.repeatEditor )?.tokens?.[ options.tokenFamily ] ?? [];
+        },
+
+        // A reference field's picker options: the target taxonomy's
+        // terms, or the target collection's entries (SCHEMA 13.3 -
+        // picked by label, stored by id).
+        get referenceSearchable ()
+        {
+            return !this.referenceMultiple && this.referenceOptions.length > 8;
+        },
+
+        // A multiple reference (SCHEMA 13.3): the value is an array
+        // of ids, edited as a checklist.
+        get referenceMultiple ()
+        {
+            return this.field.type === 'reference' && this.field.rules?.multiple === true;
+        },
+
+        toggleReferenceValue ( id )
+        {
+            const current = Array.isArray( this.value ) ? [ ...this.value ] : [];
+            const at = current.indexOf( id );
+
+            if ( at >= 0 ) { current.splice( at, 1 ); }
+            else { current.push( id ); }
+
+            this.value = current;
+        },
+
+        get filteredReferenceOptions ()
+        {
+            const query = this.refQuery.trim().toLowerCase();
+
+            if ( query === '' ) { return this.referenceOptions; }
+
+            return this.referenceOptions.filter( ( option ) => option.name.toLowerCase().includes( query ) );
+        },
+
+        get referenceValueLabel ()
+        {
+            const found = this.referenceOptions.find( ( option ) => option.id === this.value );
+
+            return found === undefined ? '' : found.name.replace( /^(— )+/, '' );
+        },
+
+        pickReference ( id )
+        {
+            this.value = id;
+            this.refQuery = '';
+            this.refPickerOpen = false;
+        },
+
+        // Inline term creation (Mikey's backlog): a reference field
+        // targeting a taxonomy can mint the term it is missing
+        // without leaving the form. Terms are lightweight; entries
+        // are not - collection-targeting references never offer this.
+        get referenceTaxonomyFile ()
+        {
+            return typeof this.field.rules?.taxonomy === 'string' ? `${this.field.rules.taxonomy}.json` : null;
+        },
+
+        startNewTerm ()
+        {
+            this.newTermDraft = '';
+            this.$nextTick( () => this.$refs.newTermInput?.focus() );
+        },
+
+        async createReferenceTerm ( name )
+        {
+            const file = this.referenceTaxonomyFile;
+            const trimmed = String( name ?? '' ).trim();
+
+            if ( file === null || trimmed === '' ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const response = await fetch( '/api/term', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file, name: trimmed } ),
+            } );
+
+            if ( !response.ok ) { return; }
+
+            const { id } = await response.json();
+
+            // The new term joins the local options immediately; the
+            // next collection load reconciles with the server's copy.
+            this.collectionEditor?.taxonomies
+                ?.find( ( candidate ) => candidate.stem === this.field.rules.taxonomy )
+                ?.terms?.push( { id, name: trimmed } );
+
+            if ( this.referenceMultiple ) { this.toggleReferenceValue( id ); }
+            else { this.pickReference( id ); }
+
+            this.newTermDraft = null;
+        },
+
+        get tFillCreateTerm ()
+        {
+            return tFill( 'createTermNamed', { name: this.refQuery.trim() } );
+        },
+
+        get referenceOptions ()
+        {
+            if ( typeof this.field.rules?.taxonomy === 'string' )
+            {
+                const terms = this.collectionEditor?.taxonomies
+                    ?.find( ( candidate ) => candidate.stem === this.field.rules.taxonomy )?.terms ?? [];
+
+                // Tree order with depth-indented names, so nesting
+                // reads in the picker too.
+                return termTree( terms ).map( ( row ) => ( {
+                    id: row.term.id,
+                    name: `${'— '.repeat( row.depth )}${row.term.name}`,
+                } ) );
+            }
+
+            const target = this.collectionEditor?.collectionRefs
+                ?.find( ( candidate ) => candidate.stem === this.field.rules?.type );
+
+            return ( target?.entries ?? [] ).map( ( entry ) => ( { id: entry.id, name: entry.title } ) );
+        },
+    } ) );
+
+    Alpine.data( 'repeater', () => ( {
+        addItem ()
+        {
+            const item = {};
+
+            for ( const [ childKey, child ] of Object.entries( this.field.fields ) )
+            {
+                item[ childKey ] = emptyValueFor( child );
+            }
+
+            this.value.push( item );
+            this.markDirty();
+        },
+    } ) );
+
+    Alpine.data( 'repeaterItem', ( index ) => ( {
+        index,
+        expanded: index === 0,
+
+        get item ()
+        {
+            return this.value[ this.index ];
+        },
+
+        get itemLabel ()
+        {
+            const first = Object.keys( this.field.fields )[ 0 ];
+            const value = this.item[ first ];
+
+            return value === '' || value === undefined ? `${this.index + 1}` : String( value );
+        },
+
+        remove ()
+        {
+            this.value.splice( this.index, 1 );
+            this.markDirty();
+        },
+    } ) );
+
+    // The rule above Site settings is a scroll edge, never decoration
+    // (EDITOR section 5): it appears only while the tree overflows.
+    Alpine.data( 'navRail', () => ( {
+        overflowing: false,
+
+        init ()
+        {
+            const tree = this.$refs.tree;
+            const measure = () =>
+            {
+                this.overflowing = tree.scrollHeight > tree.clientHeight;
+            };
+
+            new ResizeObserver( measure ).observe( tree );
+            measure();
+        },
+    } ) );
+} );

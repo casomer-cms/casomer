@@ -22,6 +22,15 @@ async function htmlFilesUnder ( root: string ): Promise<string[]>
         .sort();
 }
 
+// Assets ship under content-hashed names; tests discover them by shape.
+async function hashedAsset ( directory: string, shape: RegExp ): Promise<string>
+{
+    const name = ( await readdir( directory ) ).find( ( entry ) => shape.test( entry ) );
+
+    assert.ok( name !== undefined, `no file in ${directory} matches ${shape}` );
+    return join( directory, name );
+}
+
 describe( 'buildSite on the golden fixture', () =>
 {
     it( 'builds dist/ matching the committed snapshots, with real CSS', async () =>
@@ -36,7 +45,13 @@ describe( 'buildSite on the golden fixture', () =>
         } );
 
         assert.deepEqual( result.issues, [] );
-        assert.deepEqual( [ ...result.pagesWritten ].sort(), [ 'about/index.html', 'index.html' ].sort() );
+        assert.deepEqual( [ ...result.pagesWritten ].sort(), [
+            'about/index.html',
+            'events/harvest-loaf-tasting/index.html',
+            'events/index.html',
+            'events/latte-art-night/index.html',
+            'index.html',
+        ].sort() );
 
         const built = await htmlFilesUnder( outputDirectory );
 
@@ -64,7 +79,13 @@ describe( 'buildSite on the golden fixture', () =>
 
         // The generated stylesheet is real: token-derived declarations
         // and the compiler's own vocabulary are present.
-        const css = await readFile( join( outputDirectory, 'assets', 'css', 'main.css' ), 'utf8' );
+        const cssFile = await hashedAsset( join( outputDirectory, 'assets', 'css' ), /^main\.[0-9a-f]{8}\.css$/ );
+        const css = await readFile( cssFile, 'utf8' );
+
+        assert.ok(
+            ( await readFile( join( outputDirectory, 'index.html' ), 'utf8' ) ).includes( `/assets/css/${cssFile.split( sep ).pop() ?? ''}` ),
+            'pages reference the stylesheet by its hashed name',
+        );
 
         assert.ok( css.includes( 'spacing-md' ) );
         assert.ok( css.includes( '.min-h-third' ) );
@@ -107,14 +128,17 @@ describe( 'the delivered-site runtime assets', () =>
             css: false,
         } );
 
-        const runtime = await readFile( join( outputDirectory, 'assets', 'js', 'casomer-runtime.js' ), 'utf8' );
-        const alpine = await readFile( join( outputDirectory, 'assets', 'js', 'alpine.min.js' ), 'utf8' );
+        const jsDirectory = join( outputDirectory, 'assets', 'js' );
+        const runtimeFile = await hashedAsset( jsDirectory, /^casomer-runtime\.[0-9a-f]{8}\.js$/ );
+        const alpineFile = await hashedAsset( jsDirectory, /^alpine\.min\.[0-9a-f]{8}\.js$/ );
+        const runtime = await readFile( runtimeFile, 'utf8' );
+        const alpine = await readFile( alpineFile, 'utf8' );
         const home = await readFile( join( outputDirectory, 'index.html' ), 'utf8' );
 
         assert.ok( runtime.includes( 'startViewTransition' ) );
         assert.ok( alpine.length > 10000 );
-        assert.ok( home.includes( '<script defer src="/assets/js/alpine.min.js"></script>' ) );
-        assert.ok( home.includes( '<script type="module" src="/assets/js/casomer-runtime.js"></script>' ) );
+        assert.match( home, /<script defer src="\/assets\/js\/alpine\.min\.[0-9a-f]{8}\.js"><\/script>/ );
+        assert.match( home, /<script type="module" src="\/assets\/js\/casomer-runtime\.[0-9a-f]{8}\.js"><\/script>/ );
         assert.ok( home.includes( 'view-transition-name: casomer-header' ) );
         assert.ok( home.includes( 'view-transition-name: casomer-footer' ) );
     } );

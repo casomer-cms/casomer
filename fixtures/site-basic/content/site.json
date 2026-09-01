@@ -39,5 +39,6 @@
     },
     "components": {
         "disabled": []
-    }
+    },
+    "notFound": []
 }

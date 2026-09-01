@@ -1,0 +1,23 @@
+@import "tailwindcss";
+@source "./index.html";
+@source "./app.js";
+
+@theme {
+    --color-shell: #E9E6DE;
+    --color-well: #F4F2EB;
+    --color-surface: #FFFFFF;
+    --color-input: #FBFAF7;
+    --color-ink: #1A1D28;
+    --color-text2: #4B4F5C;
+    --color-muted: #7D808B;
+    --color-faint: #ABADB5;
+    --color-amber: #E8A13D;
+    --color-amber-deep: #CE8A28;
+    --color-amber-text: #9A6A12;
+    --color-amber-wash: #FBF1DE;
+    --color-plate: #F3E3C6;
+    --color-border-std: #E3DFD5;
+    --color-rule: #DDD9CE;
+    --color-hairline: #F1EEE7;
+    --font-sans: Sora, system-ui, sans-serif;
+}

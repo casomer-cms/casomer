@@ -12,7 +12,7 @@ import { normalizeComponentManifest } from '../schema/manifest.ts';
 import { type LoadedComponent } from '../schema/loadPackage.ts';
 
 const coreDirectory = fileURLToPath( new URL( '../../core-components/', import.meta.url ) );
-const coreIds = [ 'markdown', 'image' ];
+const coreIds = [ 'markdown', 'image', 'link', 'heading' ];
 
 export async function loadCoreComponents (): Promise<ReadonlyMap<string, LoadedComponent>>
 {

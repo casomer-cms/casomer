@@ -1,40 +1,272 @@
 {
-    "artboards": [
-        { "file": "Palette.dc.html", "x": 0, "y": 0, "w": 1240, "h": 980, "title": "UI palette (M4 gate)" },
-        { "file": "Main.dc.html", "x": 1360, "y": 0, "w": 1440, "h": 900, "title": "Editor — light, flush desktop" },
-        { "file": "DarkCarved.dc.html", "x": 2920, "y": 0, "w": 1440, "h": 900, "title": "Editor — dark, site stays light" },
-        { "file": "CarvedShellTablet.dc.html", "x": 4480, "y": 0, "w": 1440, "h": 900, "title": "Editor — tablet, snapped off" },
-        { "file": "PageInspector.dc.html", "x": 0, "y": 1100, "w": 1440, "h": 900, "title": "Nothing selected — page level" },
-        { "file": "CollectionHome.dc.html", "x": 1560, "y": 1100, "w": 1440, "h": 900, "title": "Collection head-on — entries and structure" },
-        { "file": "TaxonomyTerms.dc.html", "x": 3120, "y": 1100, "w": 1440, "h": 900, "title": "Taxonomy terms — a data workspace" },
-        { "file": "Repeat.dc.html", "x": 4680, "y": 1100, "w": 1440, "h": 900, "title": "Repeat block — source, component, wiring" },
-        { "file": "Template.dc.html", "x": 0, "y": 2220, "w": 1440, "h": 900, "title": "Collection template — binding" },
-        { "file": "Picker.dc.html", "x": 1560, "y": 2220, "w": 1440, "h": 900, "title": "Component picker" },
-        { "file": "Presence.dc.html", "x": 3120, "y": 2220, "w": 1440, "h": 900, "title": "Working together — presence" },
-        { "file": "CommentThread.dc.html", "x": 4680, "y": 2220, "w": 1440, "h": 900, "title": "Discussion — anchored to the field" },
-        { "file": "DesktopOverview.dc.html", "x": 0, "y": 3340, "w": 1440, "h": 900, "title": "Desktop — projects" },
-        { "file": "ProjectSwitcher.dc.html", "x": 1560, "y": 3340, "w": 760, "h": 520, "title": "Project switcher — the way home" },
-        { "file": "History.dc.html", "x": 2440, "y": 3340, "w": 560, "h": 640, "title": "Publish history" },
-        { "file": "Outline.dc.html", "x": 3120, "y": 3340, "w": 560, "h": 640, "title": "Outline overlay" },
-        { "file": "CollectionFields.dc.html", "x": 6240, "y": 1100, "w": 1440, "h": 900, "title": "Collection fields — a workspace" },
-        { "file": "Comments.dc.html", "x": 4560, "y": 3340, "w": 560, "h": 460, "title": "Notifications" },
-        { "file": "AddSite.dc.html", "x": 0, "y": 4460, "w": 1100, "h": 700, "title": "Add site — three origins" },
-        { "file": "FirstRun.dc.html", "x": 1220, "y": 4460, "w": 1100, "h": 700, "title": "First run — the terms" },
-        { "file": "NewSiteWizard.dc.html", "x": 2440, "y": 4460, "w": 1200, "h": 800, "title": "New site — the declaration step" },
-        { "file": "GitHubConnect.dc.html", "x": 3760, "y": 4460, "w": 1200, "h": 800, "title": "New site — connect GitHub" },
-        { "file": "NewCollection.dc.html", "x": 5080, "y": 4460, "w": 1100, "h": 700, "title": "New collection" },
-        { "file": "AddBlock.dc.html", "x": 0, "y": 5480, "w": 860, "h": 420, "title": "Adding a block — the seam" },
-        { "file": "AccountMenu.dc.html", "x": 980, "y": 5480, "w": 860, "h": 600, "title": "Account badge — local and Cloud" },
-        { "file": "TeamPublish.dc.html", "x": 1960, "y": 5480, "w": 560, "h": 920, "title": "Team publish — wrap up, then release" },
-        { "file": "GraceGate.dc.html", "x": 2640, "y": 5480, "w": 640, "h": 860, "title": "The grace gate — countdown and key" },
-        { "file": "SupporterMoment.dc.html", "x": 3400, "y": 5480, "w": 560, "h": 400, "title": "The supporter moment — once, ever" },
-        { "file": "DeleteConfirm.dc.html", "x": 4080, "y": 5480, "w": 560, "h": 560, "title": "Deleting — informed, recoverable" },
-        { "file": "SelectionRing.dc.html", "x": 4760, "y": 5480, "w": 1100, "h": 460, "title": "Selection ring — three edge cases" },
-        { "file": "SiteSettings.dc.html", "x": 6300, "y": 4460, "w": 1440, "h": 900, "title": "Site settings — behind the gear" },
-        { "file": "FirstPublish.dc.html", "x": 5980, "y": 5480, "w": 560, "h": 640, "title": "First publish — where should this live" }
-    ],
-    "annotations": [
-        { "id": "draft-1-brief", "x": 0, "y": -230, "w": 460, "text": "Casomer Studio in the Carved Shell system — one page, six rows.\n\nRow 1: palette (the M4 gate) and the editor in its three viewport states. Row 2: the workspaces — page level, collection head-on, taxonomy terms, repeat. Row 3: template binding, picker, presence, discussion. Row 4: desktop surfaces and overlays. Row 5: onboarding. Row 6: moments — block seam, account, team publish (wrap up, then release), grace gate, supporter, delete.\n\nOne rule set ties it together: content in the tree, structure in the inspector, browsing in the workspace; amber is yours; unwrapped edits never publish; nothing deletes without naming its references." }
-    ],
-    "launch": { "view": "canvas" }
+  "artboards": [
+    {
+      "file": "Palette.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1240,
+      "h": 980,
+      "title": "UI palette (M4 gate)"
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 1360,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Editor — light, flush desktop"
+    },
+    {
+      "file": "DarkCarved.dc.html",
+      "x": 2920,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Editor — dark, site stays light"
+    },
+    {
+      "file": "CarvedShellTablet.dc.html",
+      "x": 4480,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Editor — tablet, snapped off"
+    },
+    {
+      "file": "PageInspector.dc.html",
+      "x": 0,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "Nothing selected — page level"
+    },
+    {
+      "file": "CollectionHome.dc.html",
+      "x": 1560,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "Collection head-on — entries and structure"
+    },
+    {
+      "file": "TaxonomyTerms.dc.html",
+      "x": 3120,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "Taxonomy terms — a data workspace"
+    },
+    {
+      "file": "Repeat.dc.html",
+      "x": 4680,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "Repeat block — source, component, wiring"
+    },
+    {
+      "file": "Template.dc.html",
+      "x": 0,
+      "y": 2220,
+      "w": 1440,
+      "h": 900,
+      "title": "Collection template — binding"
+    },
+    {
+      "file": "Picker.dc.html",
+      "x": 1560,
+      "y": 2220,
+      "w": 1440,
+      "h": 900,
+      "title": "Component picker"
+    },
+    {
+      "file": "Presence.dc.html",
+      "x": 3120,
+      "y": 2220,
+      "w": 1440,
+      "h": 900,
+      "title": "Working together — presence"
+    },
+    {
+      "file": "CommentThread.dc.html",
+      "x": 4680,
+      "y": 2220,
+      "w": 1440,
+      "h": 900,
+      "title": "Discussion — anchored to the field"
+    },
+    {
+      "file": "DesktopOverview.dc.html",
+      "x": 0,
+      "y": 3340,
+      "w": 1440,
+      "h": 900,
+      "title": "Desktop — projects"
+    },
+    {
+      "file": "ProjectSwitcher.dc.html",
+      "x": 1560,
+      "y": 3340,
+      "w": 760,
+      "h": 520,
+      "title": "Project switcher — the way home"
+    },
+    {
+      "file": "History.dc.html",
+      "x": 2440,
+      "y": 3340,
+      "w": 560,
+      "h": 640,
+      "title": "Publish history"
+    },
+    {
+      "file": "Outline.dc.html",
+      "x": 3120,
+      "y": 3340,
+      "w": 560,
+      "h": 640,
+      "title": "Outline overlay"
+    },
+    {
+      "file": "CollectionFields.dc.html",
+      "x": 6240,
+      "y": 1100,
+      "w": 1440,
+      "h": 900,
+      "title": "Collection fields — a workspace"
+    },
+    {
+      "file": "Comments.dc.html",
+      "x": 4560,
+      "y": 3340,
+      "w": 560,
+      "h": 460,
+      "title": "Notifications"
+    },
+    {
+      "file": "AddSite.dc.html",
+      "x": 0,
+      "y": 4460,
+      "w": 1100,
+      "h": 700,
+      "title": "Add site — three origins"
+    },
+    {
+      "file": "FirstRun.dc.html",
+      "x": 1220,
+      "y": 4460,
+      "w": 1100,
+      "h": 700,
+      "title": "First run — the terms"
+    },
+    {
+      "file": "NewSiteWizard.dc.html",
+      "x": 2440,
+      "y": 4460,
+      "w": 1200,
+      "h": 800,
+      "title": "New site — the declaration step"
+    },
+    {
+      "file": "GitHubConnect.dc.html",
+      "x": 3760,
+      "y": 4460,
+      "w": 1200,
+      "h": 800,
+      "title": "New site — connect GitHub"
+    },
+    {
+      "file": "NewCollection.dc.html",
+      "x": 5080,
+      "y": 4460,
+      "w": 1100,
+      "h": 700,
+      "title": "New collection"
+    },
+    {
+      "file": "AddBlock.dc.html",
+      "x": 0,
+      "y": 5480,
+      "w": 860,
+      "h": 420,
+      "title": "Adding a block — the seam"
+    },
+    {
+      "file": "AccountMenu.dc.html",
+      "x": 980,
+      "y": 5480,
+      "w": 860,
+      "h": 600,
+      "title": "Account badge — local and Cloud"
+    },
+    {
+      "file": "TeamPublish.dc.html",
+      "x": 1960,
+      "y": 5480,
+      "w": 560,
+      "h": 920,
+      "title": "Team publish — wrap up, then release"
+    },
+    {
+      "file": "GraceGate.dc.html",
+      "x": 2640,
+      "y": 5480,
+      "w": 640,
+      "h": 860,
+      "title": "The grace gate — countdown and key"
+    },
+    {
+      "file": "SupporterMoment.dc.html",
+      "x": 3400,
+      "y": 5480,
+      "w": 560,
+      "h": 400,
+      "title": "The supporter moment — once, ever"
+    },
+    {
+      "file": "DeleteConfirm.dc.html",
+      "x": 4080,
+      "y": 5480,
+      "w": 560,
+      "h": 560,
+      "title": "Deleting — informed, recoverable"
+    },
+    {
+      "file": "SelectionRing.dc.html",
+      "x": 4760,
+      "y": 5480,
+      "w": 1100,
+      "h": 460,
+      "title": "Selection ring — three edge cases"
+    },
+    {
+      "file": "SiteSettings.dc.html",
+      "x": 6300,
+      "y": 4460,
+      "w": 1440,
+      "h": 900,
+      "title": "Site settings — behind the gear"
+    },
+    {
+      "file": "FirstPublish.dc.html",
+      "x": 5980,
+      "y": 5480,
+      "w": 560,
+      "h": 640,
+      "title": "First publish — where should this live"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "draft-1-brief",
+      "x": 0,
+      "y": -230,
+      "w": 460,
+      "text": "Casomer Studio in the Carved Shell system — one page, six rows.\n\nRow 1: palette (the M4 gate) and the editor in its three viewport states. Row 2: the workspaces — page level, collection head-on, taxonomy terms, repeat. Row 3: template binding, picker, presence, discussion. Row 4: desktop surfaces and overlays. Row 5: onboarding. Row 6: moments — block seam, account, team publish (wrap up, then release), grace gate, supporter, delete.\n\nOne rule set ties it together: content in the tree, structure in the inspector, browsing in the workspace; amber is yours; unwrapped edits never publish; nothing deletes without naming its references."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
 }

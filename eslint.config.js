@@ -18,7 +18,7 @@ const baseline = stylistic.configs.customize( {
 
 export default [
     {
-        ignores: [ 'node_modules/**', 'dist/**' ],
+        ignores: [ 'node_modules/**', 'dist/**', 'studio/dist/**', 'studio-alpine/alpine/alpine.min.js', 'studio-alpine/svelte/dist/**', 'studio-alpine/engine/dist/**', 'studio/app/engine.js' ],
     },
     {
         files: [ '**/*.js', '**/*.ts' ],

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire( import.meta.url );
 const { version } = require( '../package.json' );
 
-const commands = new Set( [ 'build', 'preview', 'init', 'publish', 'credential' ] );
+const commands = new Set( [ 'studio', 'save', 'build', 'preview', 'init', 'publish', 'credential' ] );
 const command = process.argv[ 2 ];
 
 if ( commands.has( command ) )
@@ -30,6 +30,8 @@ console.log( `
 
   Commands so far:
     caso init [--remote url]
+    caso studio [--content dir] [--port n] [--host host] [--token t] [--package dir] [--open]
+    caso save
     caso build [--content dir] [--out dir] [--package dir] [--pretty]
     caso preview [--dir dir] [--port n]
     caso publish

@@ -6,13 +6,21 @@
 // names are cross-checked by the site loader, which knows the theme.
 
 import { suggestNearest } from '../schema/fields.ts';
+import { parseExpression } from '../schema/expressions.ts';
 import { parseComponentReference, ComponentReferenceError, type SchemaIssue } from '../schema/manifest.ts';
 
 export type TokenValue = string | Readonly<Record<string, string>>;
 
-const componentBlockKeys = [ 'component', 'props', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull' ];
+const componentBlockKeys = [ 'component', 'props', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull', 'morph' ];
+const partialBlockKeys = [ 'partial', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull' ];
+const morphShape = /^[a-z][a-z0-9-]*$/;
 const sectionBlockKeys = [ 'section', 'blocks', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull' ];
-const sectionPropertyKeys = [ 'gap', 'justify', 'align', 'wrap', 'padding', 'direction', 'minHeight' ];
+const repeatBlockKeys = [ 'repeat', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull' ];
+const repeatKeys = [ 'source', 'component', 'props', 'empty' ];
+const repeatSourceKeys = [ 'collection', 'order', 'limit', 'entries', 'term', 'menu', 'taxonomy', 'filter' ];
+const bindPathShape = /^entry\.[A-Za-z_][A-Za-z0-9_.]*$/;
+const orderShape = /^-?entry\.[A-Za-z_][A-Za-z0-9_.]*$/;
+const sectionPropertyKeys = [ 'gap', 'justify', 'align', 'wrap', 'padding', 'direction', 'minHeight', 'width' ];
 
 const directions = [ 'row', 'column', 'layer' ];
 const minHeightPresets = [ 'screen', 'half', 'third' ];
@@ -36,6 +44,7 @@ export interface BlocksAnalysis
 {
     readonly references: readonly CollectedReference[];
     readonly spacingValues: readonly CollectedTokenValue[];
+    readonly repeatSources: readonly { readonly collection: string; readonly path: string }[];
 }
 
 function validateTokenValue (
@@ -160,6 +169,14 @@ function validateSection (
         issues.push( { path: `${path}.wrap`, message: '"wrap" is a boolean.' } );
     }
 
+    // Section width overrides the theme's content width for this
+    // section's content (SCHEMA section 11.8); the token's existence
+    // in theme.widths is checked with the other token references.
+    if ( record.width !== undefined && typeof record.width !== 'string' )
+    {
+        issues.push( { path: `${path}.width`, message: '"width" is a widths token name.' } );
+    }
+
     if ( record.direction !== undefined && ( typeof record.direction !== 'string' || !directions.includes( record.direction ) ) )
     {
         issues.push( {
@@ -192,6 +209,7 @@ function validateBlock (
     slugs: Map<string, string>,
     references: CollectedReference[],
     spacingValues: CollectedTokenValue[],
+    repeatSources: { collection: string; path: string }[],
 ): void
 {
     if ( raw === null || typeof raw !== 'object' || Array.isArray( raw ) )
@@ -203,17 +221,21 @@ function validateBlock (
     const record = raw as Record<string, unknown>;
     const isComponent = record.component !== undefined;
     const isSection = record.section !== undefined;
+    const isRepeat = record.repeat !== undefined;
+    const isPartial = record.partial !== undefined;
 
-    if ( isComponent === isSection )
+    if ( [ isComponent, isSection, isRepeat, isPartial ].filter( Boolean ).length !== 1 )
     {
         issues.push( {
             path,
-            message: 'A block is exactly one of a component instance ({ "component", "props" }) or a section ({ "section", "blocks" }).',
+            message: 'A block is exactly one of a component instance ({ "component", "props" }), a section ({ "section", "blocks" }), a repeat ({ "repeat" }), or a partial ({ "partial": "<name>" }, SCHEMA 12.5).',
         } );
         return;
     }
 
-    const allowedKeys = isComponent ? componentBlockKeys : sectionBlockKeys;
+    const allowedKeys = isComponent
+        ? componentBlockKeys
+        : ( isRepeat ? repeatBlockKeys : ( isPartial ? partialBlockKeys : sectionBlockKeys ) );
 
     for ( const key of Object.keys( record ) )
     {
@@ -227,6 +249,18 @@ function validateBlock (
     }
 
     validateWrapperCommon( record, path, issues, slugs, spacingValues );
+
+    // A partial block inserts a named site partial (SCHEMA 12.5);
+    // existence is checked by the loader, which knows the config.
+    if ( isPartial )
+    {
+        if ( typeof record.partial !== 'string' || !/^[a-z][a-z0-9-]*$/.test( record.partial ) )
+        {
+            issues.push( { path: `${path}.partial`, message: '"partial" names a site partial: lowercase, digits, hyphens.' } );
+        }
+
+        return;
+    }
 
     if ( isComponent )
     {
@@ -256,6 +290,174 @@ function validateBlock (
             issues.push( { path: `${path}.props`, message: '"props" is an object of field values.' } );
         }
 
+        // A morph link (SCHEMA 6): a token-shaped name, leading
+        // letter - it becomes a view-transition-name at compile.
+        if ( record.morph !== undefined && ( typeof record.morph !== 'string' || !morphShape.test( record.morph ) ) )
+        {
+            issues.push( { path: `${path}.morph`, message: '"morph" is a lowercase name starting with a letter, like "hero". The same name on another page pairs the two blocks\' anchors for the transition.' } );
+        }
+
+        return;
+    }
+
+    // Repetition is arrangement, never a special component (13.5): a
+    // repeat names its source, the component each item renders
+    // through, and props whose values may be { "$bind": "entry.x" }.
+    if ( isRepeat )
+    {
+        const repeat = record.repeat;
+
+        if ( repeat === null || typeof repeat !== 'object' || Array.isArray( repeat ) )
+        {
+            issues.push( { path: `${path}.repeat`, message: '"repeat" is an object: { "source", "component", "props" }.' } );
+            return;
+        }
+
+        const repeatRecord = repeat as Record<string, unknown>;
+
+        for ( const key of Object.keys( repeatRecord ) )
+        {
+            if ( !repeatKeys.includes( key ) )
+            {
+                issues.push( { path: `${path}.repeat.${key}`, message: `Unknown repeat key "${key}".${suggestNearest( key, repeatKeys )}` } );
+            }
+        }
+
+        const source = repeatRecord.source;
+
+        if ( source === null || typeof source !== 'object' || Array.isArray( source ) )
+        {
+            issues.push( { path: `${path}.repeat.source`, message: '"source" is an object naming a collection or curating entries.' } );
+        }
+        else
+        {
+            const sourceRecord = source as Record<string, unknown>;
+
+            for ( const key of Object.keys( sourceRecord ) )
+            {
+                if ( !repeatSourceKeys.includes( key ) )
+                {
+                    issues.push( { path: `${path}.repeat.source.${key}`, message: `Unknown source key "${key}".${suggestNearest( key, repeatSourceKeys )}` } );
+                }
+            }
+
+            const hasCollection = sourceRecord.collection !== undefined;
+            const hasCurated = sourceRecord.entries !== undefined;
+            const hasMenu = sourceRecord.menu !== undefined;
+            const hasTaxonomy = sourceRecord.taxonomy !== undefined;
+
+            if ( sourceRecord.term !== undefined && sourceRecord.term !== 'current' )
+            {
+                issues.push( { path: `${path}.repeat.source.term`, message: '"term" takes exactly "current": the entries classified under the term page being rendered (SCHEMA 13.3).' } );
+            }
+
+            if ( [ hasCollection, hasCurated, hasMenu, hasTaxonomy ].filter( Boolean ).length !== 1 )
+            {
+                issues.push( { path: `${path}.repeat.source`, message: 'A source is exactly one of { "collection" }, { "entries" }, { "menu" }, or { "taxonomy" }.' } );
+            }
+
+            if ( hasMenu && ( typeof sourceRecord.menu !== 'string' || sourceRecord.menu === '' ) )
+            {
+                issues.push( { path: `${path}.repeat.source.menu`, message: '"menu" names a site menu by its key.' } );
+            }
+
+            if ( hasTaxonomy && ( typeof sourceRecord.taxonomy !== 'string' || sourceRecord.taxonomy === '' ) )
+            {
+                issues.push( { path: `${path}.repeat.source.taxonomy`, message: '"taxonomy" names a taxonomy file, without its .json.' } );
+            }
+
+            if ( hasCollection )
+            {
+                if ( typeof sourceRecord.collection !== 'string' || sourceRecord.collection === '' )
+                {
+                    issues.push( { path: `${path}.repeat.source.collection`, message: '"collection" names a collection file, without its .json.' } );
+                }
+                else { repeatSources.push( { collection: sourceRecord.collection, path: `${path}.repeat.source.collection` } ); }
+            }
+
+            if ( hasCurated && ( !Array.isArray( sourceRecord.entries ) || sourceRecord.entries.some( ( id ) => typeof id !== 'string' ) ) )
+            {
+                issues.push( { path: `${path}.repeat.source.entries`, message: '"entries" is an array of entry ids, in display order.' } );
+            }
+
+            if ( sourceRecord.order !== undefined && ( typeof sourceRecord.order !== 'string' || !orderShape.test( sourceRecord.order ) ) )
+            {
+                issues.push( { path: `${path}.repeat.source.order`, message: '"order" is a signed entry path, like "-entry.eventDate".' } );
+            }
+
+            // "filter" narrows a collection query with the SAME
+            // expression grammar conditions use (SCHEMA 3.1): field
+            // keys as identifiers - 'featured && type == "talk"'.
+            if ( sourceRecord.filter !== undefined )
+            {
+                if ( !hasCollection || typeof sourceRecord.filter !== 'string' || sourceRecord.filter === '' )
+                {
+                    issues.push( { path: `${path}.repeat.source.filter`, message: '"filter" is an expression string on a collection source, like "featured == true".' } );
+                }
+                else
+                {
+                    try { parseExpression( sourceRecord.filter ); }
+                    catch ( error )
+                    {
+                        issues.push( { path: `${path}.repeat.source.filter`, message: `The filter does not parse: ${( error as Error ).message}` } );
+                    }
+                }
+            }
+
+            if ( sourceRecord.limit !== undefined && ( typeof sourceRecord.limit !== 'number' || !Number.isInteger( sourceRecord.limit ) || sourceRecord.limit < 1 ) )
+            {
+                issues.push( { path: `${path}.repeat.source.limit`, message: '"limit" is a positive whole number.' } );
+            }
+        }
+
+        // The empty state (SCHEMA 13.5): author-owned markdown shown
+        // when the repeat matches nothing - never invented content.
+        if ( repeatRecord.empty !== undefined && typeof repeatRecord.empty !== 'string' )
+        {
+            issues.push( { path: `${path}.repeat.empty`, message: '"empty" is a markdown string shown when the repeat matches nothing.' } );
+        }
+
+        if ( typeof repeatRecord.component !== 'string' )
+        {
+            issues.push( { path: `${path}.repeat.component`, message: '"component" is a "package/id" reference string.' } );
+        }
+        else
+        {
+            try
+            {
+                parseComponentReference( repeatRecord.component );
+                references.push( { reference: repeatRecord.component, path: `${path}.repeat.component` } );
+            }
+            catch ( error )
+            {
+                if ( error instanceof ComponentReferenceError )
+                {
+                    issues.push( { path: `${path}.repeat.component`, message: error.message } );
+                }
+                else { throw error; }
+            }
+        }
+
+        if ( repeatRecord.props !== undefined )
+        {
+            if ( repeatRecord.props === null || typeof repeatRecord.props !== 'object' || Array.isArray( repeatRecord.props ) )
+            {
+                issues.push( { path: `${path}.repeat.props`, message: '"props" is an object; values may be literals or { "$bind": "entry.field" }.' } );
+            }
+            else
+            {
+                for ( const [ propKey, propValue ] of Object.entries( repeatRecord.props as Record<string, unknown> ) )
+                {
+                    const bind = ( propValue as Record<string, unknown> | null )?.$bind;
+
+                    if ( bind !== undefined && ( typeof bind !== 'string' || !bindPathShape.test( bind ) ) )
+                    {
+                        issues.push( { path: `${path}.repeat.props.${propKey}.$bind`, message: '"$bind" is an entry path, like "entry.title".' } );
+                    }
+                }
+            }
+        }
+
         return;
     }
 
@@ -269,7 +471,7 @@ function validateBlock (
 
     for ( const [ index, child ] of record.blocks.entries() )
     {
-        validateBlock( child, `${path}.blocks[${index}]`, issues, slugs, references, spacingValues );
+        validateBlock( child, `${path}.blocks[${index}]`, issues, slugs, references, spacingValues, repeatSources );
     }
 }
 
@@ -277,18 +479,19 @@ export function analyzeBlocks ( raw: unknown, path: string, issues: SchemaIssue[
 {
     const references: CollectedReference[] = [];
     const spacingValues: CollectedTokenValue[] = [];
+    const repeatSources: { collection: string; path: string }[] = [];
     const slugs = new Map<string, string>();
 
     if ( !Array.isArray( raw ) )
     {
         issues.push( { path, message: 'A page\'s content is a "blocks" array; the page is the root section.' } );
-        return { references, spacingValues };
+        return { references, spacingValues, repeatSources };
     }
 
     for ( const [ index, block ] of raw.entries() )
     {
-        validateBlock( block, `${path}[${index}]`, issues, slugs, references, spacingValues );
+        validateBlock( block, `${path}[${index}]`, issues, slugs, references, spacingValues, repeatSources );
     }
 
-    return { references, spacingValues };
+    return { references, spacingValues, repeatSources };
 }

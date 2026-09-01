@@ -1,0 +1,28 @@
+{
+    "id": "heading",
+    "title": "Heading",
+    "description": "A heading. The page's first heading becomes its h1; the compiler assigns real levels.",
+    "template": "./template.html",
+    "fields": {
+        "text": {
+            "type": "text",
+            "required": true,
+            "label": "Text"
+        }
+    },
+    "anchors": [
+        {
+            "id": "heading",
+            "label": "Heading",
+            "kind": "text"
+        }
+    ],
+    "examples": [
+        {
+            "name": "Basic",
+            "props": {
+                "text": "A heading"
+            }
+        }
+    ]
+}

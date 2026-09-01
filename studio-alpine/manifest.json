@@ -1,0 +1,949 @@
+{
+    "id": "card",
+    "title": "Card",
+    "packageName": "fixture-kit",
+    "fields": {
+        "title": {
+            "type": "text",
+            "required": true,
+            "label": "Title",
+            "rules": {
+                "max": 80
+            },
+            "messages": {}
+        },
+        "layout": {
+            "type": "select",
+            "required": false,
+            "label": "Layout",
+            "rules": {},
+            "messages": {},
+            "options": {
+                "source": "static",
+                "values": [
+                    {
+                        "value": "stacked",
+                        "label": "stacked"
+                    },
+                    {
+                        "value": "overlay",
+                        "label": "overlay"
+                    }
+                ]
+            }
+        },
+        "scrim": {
+            "type": "toggle",
+            "required": false,
+            "label": "Scrim",
+            "rules": {},
+            "messages": {},
+            "showWhen": {
+                "source": "layout == \"overlay\"",
+                "expression": {
+                    "kind": "comparison",
+                    "operator": "==",
+                    "left": {
+                        "kind": "field",
+                        "key": "layout"
+                    },
+                    "right": {
+                        "kind": "literal",
+                        "value": "overlay"
+                    }
+                }
+            }
+        },
+        "style": {
+            "type": "select",
+            "required": false,
+            "label": "Style",
+            "rules": {},
+            "messages": {},
+            "options": {
+                "source": "byField",
+                "byField": "layout",
+                "map": {
+                    "stacked": [
+                        "tight",
+                        "airy"
+                    ],
+                    "overlay": [
+                        "dark",
+                        "light"
+                    ]
+                }
+            }
+        },
+        "width": {
+            "type": "select",
+            "required": false,
+            "label": "Width",
+            "defaultValue": "prose",
+            "rules": {},
+            "messages": {},
+            "options": {
+                "source": "fromTokens",
+                "tokenFamily": "widths"
+            }
+        },
+        "photo": {
+            "type": "image",
+            "required": true,
+            "label": "Photo",
+            "rules": {},
+            "messages": {}
+        },
+        "divider": {
+            "type": "image",
+            "required": false,
+            "label": "Divider",
+            "rules": {},
+            "messages": {},
+            "decorativeAlt": true
+        },
+        "faqs": {
+            "type": "list",
+            "required": false,
+            "label": "Faqs",
+            "rules": {
+                "min": 1
+            },
+            "messages": {},
+            "fields": {
+                "question": {
+                    "type": "text",
+                    "required": true,
+                    "label": "Question",
+                    "rules": {},
+                    "messages": {}
+                },
+                "answer": {
+                    "type": "markdown",
+                    "required": true,
+                    "label": "Answer",
+                    "rules": {},
+                    "messages": {}
+                }
+            }
+        }
+    },
+    "initialProps": {
+        "title": "An overlay card",
+        "layout": "overlay",
+        "scrim": true,
+        "photo": {
+            "src": "/media/example.jpg",
+            "alt": "An example photo"
+        },
+        "faqs": [
+            {
+                "question": "Question 1",
+                "answer": "Answer **1** of two hundred."
+            },
+            {
+                "question": "Question 2",
+                "answer": "Answer **2** of two hundred."
+            },
+            {
+                "question": "Question 3",
+                "answer": "Answer **3** of two hundred."
+            },
+            {
+                "question": "Question 4",
+                "answer": "Answer **4** of two hundred."
+            },
+            {
+                "question": "Question 5",
+                "answer": "Answer **5** of two hundred."
+            },
+            {
+                "question": "Question 6",
+                "answer": "Answer **6** of two hundred."
+            },
+            {
+                "question": "Question 7",
+                "answer": "Answer **7** of two hundred."
+            },
+            {
+                "question": "Question 8",
+                "answer": "Answer **8** of two hundred."
+            },
+            {
+                "question": "Question 9",
+                "answer": "Answer **9** of two hundred."
+            },
+            {
+                "question": "Question 10",
+                "answer": "Answer **10** of two hundred."
+            },
+            {
+                "question": "Question 11",
+                "answer": "Answer **11** of two hundred."
+            },
+            {
+                "question": "Question 12",
+                "answer": "Answer **12** of two hundred."
+            },
+            {
+                "question": "Question 13",
+                "answer": "Answer **13** of two hundred."
+            },
+            {
+                "question": "Question 14",
+                "answer": "Answer **14** of two hundred."
+            },
+            {
+                "question": "Question 15",
+                "answer": "Answer **15** of two hundred."
+            },
+            {
+                "question": "Question 16",
+                "answer": "Answer **16** of two hundred."
+            },
+            {
+                "question": "Question 17",
+                "answer": "Answer **17** of two hundred."
+            },
+            {
+                "question": "Question 18",
+                "answer": "Answer **18** of two hundred."
+            },
+            {
+                "question": "Question 19",
+                "answer": "Answer **19** of two hundred."
+            },
+            {
+                "question": "Question 20",
+                "answer": "Answer **20** of two hundred."
+            },
+            {
+                "question": "Question 21",
+                "answer": "Answer **21** of two hundred."
+            },
+            {
+                "question": "Question 22",
+                "answer": "Answer **22** of two hundred."
+            },
+            {
+                "question": "Question 23",
+                "answer": "Answer **23** of two hundred."
+            },
+            {
+                "question": "Question 24",
+                "answer": "Answer **24** of two hundred."
+            },
+            {
+                "question": "Question 25",
+                "answer": "Answer **25** of two hundred."
+            },
+            {
+                "question": "Question 26",
+                "answer": "Answer **26** of two hundred."
+            },
+            {
+                "question": "Question 27",
+                "answer": "Answer **27** of two hundred."
+            },
+            {
+                "question": "Question 28",
+                "answer": "Answer **28** of two hundred."
+            },
+            {
+                "question": "Question 29",
+                "answer": "Answer **29** of two hundred."
+            },
+            {
+                "question": "Question 30",
+                "answer": "Answer **30** of two hundred."
+            },
+            {
+                "question": "Question 31",
+                "answer": "Answer **31** of two hundred."
+            },
+            {
+                "question": "Question 32",
+                "answer": "Answer **32** of two hundred."
+            },
+            {
+                "question": "Question 33",
+                "answer": "Answer **33** of two hundred."
+            },
+            {
+                "question": "Question 34",
+                "answer": "Answer **34** of two hundred."
+            },
+            {
+                "question": "Question 35",
+                "answer": "Answer **35** of two hundred."
+            },
+            {
+                "question": "Question 36",
+                "answer": "Answer **36** of two hundred."
+            },
+            {
+                "question": "Question 37",
+                "answer": "Answer **37** of two hundred."
+            },
+            {
+                "question": "Question 38",
+                "answer": "Answer **38** of two hundred."
+            },
+            {
+                "question": "Question 39",
+                "answer": "Answer **39** of two hundred."
+            },
+            {
+                "question": "Question 40",
+                "answer": "Answer **40** of two hundred."
+            },
+            {
+                "question": "Question 41",
+                "answer": "Answer **41** of two hundred."
+            },
+            {
+                "question": "Question 42",
+                "answer": "Answer **42** of two hundred."
+            },
+            {
+                "question": "Question 43",
+                "answer": "Answer **43** of two hundred."
+            },
+            {
+                "question": "Question 44",
+                "answer": "Answer **44** of two hundred."
+            },
+            {
+                "question": "Question 45",
+                "answer": "Answer **45** of two hundred."
+            },
+            {
+                "question": "Question 46",
+                "answer": "Answer **46** of two hundred."
+            },
+            {
+                "question": "Question 47",
+                "answer": "Answer **47** of two hundred."
+            },
+            {
+                "question": "Question 48",
+                "answer": "Answer **48** of two hundred."
+            },
+            {
+                "question": "Question 49",
+                "answer": "Answer **49** of two hundred."
+            },
+            {
+                "question": "Question 50",
+                "answer": "Answer **50** of two hundred."
+            },
+            {
+                "question": "Question 51",
+                "answer": "Answer **51** of two hundred."
+            },
+            {
+                "question": "Question 52",
+                "answer": "Answer **52** of two hundred."
+            },
+            {
+                "question": "Question 53",
+                "answer": "Answer **53** of two hundred."
+            },
+            {
+                "question": "Question 54",
+                "answer": "Answer **54** of two hundred."
+            },
+            {
+                "question": "Question 55",
+                "answer": "Answer **55** of two hundred."
+            },
+            {
+                "question": "Question 56",
+                "answer": "Answer **56** of two hundred."
+            },
+            {
+                "question": "Question 57",
+                "answer": "Answer **57** of two hundred."
+            },
+            {
+                "question": "Question 58",
+                "answer": "Answer **58** of two hundred."
+            },
+            {
+                "question": "Question 59",
+                "answer": "Answer **59** of two hundred."
+            },
+            {
+                "question": "Question 60",
+                "answer": "Answer **60** of two hundred."
+            },
+            {
+                "question": "Question 61",
+                "answer": "Answer **61** of two hundred."
+            },
+            {
+                "question": "Question 62",
+                "answer": "Answer **62** of two hundred."
+            },
+            {
+                "question": "Question 63",
+                "answer": "Answer **63** of two hundred."
+            },
+            {
+                "question": "Question 64",
+                "answer": "Answer **64** of two hundred."
+            },
+            {
+                "question": "Question 65",
+                "answer": "Answer **65** of two hundred."
+            },
+            {
+                "question": "Question 66",
+                "answer": "Answer **66** of two hundred."
+            },
+            {
+                "question": "Question 67",
+                "answer": "Answer **67** of two hundred."
+            },
+            {
+                "question": "Question 68",
+                "answer": "Answer **68** of two hundred."
+            },
+            {
+                "question": "Question 69",
+                "answer": "Answer **69** of two hundred."
+            },
+            {
+                "question": "Question 70",
+                "answer": "Answer **70** of two hundred."
+            },
+            {
+                "question": "Question 71",
+                "answer": "Answer **71** of two hundred."
+            },
+            {
+                "question": "Question 72",
+                "answer": "Answer **72** of two hundred."
+            },
+            {
+                "question": "Question 73",
+                "answer": "Answer **73** of two hundred."
+            },
+            {
+                "question": "Question 74",
+                "answer": "Answer **74** of two hundred."
+            },
+            {
+                "question": "Question 75",
+                "answer": "Answer **75** of two hundred."
+            },
+            {
+                "question": "Question 76",
+                "answer": "Answer **76** of two hundred."
+            },
+            {
+                "question": "Question 77",
+                "answer": "Answer **77** of two hundred."
+            },
+            {
+                "question": "Question 78",
+                "answer": "Answer **78** of two hundred."
+            },
+            {
+                "question": "Question 79",
+                "answer": "Answer **79** of two hundred."
+            },
+            {
+                "question": "Question 80",
+                "answer": "Answer **80** of two hundred."
+            },
+            {
+                "question": "Question 81",
+                "answer": "Answer **81** of two hundred."
+            },
+            {
+                "question": "Question 82",
+                "answer": "Answer **82** of two hundred."
+            },
+            {
+                "question": "Question 83",
+                "answer": "Answer **83** of two hundred."
+            },
+            {
+                "question": "Question 84",
+                "answer": "Answer **84** of two hundred."
+            },
+            {
+                "question": "Question 85",
+                "answer": "Answer **85** of two hundred."
+            },
+            {
+                "question": "Question 86",
+                "answer": "Answer **86** of two hundred."
+            },
+            {
+                "question": "Question 87",
+                "answer": "Answer **87** of two hundred."
+            },
+            {
+                "question": "Question 88",
+                "answer": "Answer **88** of two hundred."
+            },
+            {
+                "question": "Question 89",
+                "answer": "Answer **89** of two hundred."
+            },
+            {
+                "question": "Question 90",
+                "answer": "Answer **90** of two hundred."
+            },
+            {
+                "question": "Question 91",
+                "answer": "Answer **91** of two hundred."
+            },
+            {
+                "question": "Question 92",
+                "answer": "Answer **92** of two hundred."
+            },
+            {
+                "question": "Question 93",
+                "answer": "Answer **93** of two hundred."
+            },
+            {
+                "question": "Question 94",
+                "answer": "Answer **94** of two hundred."
+            },
+            {
+                "question": "Question 95",
+                "answer": "Answer **95** of two hundred."
+            },
+            {
+                "question": "Question 96",
+                "answer": "Answer **96** of two hundred."
+            },
+            {
+                "question": "Question 97",
+                "answer": "Answer **97** of two hundred."
+            },
+            {
+                "question": "Question 98",
+                "answer": "Answer **98** of two hundred."
+            },
+            {
+                "question": "Question 99",
+                "answer": "Answer **99** of two hundred."
+            },
+            {
+                "question": "Question 100",
+                "answer": "Answer **100** of two hundred."
+            },
+            {
+                "question": "Question 101",
+                "answer": "Answer **101** of two hundred."
+            },
+            {
+                "question": "Question 102",
+                "answer": "Answer **102** of two hundred."
+            },
+            {
+                "question": "Question 103",
+                "answer": "Answer **103** of two hundred."
+            },
+            {
+                "question": "Question 104",
+                "answer": "Answer **104** of two hundred."
+            },
+            {
+                "question": "Question 105",
+                "answer": "Answer **105** of two hundred."
+            },
+            {
+                "question": "Question 106",
+                "answer": "Answer **106** of two hundred."
+            },
+            {
+                "question": "Question 107",
+                "answer": "Answer **107** of two hundred."
+            },
+            {
+                "question": "Question 108",
+                "answer": "Answer **108** of two hundred."
+            },
+            {
+                "question": "Question 109",
+                "answer": "Answer **109** of two hundred."
+            },
+            {
+                "question": "Question 110",
+                "answer": "Answer **110** of two hundred."
+            },
+            {
+                "question": "Question 111",
+                "answer": "Answer **111** of two hundred."
+            },
+            {
+                "question": "Question 112",
+                "answer": "Answer **112** of two hundred."
+            },
+            {
+                "question": "Question 113",
+                "answer": "Answer **113** of two hundred."
+            },
+            {
+                "question": "Question 114",
+                "answer": "Answer **114** of two hundred."
+            },
+            {
+                "question": "Question 115",
+                "answer": "Answer **115** of two hundred."
+            },
+            {
+                "question": "Question 116",
+                "answer": "Answer **116** of two hundred."
+            },
+            {
+                "question": "Question 117",
+                "answer": "Answer **117** of two hundred."
+            },
+            {
+                "question": "Question 118",
+                "answer": "Answer **118** of two hundred."
+            },
+            {
+                "question": "Question 119",
+                "answer": "Answer **119** of two hundred."
+            },
+            {
+                "question": "Question 120",
+                "answer": "Answer **120** of two hundred."
+            },
+            {
+                "question": "Question 121",
+                "answer": "Answer **121** of two hundred."
+            },
+            {
+                "question": "Question 122",
+                "answer": "Answer **122** of two hundred."
+            },
+            {
+                "question": "Question 123",
+                "answer": "Answer **123** of two hundred."
+            },
+            {
+                "question": "Question 124",
+                "answer": "Answer **124** of two hundred."
+            },
+            {
+                "question": "Question 125",
+                "answer": "Answer **125** of two hundred."
+            },
+            {
+                "question": "Question 126",
+                "answer": "Answer **126** of two hundred."
+            },
+            {
+                "question": "Question 127",
+                "answer": "Answer **127** of two hundred."
+            },
+            {
+                "question": "Question 128",
+                "answer": "Answer **128** of two hundred."
+            },
+            {
+                "question": "Question 129",
+                "answer": "Answer **129** of two hundred."
+            },
+            {
+                "question": "Question 130",
+                "answer": "Answer **130** of two hundred."
+            },
+            {
+                "question": "Question 131",
+                "answer": "Answer **131** of two hundred."
+            },
+            {
+                "question": "Question 132",
+                "answer": "Answer **132** of two hundred."
+            },
+            {
+                "question": "Question 133",
+                "answer": "Answer **133** of two hundred."
+            },
+            {
+                "question": "Question 134",
+                "answer": "Answer **134** of two hundred."
+            },
+            {
+                "question": "Question 135",
+                "answer": "Answer **135** of two hundred."
+            },
+            {
+                "question": "Question 136",
+                "answer": "Answer **136** of two hundred."
+            },
+            {
+                "question": "Question 137",
+                "answer": "Answer **137** of two hundred."
+            },
+            {
+                "question": "Question 138",
+                "answer": "Answer **138** of two hundred."
+            },
+            {
+                "question": "Question 139",
+                "answer": "Answer **139** of two hundred."
+            },
+            {
+                "question": "Question 140",
+                "answer": "Answer **140** of two hundred."
+            },
+            {
+                "question": "Question 141",
+                "answer": "Answer **141** of two hundred."
+            },
+            {
+                "question": "Question 142",
+                "answer": "Answer **142** of two hundred."
+            },
+            {
+                "question": "Question 143",
+                "answer": "Answer **143** of two hundred."
+            },
+            {
+                "question": "Question 144",
+                "answer": "Answer **144** of two hundred."
+            },
+            {
+                "question": "Question 145",
+                "answer": "Answer **145** of two hundred."
+            },
+            {
+                "question": "Question 146",
+                "answer": "Answer **146** of two hundred."
+            },
+            {
+                "question": "Question 147",
+                "answer": "Answer **147** of two hundred."
+            },
+            {
+                "question": "Question 148",
+                "answer": "Answer **148** of two hundred."
+            },
+            {
+                "question": "Question 149",
+                "answer": "Answer **149** of two hundred."
+            },
+            {
+                "question": "Question 150",
+                "answer": "Answer **150** of two hundred."
+            },
+            {
+                "question": "Question 151",
+                "answer": "Answer **151** of two hundred."
+            },
+            {
+                "question": "Question 152",
+                "answer": "Answer **152** of two hundred."
+            },
+            {
+                "question": "Question 153",
+                "answer": "Answer **153** of two hundred."
+            },
+            {
+                "question": "Question 154",
+                "answer": "Answer **154** of two hundred."
+            },
+            {
+                "question": "Question 155",
+                "answer": "Answer **155** of two hundred."
+            },
+            {
+                "question": "Question 156",
+                "answer": "Answer **156** of two hundred."
+            },
+            {
+                "question": "Question 157",
+                "answer": "Answer **157** of two hundred."
+            },
+            {
+                "question": "Question 158",
+                "answer": "Answer **158** of two hundred."
+            },
+            {
+                "question": "Question 159",
+                "answer": "Answer **159** of two hundred."
+            },
+            {
+                "question": "Question 160",
+                "answer": "Answer **160** of two hundred."
+            },
+            {
+                "question": "Question 161",
+                "answer": "Answer **161** of two hundred."
+            },
+            {
+                "question": "Question 162",
+                "answer": "Answer **162** of two hundred."
+            },
+            {
+                "question": "Question 163",
+                "answer": "Answer **163** of two hundred."
+            },
+            {
+                "question": "Question 164",
+                "answer": "Answer **164** of two hundred."
+            },
+            {
+                "question": "Question 165",
+                "answer": "Answer **165** of two hundred."
+            },
+            {
+                "question": "Question 166",
+                "answer": "Answer **166** of two hundred."
+            },
+            {
+                "question": "Question 167",
+                "answer": "Answer **167** of two hundred."
+            },
+            {
+                "question": "Question 168",
+                "answer": "Answer **168** of two hundred."
+            },
+            {
+                "question": "Question 169",
+                "answer": "Answer **169** of two hundred."
+            },
+            {
+                "question": "Question 170",
+                "answer": "Answer **170** of two hundred."
+            },
+            {
+                "question": "Question 171",
+                "answer": "Answer **171** of two hundred."
+            },
+            {
+                "question": "Question 172",
+                "answer": "Answer **172** of two hundred."
+            },
+            {
+                "question": "Question 173",
+                "answer": "Answer **173** of two hundred."
+            },
+            {
+                "question": "Question 174",
+                "answer": "Answer **174** of two hundred."
+            },
+            {
+                "question": "Question 175",
+                "answer": "Answer **175** of two hundred."
+            },
+            {
+                "question": "Question 176",
+                "answer": "Answer **176** of two hundred."
+            },
+            {
+                "question": "Question 177",
+                "answer": "Answer **177** of two hundred."
+            },
+            {
+                "question": "Question 178",
+                "answer": "Answer **178** of two hundred."
+            },
+            {
+                "question": "Question 179",
+                "answer": "Answer **179** of two hundred."
+            },
+            {
+                "question": "Question 180",
+                "answer": "Answer **180** of two hundred."
+            },
+            {
+                "question": "Question 181",
+                "answer": "Answer **181** of two hundred."
+            },
+            {
+                "question": "Question 182",
+                "answer": "Answer **182** of two hundred."
+            },
+            {
+                "question": "Question 183",
+                "answer": "Answer **183** of two hundred."
+            },
+            {
+                "question": "Question 184",
+                "answer": "Answer **184** of two hundred."
+            },
+            {
+                "question": "Question 185",
+                "answer": "Answer **185** of two hundred."
+            },
+            {
+                "question": "Question 186",
+                "answer": "Answer **186** of two hundred."
+            },
+            {
+                "question": "Question 187",
+                "answer": "Answer **187** of two hundred."
+            },
+            {
+                "question": "Question 188",
+                "answer": "Answer **188** of two hundred."
+            },
+            {
+                "question": "Question 189",
+                "answer": "Answer **189** of two hundred."
+            },
+            {
+                "question": "Question 190",
+                "answer": "Answer **190** of two hundred."
+            },
+            {
+                "question": "Question 191",
+                "answer": "Answer **191** of two hundred."
+            },
+            {
+                "question": "Question 192",
+                "answer": "Answer **192** of two hundred."
+            },
+            {
+                "question": "Question 193",
+                "answer": "Answer **193** of two hundred."
+            },
+            {
+                "question": "Question 194",
+                "answer": "Answer **194** of two hundred."
+            },
+            {
+                "question": "Question 195",
+                "answer": "Answer **195** of two hundred."
+            },
+            {
+                "question": "Question 196",
+                "answer": "Answer **196** of two hundred."
+            },
+            {
+                "question": "Question 197",
+                "answer": "Answer **197** of two hundred."
+            },
+            {
+                "question": "Question 198",
+                "answer": "Answer **198** of two hundred."
+            },
+            {
+                "question": "Question 199",
+                "answer": "Answer **199** of two hundred."
+            },
+            {
+                "question": "Question 200",
+                "answer": "Answer **200** of two hundred."
+            }
+        ]
+    },
+    "tokens": {
+        "widths": {
+            "narrow": "42rem",
+            "prose": "65ch",
+            "wide": "80rem"
+        }
+    }
+}

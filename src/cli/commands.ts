@@ -11,14 +11,17 @@ import { createInterface } from 'node:readline/promises';
 import { access, readFile, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { buildSite } from '../compiler/buildSite.ts';
 import { loadPackageFromDirectory, type LoadedPackage } from '../schema/loadPackage.ts';
 import { type SchemaIssue } from '../schema/manifest.ts';
 import { serializeCanonicalJson, type JsonValue } from '../content/canonicalJson.ts';
 import { startPreviewServer } from './previewServer.ts';
+import { startStudioServer } from '../studio/server.ts';
 import {
     addOriginRemote,
+    appendIgnoreLines,
     commit,
     findOrCreateRepository,
     hasRemote,
@@ -202,6 +205,148 @@ export async function runPreview ( argv: readonly string[], cwd = process.cwd() 
     return 0;
 }
 
+export async function runStudio ( argv: readonly string[], cwd = process.cwd() ): Promise<number>
+{
+    let contentDirectory = cwd;
+    let port: number | undefined;
+    let host: string | undefined;
+    let token: string | undefined;
+    let open = false;
+    const packageDirectories: string[] = [];
+
+    for ( let index = 0; index < argv.length; )
+    {
+        const flag = argv[ index ];
+
+        if ( flag === '--open' )
+        {
+            open = true;
+            index += 1;
+            continue;
+        }
+
+        const value = argv[ index + 1 ];
+
+        if ( value === undefined ) { throw new Error( `The ${flag} flag needs a value.` ); }
+
+        switch ( flag )
+        {
+            case '--content': contentDirectory = resolve( cwd, value ); break;
+            case '--port': port = Number( value ); break;
+            case '--host': host = value; break;
+            case '--token': token = value; break;
+            case '--package': packageDirectories.push( resolve( cwd, value ) ); break;
+            default: throw new Error( `Unknown flag "${flag}". caso studio takes --content, --port, --host, --token, --package, and --open.` );
+        }
+
+        index += 2;
+    }
+
+    // A folder that is not a site yet runs init inline first (SCHEMA
+    // section 15): the same prompts, in the terminal the user is
+    // already in, then Studio opens. An invalid site.json is the
+    // opposite case and never re-inits: Studio opens and surfaces the
+    // validation errors.
+    if ( !await exists( join( contentDirectory, 'site.json' ) ) )
+    {
+        if ( contentDirectory !== cwd )
+        {
+            console.error( `There is no site.json in ${contentDirectory}.` );
+            return 1;
+        }
+
+        console.log( `this folder isn't a casomer site yet` );
+
+        const initResult = await runInit( [], cwd );
+
+        if ( initResult !== 0 ) { return initResult; }
+    }
+
+    const packages = await loadPackages( packageDirectories );
+
+    if ( packages === undefined ) { return 1; }
+
+    const assetsDirectory = fileURLToPath( new URL( '../../studio/app/', import.meta.url ) );
+    const options = {
+        contentDirectory,
+        assetsDirectory,
+        packages,
+        generatorVersion: version,
+        ...host === undefined ? {} : { host },
+        ...token === undefined ? {} : { token },
+    };
+    const defaultPort = 2276;
+    let server;
+
+    try
+    {
+        server = await startStudioServer( options, port ?? defaultPort );
+    }
+    catch ( error )
+    {
+        if ( port === undefined && ( error as NodeJS.ErrnoException ).code === 'EADDRINUSE' )
+        {
+            server = await startStudioServer( options, 0 );
+            console.log( `port ${defaultPort} is busy; using a free port instead` );
+        }
+        else { throw error; }
+    }
+
+    console.log( `studio is running for ${contentDirectory}` );
+    console.log( `  ${server.url}` );
+
+    if ( open )
+    {
+        const opener = process.platform === 'win32'
+            ? { command: 'cmd', prefix: [ '/c', 'start', '' ] }
+            : process.platform === 'darwin' ? { command: 'open', prefix: [] } : { command: 'xdg-open', prefix: [] };
+
+        spawnSync( opener.command, [ ...opener.prefix, server.url ], { stdio: 'ignore' } );
+    }
+
+    return 0;
+}
+
+// caso save (SCHEMA section 15): a version exists. Commits the content
+// documents, never dist; Studio's Save button performs the same act.
+export async function runSave ( argv: readonly string[], cwd = process.cwd() ): Promise<number>
+{
+    if ( argv.length > 0 )
+    {
+        throw new Error( 'caso save takes no flags; it records a version of the site in the current directory.' );
+    }
+
+    const top = await runGit( cwd, [ 'rev-parse', '--show-toplevel' ] );
+    const sameRoot = top.code === 0
+        && resolve( top.stdout.trim() ).toLowerCase() === resolve( cwd ).toLowerCase();
+
+    if ( !sameRoot )
+    {
+        console.error( `this folder isn't its own repository, so versions can't be saved here. Run caso init first.` );
+        return 1;
+    }
+
+    await stagePaths( cwd, [ 'site.json', 'pages.json' ] );
+
+    if ( !await hasStagedChanges( cwd ) )
+    {
+        console.log( 'nothing new since the last save' );
+        return 0;
+    }
+
+    const result = await commit( cwd, 'casomer: save' );
+
+    if ( result.code !== 0 )
+    {
+        console.error( 'the save did not complete:' );
+        console.error( result.stderr.trim() );
+        return 1;
+    }
+
+    console.log( 'saved. History keeps this version; publish releases it.' );
+    return 0;
+}
+
 // Ownership check per SCHEMA section 13.1: identity lives in the data,
 // not the filename. Unreadable or unparsable also means "not ours".
 async function isCasomerFile ( file: string ): Promise<boolean>
@@ -219,13 +364,14 @@ async function isCasomerFile ( file: string ): Promise<boolean>
     }
 }
 
-function starterSite ( declaredUse?: string ): JsonValue
+function starterSite ( declaredUse?: string, trackMedia = true ): JsonValue
 {
     return {
         casomerSchema: 1,
         ...( declaredUse === undefined ? {} : { use: declaredUse } ),
+        ...( trackMedia ? {} : { media: { track: false } } ),
         theme: {
-            colors: { primary: '#1A1D28', secondary: '#F7F5F0', tertiary: '#E8A13D' },
+            colors: { primary: '#1A1D28', secondary: '#F7F5F0', accent: '#E8A13D' },
             widths: { narrow: '42rem', prose: '65ch', wide: '80rem' },
             spacing: { xs: '0.5rem', sm: '1rem', md: '2rem', lg: '4rem' },
             radius: { none: '0', sm: '0.25rem', md: '0.75rem', full: '9999px' },
@@ -403,6 +549,7 @@ export async function runInit ( argv: readonly string[], cwd = process.cwd() ): 
 {
     let remote: string | undefined;
     let declared: 'personal' | 'commercial' | undefined;
+    let trackMedia: boolean | undefined;
     let index = 0;
 
     while ( index < argv.length )
@@ -416,12 +563,19 @@ export async function runInit ( argv: readonly string[], cwd = process.cwd() ): 
             continue;
         }
 
+        if ( flag === '--track-media' || flag === '--no-track-media' )
+        {
+            trackMedia = flag === '--track-media';
+            index += 1;
+            continue;
+        }
+
         const value = argv[ index + 1 ];
 
         if ( value === undefined ) { throw new Error( `The ${flag} flag needs a value.` ); }
 
         if ( flag === '--remote' ) { remote = value; }
-        else { throw new Error( `Unknown flag "${flag}". caso init takes --remote, --personal, and --commercial.` ); }
+        else { throw new Error( `Unknown flag "${flag}". caso init takes --remote, --personal, --commercial, --track-media, and --no-track-media.` ); }
 
         index += 2;
     }
@@ -470,11 +624,30 @@ export async function runInit ( argv: readonly string[], cwd = process.cwd() ): 
             }
         }
 
-        await writeFile( join( cwd, 'site.json' ), serializeCanonicalJson( starterSite( declared ) ), 'utf8' );
+        // Media tracking is a choice at the door (Mikey, 2026-09-01):
+        // most sites version their media with everything else; tech
+        // users can keep binaries out of the repo entirely. Declining
+        // WRITES the .gitignore immediately - anything less and the
+        // files would get tracked, which is exactly what was refused.
+        if ( trackMedia === undefined && promptable )
+        {
+            const choice = ( await ask( 'version media files (images, uploads) in git along with content? [Y/n] (Enter for yes): ' ) ).toLowerCase();
+
+            trackMedia = choice !== 'n' && choice !== 'no';
+        }
+
+        await writeFile( join( cwd, 'site.json' ), serializeCanonicalJson( starterSite( declared, trackMedia !== false ) ), 'utf8' );
         await writeFile( join( cwd, 'pages.json' ), serializeCanonicalJson( starterPages() ), 'utf8' );
         console.log( 'created site.json and pages.json with a starter home page' );
 
         if ( declared !== undefined ) { console.log( `declared as a ${declared} site` ); }
+
+        if ( trackMedia === false )
+        {
+            await appendIgnoreLines( cwd, [ 'media/', 'dist/media/' ] );
+            console.log( 'media stays untracked (.gitignore covers media/ and dist/media/); labels and metadata still version.' );
+            console.log( 'your published site will need media delivered by other means - a CDN, object storage, or a copy step.' );
+        }
     }
 
     if ( !( await exists( join( cwd, '.gitattributes' ) ) ) )
@@ -557,6 +730,8 @@ export async function runInit ( argv: readonly string[], cwd = process.cwd() ): 
     }
 
     console.log( 'ready. next steps:' );
+    console.log( '  caso studio     open the editor' );
+    console.log( '  caso save       record a version you can return to' );
     console.log( '  caso build      compile the site to dist/' );
     console.log( '  caso preview    open the built site in your browser' );
     console.log( '  caso publish    save a version (build + commit, push if a remote is set)' );

@@ -44,10 +44,19 @@ const rulesByType: Readonly<Partial<Record<FieldType, readonly string[]>>> = {
     markdown: [ 'min', 'max' ],
     url: [ 'min', 'max', 'pattern' ],
     email: [ 'min', 'max', 'pattern' ],
-    date: [ 'min', 'max' ],
+    // "format" picks the date's spoken form wherever it lands in
+    // text: long (September 5, 2026 - the default), short (Sep 5,
+    // 2026), or iso (as stored). Presentation only; ordering and the
+    // editor always use the stored ISO value.
+    date: [ 'min', 'max', 'format' ],
     number: [ 'min', 'max', 'step', 'integer' ],
     list: [ 'min', 'max', 'unique' ],
-    reference: [ 'type' ],
+
+    // A reference targets another id space: "type" for generic entry
+    // references, "taxonomy" for term assignment (SCHEMA section 13.3
+    // - on collections, never in component manifests). "multiple"
+    // makes the value an ARRAY of ids - an event with three speakers.
+    reference: [ 'type', 'taxonomy', 'multiple' ],
 };
 
 const numericRules = [ 'min', 'max', 'step' ];
@@ -233,9 +242,21 @@ function appendRule (
         return;
     }
 
-    if ( ruleName === 'integer' )
+    if ( ruleName === 'integer' || ruleName === 'multiple' )
     {
         rules[ ruleName ] = true;
+        return;
+    }
+
+    if ( ruleName === 'format' )
+    {
+        if ( rawArgument !== 'long' && rawArgument !== 'short' && rawArgument !== 'iso' )
+        {
+            issues.push( { path, message: `The rule "format" takes long, short, or iso; got "${rawArgument ?? ''}".` } );
+            return;
+        }
+
+        rules[ ruleName ] = rawArgument;
         return;
     }
 

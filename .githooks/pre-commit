@@ -7,5 +7,9 @@ staged=$( git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|js)$
 
 if [ -z "$staged" ]; then exit 0; fi
 
-echo "$staged" | tr '\n' '\0' | xargs -0 npx eslint --fix --no-warn-ignored || exit 1
+# node directly, never npx: the npx shim's shebang is
+# "#!/usr/bin/env bash", and GUI git clients (GitHub Desktop's
+# bundled git among them) run hooks in an environment with no bash -
+# "/usr/bin/env: 'bash': No such file or directory" at commit time.
+echo "$staged" | tr '\n' '\0' | xargs -0 node node_modules/eslint/bin/eslint.js --fix --no-warn-ignored || exit 1
 echo "$staged" | tr '\n' '\0' | xargs -0 git add

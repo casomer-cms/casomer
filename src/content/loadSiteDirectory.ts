@@ -19,18 +19,27 @@ export interface LoadedPage
     readonly title: string;
     readonly slug: string;
     readonly blocks: readonly unknown[];
+
+    // A draft page persists and edits normally but is omitted from
+    // the build and the pure preview.
+    readonly draft?: boolean;
+
+    // The URL tree (SCHEMA 13.6): a child page nests its URL under
+    // its parent's. Home is the root and never carries one.
+    readonly parent?: string;
 }
 import { serializeCanonicalJson, type JsonValue } from './canonicalJson.ts';
 import { analyzeBlocks, type BlocksAnalysis } from './blocks.ts';
-import { validateSiteConfig, type SiteConfig } from './siteConfig.ts';
+import { validateSiteConfig, type MenuItem, type SiteConfig } from './siteConfig.ts';
+import { loadContentDocuments, type LoadedCollection, type LoadedTaxonomy } from './contentDocuments.ts';
 
 // The core roster of SCHEMA section 1.1: this small because layout is
 // not a component concern, and admission is conservative because it is
 // forever.
-const coreComponentIds = [ 'markdown', 'image' ];
+const coreComponentIds = [ 'markdown', 'image', 'link', 'heading' ];
 
 const pagesFileKeys = [ 'casomerSchema', 'pages' ];
-const pageKeys = [ 'id', 'title', 'slug', 'blocks' ];
+const pageKeys = [ 'id', 'title', 'slug', 'blocks', 'draft', 'parent' ];
 
 const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const pageSlugShape = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -40,6 +49,8 @@ export interface SiteLoadResult
     readonly config: SiteConfig;
     readonly pageCount: number;
     readonly pages: readonly LoadedPage[];
+    readonly collections: readonly LoadedCollection[];
+    readonly taxonomies: readonly LoadedTaxonomy[];
     readonly issues: readonly SchemaIssue[];
 }
 
@@ -175,6 +186,8 @@ export async function loadSiteDirectory (
 ): Promise<SiteLoadResult>
 {
     const issues: SchemaIssue[] = [];
+    const seenIds = new Map<string, string>();
+    const repeatSources: { collection: string; path: string }[] = [];
 
     const siteDocument = await readCanonicalDocument( join( contentDirectory, 'site.json' ), 'site.json', issues );
     const config = validateSiteConfig( siteDocument?.value, issues );
@@ -220,7 +233,6 @@ export async function loadSiteDirectory (
 
         if ( pageList !== undefined )
         {
-            const seenIds = new Map<string, string>();
             const seenSlugs = new Map<string, string>();
 
             for ( const [ index, rawPage ] of pageList.entries() )
@@ -241,6 +253,8 @@ export async function loadSiteDirectory (
                     title: String( page.title ?? '' ),
                     slug: String( page.slug ?? '' ),
                     blocks: Array.isArray( page.blocks ) ? page.blocks : [],
+                    ...( page.draft === true ? { draft: true } : {} ),
+                    ...( typeof page.parent === 'string' ? { parent: page.parent } : {} ),
                 } );
 
                 for ( const key of Object.keys( page ) )
@@ -280,9 +294,231 @@ export async function loadSiteDirectory (
 
                 checkReferences( analysis, packages, issues );
                 checkSpacingTokens( analysis, config, issues );
+                repeatSources.push( ...analysis.repeatSources );
             }
         }
     }
 
-    return { config, pageCount, pages, issues };
+    // The URL tree's page rules (SCHEMA 13.6): a parent names an
+    // existing page, home neither takes nor grants one, and the chain
+    // never loops.
+    const pageById = new Map( pages.map( ( page ) => [ page.id, page ] ) );
+
+    for ( const [ index, page ] of pages.entries() )
+    {
+        if ( page.parent === undefined ) { continue; }
+
+        const parentPath = `pages[${index}].parent`;
+
+        if ( page.slug === 'home' )
+        {
+            issues.push( { path: parentPath, message: 'Home is the root of the URL tree; it takes no parent (SCHEMA 13.6).' } );
+            continue;
+        }
+
+        const parentPage = pageById.get( page.parent );
+
+        if ( parentPage === undefined )
+        {
+            issues.push( { path: parentPath, message: `"parent" names no page. A page's parent is another page's id (SCHEMA 13.6).` } );
+            continue;
+        }
+
+        if ( parentPage.slug === 'home' )
+        {
+            issues.push( { path: parentPath, message: 'Home is the root, not a node: its children would just be top-level pages (SCHEMA 13.6).' } );
+            continue;
+        }
+
+        const visited = new Set<string>( [ page.id ] );
+        let ancestor: LoadedPage | undefined = parentPage;
+
+        while ( ancestor !== undefined )
+        {
+            if ( visited.has( ancestor.id ) )
+            {
+                issues.push( { path: parentPath, message: 'Page parents form a loop; the URL tree is a tree (SCHEMA 13.6).' } );
+                break;
+            }
+
+            visited.add( ancestor.id );
+            ancestor = ancestor.parent === undefined ? undefined : pageById.get( ancestor.parent );
+        }
+    }
+
+    // The self-describing content files: collections and taxonomies
+    // (SCHEMA section 13.1), sharing the pages' global id space.
+    const documents = await loadContentDocuments( contentDirectory, issues, seenIds );
+
+    // Collection-held layouts get the same block scrutiny as pages:
+    // the entry template, the index page, and any diverged entries.
+    const checkLayout = ( blocks: unknown, path: string ): void =>
+    {
+        const analysis = analyzeBlocks( blocks, path, issues );
+
+        checkReferences( analysis, packages, issues );
+        checkSpacingTokens( analysis, config, issues );
+        repeatSources.push( ...analysis.repeatSources );
+    };
+
+    // A mounted collection's parent must be a real, mountable page
+    // (SCHEMA 13.6): existing, and never home - the root already is
+    // where an unmounted collection lives.
+    for ( const collection of documents.collections )
+    {
+        if ( collection.parent === undefined ) { continue; }
+
+        const stem = collection.file.replace( /\.json$/, '' );
+        const mountPage = pageById.get( collection.parent );
+
+        if ( mountPage === undefined )
+        {
+            issues.push( { path: `${stem}.parent`, message: `"parent" names no page. A mounted collection nests under an existing page's URL (SCHEMA 13.6).` } );
+        }
+        else if ( mountPage.slug === 'home' )
+        {
+            issues.push( { path: `${stem}.parent`, message: 'Home is the root: an unmounted collection already lives there. Leave "parent" out (SCHEMA 13.6).' } );
+        }
+    }
+
+    for ( const collection of documents.collections )
+    {
+        const stem = collection.file.replace( /\.json$/, '' );
+
+        if ( collection.templateBlocks !== undefined ) { checkLayout( collection.templateBlocks, `${stem}.template.blocks` ); }
+        if ( Array.isArray( collection.indexBlocks ) ) { checkLayout( collection.indexBlocks, `${stem}.index.blocks` ); }
+
+        for ( const [ index, entry ] of collection.entries.entries() )
+        {
+            if ( entry.blocks !== undefined ) { checkLayout( entry.blocks, `${stem}.entries[${index}].blocks` ); }
+        }
+    }
+
+    // Region blocks (SCHEMA 12.5) get the same scrutiny as page
+    // blocks - same grammar, same components, same tokens.
+    if ( config.regions?.header !== undefined ) { checkLayout( config.regions.header, 'site.regions.header' ); }
+    if ( config.regions?.footer !== undefined ) { checkLayout( config.regions.footer, 'site.regions.footer' ); }
+    if ( config.notFound !== undefined ) { checkLayout( config.notFound, 'site.notFound' ); }
+
+    for ( const [ partialName, partialBlocks ] of Object.entries( config.partials ?? {} ) )
+    {
+        checkLayout( partialBlocks, `site.partials.${partialName}` );
+    }
+
+    // Menu targets must exist: page ids, collection stems, taxonomy
+    // stems - checked through every nesting level. A PRIVATE target
+    // ("index": false) is a state, not a mistake: resolution omits
+    // the item silently, like a draft, and no issue is raised.
+    const menuCollectionStems = new Set( documents.collections.map( ( collection ) => collection.file.replace( /\.json$/, '' ) ) );
+    const menuTaxonomyStems = new Set( documents.taxonomies.map( ( taxonomy ) => taxonomy.file.replace( /\.json$/, '' ) ) );
+    const checkMenuItems = ( items: readonly MenuItem[], path: string ): void =>
+    {
+        for ( const [ index, item ] of items.entries() )
+        {
+            const itemPath = `${path}[${index}]`;
+
+            // An AUTO item's dangling target is machine bookkeeping
+            // (the page was deleted after materialization): resolution
+            // drops it silently and Studio prunes the row - no issue.
+            if ( item.page !== undefined && !pageById.has( item.page ) && item.auto === undefined )
+            {
+                issues.push( { path: `${itemPath}.page`, message: '"page" names no page. A page item carries an existing page id (SCHEMA 12.5).' } );
+            }
+
+            if ( item.collection !== undefined && !menuCollectionStems.has( item.collection ) && item.auto === undefined )
+            {
+                issues.push( { path: `${itemPath}.collection`, message: `"collection" names no collection. There is no ${item.collection}.json.` } );
+            }
+
+            if ( item.taxonomy !== undefined && !menuTaxonomyStems.has( item.taxonomy ) && item.auto === undefined )
+            {
+                issues.push( { path: `${itemPath}.taxonomy`, message: `"taxonomy" names no taxonomy. There is no ${item.taxonomy}.json.` } );
+            }
+
+            if ( item.items !== undefined ) { checkMenuItems( item.items, `${itemPath}.items` ); }
+        }
+    };
+
+    for ( const [ menuName, menu ] of Object.entries( config.menus ?? {} ) )
+    {
+        checkMenuItems( menu.items, `site.menus.${menuName}.items` );
+    }
+
+    // Taxonomy-held layouts get the same block scrutiny.
+    for ( const taxonomy of documents.taxonomies )
+    {
+        const stem = taxonomy.file.replace( /\.json$/, '' );
+
+        if ( taxonomy.templateBlocks !== undefined ) { checkLayout( taxonomy.templateBlocks, `${stem}.template.blocks` ); }
+        if ( Array.isArray( taxonomy.indexBlocks ) ) { checkLayout( taxonomy.indexBlocks, `${stem}.index.blocks` ); }
+    }
+
+    // A reference field targets a taxonomy ("reference |
+    // taxonomy:venues") or another collection's entries ("reference |
+    // type:venues") - SCHEMA 13.3; either way the target has to be a
+    // file that actually loaded, and entry values are id strings.
+    // Dangling ids are deliberately not fatal here - deletion cleanup
+    // is an editor flow, and a stale assignment must never block a
+    // build.
+    const taxonomyStems = documents.taxonomies.map( ( taxonomy ) => taxonomy.file.replace( /\.json$/, '' ) );
+    const referenceCollectionStems = documents.collections.map( ( collection ) => collection.file.replace( /\.json$/, '' ) );
+
+    for ( const collection of documents.collections )
+    {
+        const stem = collection.file.replace( /\.json$/, '' );
+
+        for ( const [ key, field ] of Object.entries( collection.fields ) )
+        {
+            if ( field.type !== 'reference' ) { continue; }
+
+            const target = field.rules.taxonomy;
+            const entryTarget = field.rules.type;
+
+            if ( typeof target === 'string' && !taxonomyStems.includes( target ) )
+            {
+                issues.push( {
+                    path: `${stem}.fields.${key}`,
+                    message: `There is no taxonomy "${target}".${suggestNearest( target, taxonomyStems )} A reference names a taxonomy file by its stem.`,
+                } );
+            }
+
+            if ( typeof entryTarget === 'string' && !referenceCollectionStems.includes( entryTarget ) )
+            {
+                issues.push( {
+                    path: `${stem}.fields.${key}`,
+                    message: `There is no collection "${entryTarget}".${suggestNearest( entryTarget, referenceCollectionStems )} An entry reference names a collection file by its stem.`,
+                } );
+            }
+
+            for ( const [ index, entry ] of collection.entries.entries() )
+            {
+                const value = entry.values[ key ];
+
+                if ( value !== undefined && value !== '' && typeof value !== 'string' )
+                {
+                    issues.push( {
+                        path: `${stem}.entries[${index}].${key}`,
+                        message: 'A reference value is a term id string.',
+                    } );
+                }
+            }
+        }
+    }
+
+    // A repeat's collection reference is a file stem; it has to name a
+    // collection that actually loaded.
+    const collectionStems = documents.collections.map( ( collection ) => collection.file.replace( /\.json$/, '' ) );
+
+    for ( const { collection, path } of repeatSources )
+    {
+        if ( !collectionStems.includes( collection ) )
+        {
+            issues.push( {
+                path,
+                message: `There is no collection "${collection}".${suggestNearest( collection, collectionStems )} A repeat names a collection file by its stem.`,
+            } );
+        }
+    }
+
+    return { config, pageCount, pages, collections: documents.collections, taxonomies: documents.taxonomies, issues };
 }

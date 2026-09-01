@@ -1,0 +1,18 @@
+<article class="rounded-md bg-secondary p-md" x-data="{ open: false, title: {{ json title }} }">
+    <img data-anchor="photo" data-morph="card-photo" src="{{ photo.src }}" alt="{{ photo.alt }}">
+    <h2 data-anchor="title">{{ title }}</h2>
+    {{#if layout == "overlay"}}
+    <div class="scrim" x-show="open" x-cloak></div>
+    {{else}}
+    <p>Stacked layout.</p>
+    {{/if}}
+    {{#if faqs}}
+    <dl>
+        {{#each faqs}}
+        <dt>{{#if question}}{{ question }}{{else}}Untitled question{{/if}}</dt>
+        <dd>{{#if answer}}{{ answer }}{{else}}No answer yet.{{/if}}</dd>
+        {{/each}}
+    </dl>
+    {{/if}}
+    <button x-on:click="open = !open" x-bind:aria-expanded="open">Details</button>
+</article>

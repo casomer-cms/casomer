@@ -1,11 +1,13 @@
 // The caso CLI entry: a thin dispatcher over the verbs in commands.ts,
 // invoked by bin/caso.js with type stripping enabled.
 
-import { runBuild, runCredential, runInit, runPreview, runPublish } from './commands.ts';
+import { runBuild, runCredential, runInit, runPreview, runPublish, runSave, runStudio } from './commands.ts';
 
 const [ , , command, ...rest ] = process.argv;
 
 const verbs: Readonly<Record<string, ( argv: readonly string[] ) => Promise<number>>> = {
+    studio: runStudio,
+    save: runSave,
     build: runBuild,
     preview: runPreview,
     init: runInit,

@@ -101,7 +101,7 @@ describe( 'caso publish', () =>
 
         assert.ok( committed.stdout.includes( 'site.json' ) );
         assert.ok( committed.stdout.includes( 'dist/index.html' ) );
-        assert.ok( committed.stdout.includes( 'dist/assets/css/main.css' ) );
+        assert.match( committed.stdout, /dist\/assets\/css\/main\.[0-9a-f]{8}\.css/ );
         assert.ok( !committed.stdout.includes( 'stray.txt' ), 'never -A: unrelated files are not swept into publishes' );
 
         const status = await runGit( directory, [ 'status', '--porcelain' ] );

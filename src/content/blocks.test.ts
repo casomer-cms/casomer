@@ -108,4 +108,57 @@ describe( 'analyzeBlocks', () =>
         assert.equal( issues[ 0 ]?.path, 'blocks[0].component' );
         assert.ok( issues[ 0 ]?.message.includes( 'package/id' ) );
     } );
+
+    it( 'accepts a repeat block and collects its component reference', () =>
+    {
+        const { issues, references } = analyze( [ {
+            repeat: {
+                source: { collection: 'events', order: '-entry.eventDate', limit: 3 },
+                component: 'core/markdown',
+                props: { content: { $bind: 'entry.title' } },
+            },
+        } ] );
+
+        assert.deepEqual( issues, [] );
+        assert.deepEqual( references, [ 'core/markdown' ] );
+    } );
+
+    it( 'accepts a curated repeat source and rejects a doubled one', () =>
+    {
+        const curated = analyze( [ {
+            repeat: {
+                source: { entries: [ 'aa11bb22-cc33-4d44-8e55-ff6677889900' ] },
+                component: 'core/markdown',
+            },
+        } ] );
+        const doubled = analyze( [ {
+            repeat: {
+                source: { collection: 'events', entries: [] },
+                component: 'core/markdown',
+            },
+        } ] );
+
+        assert.deepEqual( curated.issues, [] );
+        assert.ok( doubled.issues[ 0 ]?.message.includes( 'exactly one' ) );
+    } );
+
+    it( 'rejects a malformed order path and a malformed bind', () =>
+    {
+        const badOrder = analyze( [ {
+            repeat: { source: { collection: 'events', order: 'eventDate' }, component: 'core/markdown' },
+        } ] );
+        const badBind = analyze( [ {
+            repeat: { source: { collection: 'events' }, component: 'core/markdown', props: { content: { $bind: 'title' } } },
+        } ] );
+
+        assert.ok( badOrder.issues[ 0 ]?.message.includes( 'signed entry path' ) );
+        assert.ok( badBind.issues[ 0 ]?.message.includes( 'entry path' ) );
+    } );
+
+    it( 'refuses a block claiming to be both a section and a repeat', () =>
+    {
+        const { issues } = analyze( [ { section: {}, blocks: [], repeat: {} } ] );
+
+        assert.ok( issues[ 0 ]?.message.includes( 'exactly one' ) );
+    } );
 } );

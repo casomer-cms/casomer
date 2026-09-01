@@ -1,0 +1,60 @@
+{
+    "casomerSchema": 1,
+    "kind": "collection",
+    "label": "Events",
+    "fields": {
+        "title": "text!",
+        "eventDate": "date",
+        "details": "markdown"
+    },
+    "template": {
+        "blocks": [
+            {
+                "component": "core/markdown",
+                "props": {
+                    "content": {
+                        "$bind": "entry.title"
+                    }
+                }
+            }
+        ]
+    },
+    "index": {
+        "blocks": [
+            {
+                "section": {
+                    "gap": "md"
+                },
+                "blocks": [
+                    {
+                        "repeat": {
+                            "source": {
+                                "collection": "events",
+                                "order": "-entry.eventDate"
+                            },
+                            "component": "core/markdown",
+                            "props": {
+                                "content": {
+                                    "$bind": "entry.title"
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        ]
+    },
+    "entries": [
+        {
+            "id": "aa11bb22-cc33-4d44-8e55-ff6677889900",
+            "title": "Harvest loaf tasting",
+            "eventDate": "2026-10-12",
+            "details": "Bring an appetite."
+        },
+        {
+            "id": "bb22cc33-dd44-4e55-9f66-001122334455",
+            "title": "Latte art night",
+            "eventDate": "2026-09-28"
+        }
+    ]
+}

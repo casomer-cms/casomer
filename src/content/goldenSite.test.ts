@@ -32,6 +32,9 @@ describe( 'the golden fixture site', () =>
         assert.deepEqual( result.issues, [] );
         assert.equal( result.pageCount, 2 );
         assert.equal( result.config.theme.rhythm, 'lg' );
+        assert.equal( result.collections[ 0 ]?.label, 'Events' );
+        assert.equal( result.collections[ 0 ]?.entries.length, 2 );
+        assert.equal( result.collections[ 0 ]?.fields.eventDate?.type, 'date' );
     } );
 
     // The empty-diff invariant of SCHEMA appendix B, checked against the
@@ -42,6 +45,7 @@ describe( 'the golden fixture site', () =>
         const documents = [
             join( contentDirectory, 'site.json' ),
             join( contentDirectory, 'pages.json' ),
+            join( contentDirectory, 'events.json' ),
             join( packageDirectory, 'casomer.json' ),
             join( packageDirectory, 'components', 'card', 'casomer.json' ),
             join( packageDirectory, 'components', 'note', 'casomer.json' ),
@@ -124,6 +128,6 @@ describe( 'the golden fixture site', () =>
 
     it( 'has no stray files in the fixture content directory', async () =>
     {
-        assert.deepEqual( ( await readdir( contentDirectory ) ).sort(), [ 'pages.json', 'site.json' ] );
+        assert.deepEqual( ( await readdir( contentDirectory ) ).sort(), [ 'events.json', 'pages.json', 'site.json' ] );
     } );
 } );

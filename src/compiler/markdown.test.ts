@@ -18,6 +18,14 @@ describe( 'compileMarkdown', () =>
         assert.ok( html.includes( '<hr>' ) );
     } );
 
+    it( 'treats a single newline as a line break, not a space', () =>
+    {
+        const { html } = compileMarkdown( 'first line\nsecond line\n\nnew paragraph', 2 );
+
+        assert.match( html, /first line<br>\nsecond line/ );
+        assert.equal( ( html.match( /<p>/g ) ?? [] ).length, 2 );
+    } );
+
     it( 'strips raw HTML, block and inline, by construction', () =>
     {
         const { html } = compileMarkdown( '<script>alert(1)</script>\n\nSafe <em>inline</em> text.\n' );
@@ -60,9 +68,12 @@ describe( 'compileMarkdown', () =>
     {
         const { html, outline } = compileMarkdown( '# Title\n\n### Deep\n\n##### Deeper\n', 2 );
 
-        assert.ok( html.includes( '<h2>Title</h2>' ) );
+        // Levels never skip in the OUTLINE; the authored depth rides
+        // along as the visual class where the two disagree (SCHEMA 8:
+        // semantics from the page, looks from the author).
+        assert.ok( html.includes( '<h2 class="h1">Title</h2>' ) );
         assert.ok( html.includes( '<h3>Deep</h3>' ) );
-        assert.ok( html.includes( '<h4>Deeper</h4>' ) );
+        assert.ok( html.includes( '<h4 class="h5">Deeper</h4>' ) );
         assert.deepEqual( outline, [
             { level: 2, text: 'Title' },
             { level: 3, text: 'Deep' },
@@ -75,25 +86,43 @@ describe( 'compileMarkdown', () =>
         const { html, outline } = compileMarkdown( '## Eyebrow\n\n# The Real Title\n\n## Subsection\n', 2 );
 
         assert.ok( html.includes( '<p class="kicker">Eyebrow</p>' ) );
-        assert.ok( html.includes( '<h2>The Real Title</h2>' ) );
-        assert.ok( html.includes( '<h3>Subsection</h3>' ) );
+        assert.ok( html.includes( '<h2 class="h1">The Real Title</h2>' ) );
+        assert.ok( html.includes( '<h3 class="h2">Subsection</h3>' ) );
         assert.deepEqual( outline.map( ( entry ) => entry.text ), [ 'The Real Title', 'Subsection' ] );
+    } );
+
+    it( 'resolves kickers by position at any rank pair, not just h2-over-h1', () =>
+    {
+        // Mikey's check: an h3 above an h2 (or an h6 above an h4)
+        // kickers the SMALLER heading; the larger one is the primary
+        // and becomes the scope's lead. Rank is relative, position
+        // decides.
+        const overH2 = compileMarkdown( '### Eyebrow\n\n## Title\n', 2 );
+
+        assert.ok( overH2.html.includes( '<p class="kicker">Eyebrow</p>' ) );
+        assert.ok( overH2.html.includes( '<h2>Title</h2>' ), 'the h2 primary is the lead, visually h2 as authored' );
+        assert.deepEqual( overH2.outline.map( ( entry ) => entry.text ), [ 'Title' ] );
+
+        const overH4 = compileMarkdown( '###### Eyebrow\n\n#### Title\n', 2 );
+
+        assert.ok( overH4.html.includes( '<p class="kicker">Eyebrow</p>' ) );
+        assert.ok( overH4.html.includes( '<h2 class="h4">Title</h2>' ), 'the h4 primary leads the scope, styled as the authored h4' );
     } );
 
     it( 'keeps multiple primary-rank headings as siblings', () =>
     {
         const { html } = compileMarkdown( '# One\n\n# Two\n', 2 );
 
-        assert.ok( html.includes( '<h2>One</h2>' ) );
-        assert.ok( html.includes( '<h2>Two</h2>' ) );
+        assert.ok( html.includes( '<h2 class="h1">One</h2>' ) );
+        assert.ok( html.includes( '<h2 class="h1">Two</h2>' ) );
     } );
 
     it( 'caps assigned levels at h6', () =>
     {
         const { html } = compileMarkdown( '# A\n\n## B\n', 6 );
 
-        assert.ok( html.includes( '<h6>A</h6>' ) );
-        assert.ok( html.includes( '<h6>B</h6>' ) );
+        assert.ok( html.includes( '<h6 class="h1">A</h6>' ) );
+        assert.ok( html.includes( '<h6 class="h2">B</h6>' ) );
     } );
 } );
 

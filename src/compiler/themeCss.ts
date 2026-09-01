@@ -6,6 +6,7 @@
 // the compiler's own emissions that are not Tailwind utilities.
 
 import { type SiteConfig } from '../content/siteConfig.ts';
+import { fontFaceCss, type SiteFont } from './fonts.ts';
 
 const familyPrefixes: Readonly<Record<string, string>> = {
     colors: '--color',
@@ -15,7 +16,20 @@ const familyPrefixes: Readonly<Record<string, string>> = {
     shadows: '--shadow',
 };
 
-export function generateThemeInputCss ( config: SiteConfig, tailwindImport = 'tailwindcss' ): string
+// One formula, two homes: Studio's placeholder previews mirror it.
+export function defaultTypeScale ( config: SiteConfig ): number
+{
+    const raw = Number.parseFloat( config.theme.families.typography?.scale ?? '1.25' );
+
+    return Number.isFinite( raw ) && raw > 1 ? raw : 1.25;
+}
+
+export function scaleSize ( scale: number, power: number ): string
+{
+    return `${Number( Math.pow( scale, power ).toFixed( 3 ) )}rem`;
+}
+
+export function generateThemeInputCss ( config: SiteConfig, tailwindImport = 'tailwindcss', fonts: readonly SiteFont[] = [] ): string
 {
     const lines: string[] = [ `@import "${tailwindImport}";`, '@source "../../**/*.html";', '', '@theme {' ];
 
@@ -42,13 +56,71 @@ export function generateThemeInputCss ( config: SiteConfig, tailwindImport = 'ta
         lines.push( `    --breakpoint-${name}: ${value}px;` );
     }
 
+    lines.push( '}', '' );
+
+    // Self-hosted fonts (fonts/ directory): one @font-face per file,
+    // families spoken by filename - usable directly in typography
+    // stacks. font-display swap; the site never phones out.
+    if ( fonts.length > 0 )
+    {
+        lines.push( ...fontFaceCss( fonts ), '' );
+    }
+
+    // The default type scale (SCHEMA 12.1): Tailwind's preflight
+    // zeroes heading styles, so without this every h1 reads as
+    // paragraph text. Sizes derive from the theme's "scale" token
+    // (h1 = scale^5 ... h6 = scale^0 rem - the same formula Studio
+    // shows as placeholders); weight and line-height make headings
+    // headings. The body speaks the sans token when one exists.
+    const scale = defaultTypeScale( config );
+
+    if ( config.theme.families.typography?.sans !== undefined )
+    {
+        lines.push( 'body { font-family: var(--font-sans); }' );
+    }
+
+    // Each heading style also answers to a class alias (.h4 beside
+    // h4): the assembler splits semantics from looks when it remaps -
+    // <h2 class="h4"> keeps the outline honest while wearing the
+    // authored size (SCHEMA 8).
+    for ( const [ element, power ] of Object.entries( { h1: 5, h2: 4, h3: 3, h4: 2, h5: 1, h6: 0 } ) )
+    {
+        lines.push( `${element}, .${element} { font-size: ${scaleSize( scale, power )}; font-weight: 650; line-height: 1.2; }` );
+    }
+
+    // Element typography (SCHEMA 12.1): per-element size and font,
+    // layered over the defaults. A font is a free font-family stack
+    // ("Helvetica, Arial, sans-serif"); a bare typography token name
+    // still resolves to its variable.
+    for ( const element of [ 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6' ] )
+    {
+        const entry = config.theme.text?.[ element ];
+
+        if ( entry === undefined ) { continue; }
+
+        const fontTokens = Object.keys( config.theme.families.typography ?? {} ).filter( ( token ) => token !== 'scale' );
+        const parts = [
+            ...( entry.size === undefined ? [] : [ `font-size: ${entry.size};` ] ),
+            ...( entry.font === undefined ? [] : [ `font-family: ${fontTokens.includes( entry.font ) ? `var(--font-${entry.font})` : entry.font};` ] ),
+        ];
+        const selector = element === 'p' ? 'p' : `${element}, .${element}`;
+
+        if ( parts.length > 0 ) { lines.push( `${selector} { ${parts.join( ' ' )} }` ); }
+    }
+
     lines.push(
-        '}',
         '',
         // The crossfade net (TRANSITIONS section 1): no element names,
         // so hard navigations get a root crossfade where supported and
         // there is no collision risk. A courtesy, not a system.
         '@view-transition { navigation: auto; }',
+        '',
+        // Motion respects prefers-reduced-motion, emitted by the
+        // compiler so no component can opt out (SCHEMA 7): morphs and
+        // crossfades snap instead of animating.
+        '@media (prefers-reduced-motion: reduce) {',
+        '    ::view-transition-group(*), ::view-transition-image-pair(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }',
+        '}',
         '',
         // Stillness under capture (TRANSITIONS 2.3): while the runtime
         // holds snapshots, ambient motion pauses and CSS transitions
@@ -62,8 +134,28 @@ export function generateThemeInputCss ( config: SiteConfig, tailwindImport = 'ta
         '.min-h-half { min-height: 50vh; }',
         '.min-h-third { min-height: 33.333vh; }',
         '.kicker { font-size: 0.875em; letter-spacing: 0.1em; text-transform: uppercase; }',
+        'p + p { margin-top: 0.75em; }',
         '.skip-link { position: absolute; left: -999rem; }',
         '.skip-link:focus { position: static; }',
+        '',
+        // Menus (SCHEMA 12.5): the functional layer under menu-sourced
+        // repeats - a flat row of links by default, nested families as
+        // CSS-only dropdowns on hover and keyboard focus. Sites
+        // restyle these freely; only the class names are contract.
+        'ul.cs-menu, .cs-menu ul { list-style: none; margin: 0; padding: 0; }',
+        '.cs-menu { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em 1.5em; }',
+        '.cs-menu-item { position: relative; }',
+        '.cs-menu-sub { display: none; flex-direction: column; gap: 0.35em; position: absolute; top: 100%; left: 0; z-index: 20; min-width: 12em; padding: 0.6em 0.85em; background: Canvas; border-radius: 6px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12); }',
+        '.cs-menu-sub .cs-menu-sub { top: 0; left: 100%; }',
+        '.cs-menu-parent:hover > .cs-menu-sub, .cs-menu-parent:focus-within > .cs-menu-sub { display: flex; }',
+        '.cs-menu-label { font-weight: 650; }',
+        '',
+        // The pager (SCHEMA 13.5): functional layer under paginated
+        // indexes; sites restyle freely - the class names are the
+        // contract.
+        '.cs-pager ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4em; justify-content: center; }',
+        '.cs-pager a, .cs-pager-current { display: inline-block; min-width: 2em; padding: 0.3em 0.55em; text-align: center; border-radius: 6px; }',
+        '.cs-pager-current { font-weight: 650; background: var(--color-secondary, #eeeeee); }',
         '',
     );
 
