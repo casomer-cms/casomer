@@ -1,0 +1,19 @@
+# The mechanical half of the house style, in the format nearly every
+# editor and IDE reads natively (VS Code via the EditorConfig
+# extension; the checked-in .vscode settings cover it regardless).
+# Everything richer - Allman braces, spaces inside parens - is
+# eslint's job, applied on save and by the pre-commit hook.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Trailing double-spaces are hard line breaks in markdown.
+[*.md]
+trim_trailing_whitespace = false

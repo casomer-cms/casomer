@@ -10,3 +10,4 @@ github
 .env
 .env.*
 studio/dist/
+studio-design/
