@@ -62,11 +62,14 @@ describe( 'the studio server', () =>
     it( 'serves the site over the API: project name from the site directory, pages, zero issues', async () =>
     {
         const response = await fetch( `${base}/api/site?t=${server.token}` );
-        const body = await response.json() as { projectName: string; pages: { title: string }[]; issues: unknown[] };
+        const body = await response.json() as { projectName: string; pages: { title: string; slug: string }[]; issues: unknown[] };
 
         assert.equal( body.projectName, 'site-basic' );
         assert.deepEqual( body.issues, [] );
-        assert.equal( body.pages.length, 2 );
+        // The fixture's two pages plus the reserved 404 the loader
+        // synthesizes (SCHEMA 13.6), pinned last.
+        assert.equal( body.pages.length, 3 );
+        assert.equal( body.pages[ 2 ]?.slug, '404' );
         assert.equal( typeof body.pages[ 0 ]?.title, 'string' );
     } );
 
@@ -145,9 +148,17 @@ describe( 'the studio server', () =>
 
         assert.match( await canvas.text(), /No page has the slug/ );
 
-        // With an authored 404 page (site.notFound, edited as a
-        // settings surface), the visitor sees THAT - still status 404
-        // - exactly as hosting will serve /404.html.
+        // With an authored 404 page (the reserved page, still reachable
+        // under the old surface name), the visitor sees THAT - still
+        // status 404 - exactly as hosting will serve /404.html.
+        // This suite runs on the tracked fixture: the 404 page
+        // materializes into pages.json on the write below (SCHEMA
+        // 13.6), so both files are put back at the end.
+        const pagesFile = join( fixtureRoot, 'content', 'pages.json' );
+        const siteFile = join( fixtureRoot, 'content', 'site.json' );
+        const pagesBefore = await readFile( pagesFile, 'utf8' );
+        const siteBefore = await readFile( siteFile, 'utf8' );
+
         const inserted = await fetch( `${base}/api/block?t=${server.token}`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -177,6 +188,8 @@ describe( 'the studio server', () =>
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify( { region: 'notFound', path: 'blocks[0]' } ),
         } );
+        await writeFile( pagesFile, pagesBefore, 'utf8' );
+        await writeFile( siteFile, siteBefore, 'utf8' );
     } );
 
     it( 'serves the delivered-site scripts the preview references', async () =>
@@ -658,7 +671,7 @@ describe( 'block editing over the studio API', () =>
         assert.match( indexPreview, /Latte art night/ );
         assert.match( indexPreview, /data-casomer-block/ );
 
-        const templatePreview = await ( await fetch( `${base}/preview-template/events?t=${server.token}` ) ).text();
+        const templatePreview = await ( await fetch( `${base}/preview-entry-template/events?t=${server.token}` ) ).text();
 
         assert.match( templatePreview, /Harvest loaf tasting/, 'the first entry is the template sample' );
 
@@ -842,7 +855,7 @@ describe( 'block editing over the studio API', () =>
 
         assert.equal( surfaceInsert.status, 200 );
 
-        const template = await ( await fetch( `${base}/preview-template/events?t=${server.token}` ) ).text();
+        const template = await ( await fetch( `${base}/preview-entry-template/events?t=${server.token}` ) ).text();
 
         assert.match( template, /Trailing template note/ );
         await call( 'DELETE', { doc: 'events', surface: 'template', path: 'blocks[1]' } );
@@ -1074,14 +1087,16 @@ describe( 'block editing over the studio API', () =>
 
     it( 'a draft page edits on the canvas but is omitted from the pure preview', async () =>
     {
+        const aboutId = ( await ( await fetch( `${base}/api/site?t=${server.token}` ) ).json() as { pages: { id: string; slug: string }[] } ).pages.find( ( page ) => page.slug === 'about' )?.id ?? '';
+
         await fetch( `${base}/api/page?t=${server.token}`, {
             method: 'PUT',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify( { id: homePageId, patch: { draft: true } } ),
+            body: JSON.stringify( { id: aboutId, patch: { draft: true } } ),
         } );
 
-        const editing = await ( await fetch( `${base}/canvas/home?t=${server.token}` ) ).text();
-        const pure = await ( await fetch( `${base}/preview/?t=${server.token}` ) ).text();
+        const editing = await ( await fetch( `${base}/canvas/about?t=${server.token}` ) ).text();
+        const pure = await ( await fetch( `${base}/preview/about/?t=${server.token}` ) ).text();
 
         assert.match( editing, /data-casomer-block/, 'the canvas still edits a draft' );
         assert.match( pure, /draft/i );
@@ -1090,7 +1105,7 @@ describe( 'block editing over the studio API', () =>
         await fetch( `${base}/api/page?t=${server.token}`, {
             method: 'PUT',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify( { id: homePageId, patch: { draft: false } } ),
+            body: JSON.stringify( { id: aboutId, patch: { draft: false } } ),
         } );
     } );
 
@@ -1185,11 +1200,14 @@ describe( 'block editing over the studio API', () =>
         const child = await ( await post( '/api/page', { title: 'Nested Child' } ) ).json() as { id: string };
 
         await post( '/api/page', { id: child.id, patch: { parent: created.id } }, 'PUT' );
-        assert.equal( ( await post( '/api/page', { id: created.id }, 'DELETE' ) ).status, 409 );
 
-        await post( '/api/page', { id: child.id, patch: { parent: null } }, 'PUT' );
-        assert.equal( ( await post( '/api/page', { id: child.id }, 'DELETE' ) ).status, 200 );
+        // A parent deletes; its child rises to where it was (Mikey).
         assert.equal( ( await post( '/api/page', { id: created.id }, 'DELETE' ) ).status, 200 );
+
+        const risen = ( await ( await fetch( `${base}/api/site?t=${server.token}` ) ).json() as { pages: { id: string; parent?: string }[] } ).pages.find( ( page ) => page.id === child.id );
+
+        assert.equal( risen?.parent, undefined, 'the child rose to the root' );
+        assert.equal( ( await post( '/api/page', { id: child.id }, 'DELETE' ) ).status, 200 );
 
         const after = await ( await fetch( `${base}/api/site?t=${server.token}` ) ).json() as { pages: { id: string }[] };
 
@@ -1202,9 +1220,9 @@ describe( 'block editing over the studio API', () =>
 
         const restored = await ( await fetch( `${base}/api/site?t=${server.token}` ) ).json() as { pages: { id: string }[] };
 
-        assert.ok( restored.pages.some( ( page ) => page.id === created.id ) );
+        assert.ok( restored.pages.some( ( page ) => page.id === child.id ), 'the last delete - the risen child - stepped back' );
 
-        await post( '/api/page', { id: created.id }, 'DELETE' );
+        await post( '/api/page', { id: child.id }, 'DELETE' );
     } );
 
     it( 'terms hold the fixed shape, drag order persists, and surfaces preview', async () =>
@@ -1246,7 +1264,7 @@ describe( 'block editing over the studio API', () =>
         assert.deepEqual( reordered.terms.map( ( term ) => term.id ), [ second.id, first.id ] );
 
         // The taxonomy surfaces serve: editing canvas and pure term page.
-        const canvas = await fetch( `${base}/preview-tax-template/moods?t=${server.token}&term=${first.id}` );
+        const canvas = await fetch( `${base}/preview-term-template/moods?t=${server.token}&term=${first.id}` );
 
         assert.equal( canvas.status, 200 );
         assert.match( await canvas.text(), /preview-bridge/ );
@@ -1899,7 +1917,7 @@ describe( 'block editing over the studio API', () =>
 
         assert.equal( inserted.status, 200 );
 
-        const template = await ( await fetch( `${base}/preview-template/events?t=${server.token}` ) ).text();
+        const template = await ( await fetch( `${base}/preview-entry-template/events?t=${server.token}` ) ).text();
         const entryCanvas = await ( await fetch( `${base}/canvas-entry/events?entry=${entry.id}&t=${server.token}` ) ).text();
 
         assert.ok( entryCanvas.includes( 'Only on this entry' ) );

@@ -26,6 +26,7 @@ interface LastTransition
 {
     names: string[];
     sweptStale: number;
+    rules: string;
 }
 
 const lastTransition = ( page: Page ): Promise<LastTransition | null> =>
@@ -185,6 +186,80 @@ describe( 'persistent chrome (cookbook 2.8)', () =>
         assert.equal( chrome.headerName, 'casomer-header' );
         assert.equal( chrome.footerName, 'casomer-footer' );
         assert.equal( chrome.sameElement, 'yes', 'chrome is never re-rendered; only main swaps' );
+        await page.close();
+    } );
+} );
+
+describe( 'snapshot geometry (cookbook 2.9)', () =>
+{
+    it( 'writes cover-fit and z-order rules for the pair, then drops them', async () =>
+    {
+        const page = await browser.newPage();
+        const errors: string[] = [];
+
+        // An aborted transition (duplicate name, invalid state) is a
+        // console error, never an exception: listen for it. The
+        // fixture's placeholder media 404s are not the signal.
+        page.on( 'console', ( message ) =>
+        {
+            if ( message.type() === 'error' && !message.text().startsWith( 'Failed to load resource' ) ) { errors.push( message.text() ); }
+        } );
+        await page.goto( server.url );
+        await page.click( 'a[href="/about/"]' );
+        await page.waitForURL( '**/about/' );
+        await page.waitForFunction(
+            () => ( window as never as { casomer: { lastTransition: unknown } } ).casomer.lastTransition !== null,
+        );
+
+        const rules = ( await lastTransition( page ) )?.rules ?? '';
+
+        assert.deepEqual( errors, [], 'the transition ran without aborting' );
+
+        // The card photo is an img on both sides: its group rides above
+        // chrome and both snapshots cover-fit the morphing box.
+        assert.match( rules, /::view-transition-group\(card-photo\) \{ z-index: 1;/ );
+        assert.match( rules, /::view-transition-old\(card-photo\), ::view-transition-new\(card-photo\) \{ width: 100%; height: 100%; object-fit: cover; overflow: clip; \}/ );
+        assert.equal(
+            await page.evaluate( () => document.getElementById( 'casomer-vt-rules' ) ),
+            null,
+            'the rules are dressing for one transition, gone once it finishes',
+        );
+        await page.close();
+    } );
+
+    it( 'carries the landing element\'s radius on the group', async () =>
+    {
+        const page = await browser.newPage();
+
+        await page.goto( server.url );
+
+        // Prime the cache with an about page whose card photo is
+        // rounded, so the arriving element carries a radius.
+        await page.evaluate( async () =>
+        {
+            const html = await ( await fetch( '/about/' ) ).text();
+            const rounded = html.replace( 'data-morph="card-photo"', 'data-morph="card-photo" style="border-radius: 12px"' );
+            const original = window.fetch;
+
+            window.fetch = ( input, init ) =>
+            {
+                const target = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+
+                if ( target.endsWith( '/about/' ) ) { return Promise.resolve( new Response( rounded, { headers: { 'content-type': 'text/html' } } ) ); }
+
+                return original( input, init );
+            };
+        } );
+        await page.click( 'a[href="/about/"]' );
+        await page.waitForURL( '**/about/' );
+        await page.waitForFunction(
+            () => ( window as never as { casomer: { lastTransition: unknown } } ).casomer.lastTransition !== null,
+        );
+
+        const rules = ( await lastTransition( page ) )?.rules ?? '';
+
+        assert.match( rules, /::view-transition-group\(card-photo\) \{ z-index: 1; border-radius: 12px; \}/ );
+        assert.equal( await inlineNamesInMain( page ), 0, 'the inline radius stays; the name does not' );
         await page.close();
     } );
 } );

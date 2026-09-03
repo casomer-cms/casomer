@@ -11,17 +11,38 @@
 //
 // Morph mechanics, per the cookbook: elements pair by their compiler
 // emitted data-morph attribute. Names are ephemeral dressing for one
-// transition (2.1): every stale name in the content area is swept
-// before any is set, only the first element per name participates, and
-// all names clear when the transition finishes. Ambient motion freezes
-// while snapshots exist (2.3) via the casomer-vt class. Persistent
-// chrome names live outside main and are never touched (2.8).
+// transition (2.1): every stale name in both content areas - the
+// departing page's and the arriving page's baked-in names alike - is
+// swept before any is set, only the first element per name
+// participates, and all names clear when the transition finishes.
+// Each pair gets snapshot geometry rules for this one transition
+// (2.9): the group clips and carries the landing radius, media pairs
+// cover-fit their snapshots, and content rides above chrome. Ambient
+// motion freezes while snapshots exist (2.3) via the casomer-vt class.
+// Persistent chrome names live outside main and are never touched
+// (2.8). Cleanup is backstopped by a timer, because a hidden document
+// may never finish its animation (2.9).
 //
 // Ships readable until the M2 bundling step adds minification.
 
 const reducedMotion = window.matchMedia( '(prefers-reduced-motion: reduce)' );
 const pageCache = new Map();
 const freezeClass = 'casomer-vt';
+const rulesId = 'casomer-vt-rules';
+
+// A view-transition-name is a CSS custom-ident; anything else would
+// abort the transition or break the per-transition rules.
+const nameShape = /^[A-Za-z_][A-Za-z0-9_-]*$/;
+
+// Snapshots of these get the cover-fit blend: both sides fill the
+// morphing box as a crop, so a portrait tile becoming a landscape hero
+// crossfades two sensible crops instead of stretching or overhanging.
+const mediaSelector = 'img, picture, video, canvas, svg';
+
+// How long cleanup waits for a transition to finish before giving up
+// on it: a backgrounded tab may pause the animation indefinitely, and
+// a stranded freeze would stop every animation on the page.
+const finishBackstopMs = 2000;
 
 // A tiny observable surface for the browser test suite and, later, the
 // editor: what the last transition did.
@@ -93,30 +114,77 @@ function firstElementByMorphName ( root )
     {
         const name = element.getAttribute( 'data-morph' );
 
-        if ( name !== '' && !byName.has( name ) ) { byName.set( name, element ); }
+        if ( nameShape.test( name ) && !byName.has( name ) ) { byName.set( name, element ); }
     }
 
     return byName;
 }
 
-function assignMorphNames ( currentMain, nextMain )
+// Dress the pairs for capture: a name on the departing element belongs
+// to the old state, the same name on the arriving element to the new
+// state. Names without a partner stay unset, so nothing renders as a
+// stray group floating above the crossfade.
+function pairMorphs ( currentMain, nextMain )
 {
     const current = firstElementByMorphName( currentMain );
     const next = firstElementByMorphName( nextMain );
-    const names = [];
+    const pairs = [];
 
-    for ( const [ name, element ] of current )
+    for ( const [ name, from ] of current )
     {
-        const partner = next.get( name );
+        const to = next.get( name );
 
-        if ( partner === undefined ) { continue; }
+        if ( to === undefined ) { continue; }
 
-        element.style.viewTransitionName = name;
-        partner.style.viewTransitionName = name;
-        names.push( name );
+        from.style.viewTransitionName = name;
+        to.style.viewTransitionName = name;
+        pairs.push( { name, from, to } );
     }
 
-    return names;
+    return pairs;
+}
+
+function borderRadiusOf ( element )
+{
+    const style = getComputedStyle( element );
+    const shorthand = style.borderRadius;
+
+    if ( shorthand !== '' ) { return shorthand; }
+
+    return `${style.borderTopLeftRadius} ${style.borderTopRightRadius} ${style.borderBottomRightRadius} ${style.borderBottomLeftRadius}`;
+}
+
+// Snapshot geometry (TRANSITIONS 2.9), written per transition because
+// the rules key on names and the landing element's own radius. Read
+// once the arriving element is live, so its computed style exists.
+function morphRules ( pairs )
+{
+    const rules = [];
+
+    for ( const { name, from, to } of pairs )
+    {
+        // The group is the morphing box: it clips (site-wide rule), it
+        // carries the landing radius so both snapshots share one
+        // rounded clip while the box tweens, and it paints above the
+        // persistent chrome groups so a hero never dives behind the
+        // footer mid-flight (2.8).
+        const radius = borderRadiusOf( to );
+        const group = radius === '0px' || radius === '0px 0px 0px 0px'
+            ? 'z-index: 1;'
+            : `z-index: 1; border-radius: ${radius};`;
+
+        rules.push( `::view-transition-group(${name}) { ${group} }` );
+
+        // Media snapshots keep their own aspect ratio by default and
+        // overhang a box tweening between two shapes; cover-fitting
+        // both sides makes mid-morph a crossfade of two crops.
+        if ( from.matches( mediaSelector ) || to.matches( mediaSelector ) )
+        {
+            rules.push( `::view-transition-old(${name}), ::view-transition-new(${name}) { width: 100%; height: 100%; object-fit: cover; overflow: clip; }` );
+        }
+    }
+
+    return rules.join( '\n' );
 }
 
 async function navigate ( url, pushHistory )
@@ -143,6 +211,13 @@ async function navigate ( url, pushHistory )
         return;
     }
 
+    // Scroll restoration is explicit (2.5): a link pushes 0, browser
+    // back carries the position it left from in history state.
+    const savedScroll = history.state && typeof history.state.casomerScroll === 'number'
+        ? history.state.casomerScroll
+        : 0;
+    const arrivalScroll = pushHistory ? 0 : savedScroll;
+
     if ( pushHistory )
     {
         history.replaceState( { casomerScroll: window.scrollY }, '', location.href );
@@ -150,17 +225,46 @@ async function navigate ( url, pushHistory )
     }
 
     // Capture preparation: freeze ambient motion, sweep every stale
-    // name, then dress this transition's pairs. Assignment happens at
-    // capture time only.
+    // name on both sides, then dress this transition's pairs.
+    // Assignment happens at capture time only.
     document.documentElement.classList.add( freezeClass );
 
-    const sweptStale = sweepContentNames( currentMain );
-    const names = assignMorphNames( currentMain, nextMain );
+    const sweptStale = sweepContentNames( currentMain ) + sweepContentNames( nextMain );
+    const pairs = pairMorphs( currentMain, nextMain );
+    const names = pairs.map( ( pair ) => pair.name );
+    const rules = document.createElement( 'style' );
+
+    rules.id = rulesId;
 
     const swap = () =>
     {
         document.title = next.title;
+
+        // Chrome that changed swaps with the content (SCHEMA 12.6): a
+        // page template with its own header or footer. Identical
+        // chrome is left alone, and the persistent names hold it
+        // still through the transition (TRANSITIONS 2.8).
+        for ( const tag of [ 'header', 'footer' ] )
+        {
+            const nextChrome = next.querySelector( `body > ${tag}` );
+            const currentChrome = document.querySelector( `body > ${tag}` );
+
+            // Compared by content, not by the element: a script that
+            // decorates the landmark itself must not force a swap.
+            if ( nextChrome !== null && currentChrome !== null && nextChrome.innerHTML !== currentChrome.innerHTML )
+            {
+                currentChrome.replaceWith( nextChrome );
+            }
+        }
+
         currentMain.replaceWith( nextMain );
+
+        // Inside the update, so the new-state capture measures the
+        // landing geometry at the arrival scroll position, and the
+        // landing element is live for its radius.
+        window.scrollTo( 0, arrivalScroll );
+        rules.textContent = morphRules( pairs );
+        document.head.append( rules );
     };
 
     let finished = Promise.resolve();
@@ -169,26 +273,25 @@ async function navigate ( url, pushHistory )
     {
         const transition = document.startViewTransition( swap );
 
-        await transition.updateCallbackDone;
-        finished = transition.finished.catch( () => undefined );
+        finished = Promise.race( [
+            transition.finished.catch( () => undefined ),
+            new Promise( ( resolve ) => setTimeout( resolve, finishBackstopMs ) ),
+        ] );
     }
     else
     {
         swap();
     }
 
-    const savedScroll = history.state && typeof history.state.casomerScroll === 'number'
-        ? history.state.casomerScroll
-        : 0;
-
-    window.scrollTo( 0, pushHistory ? 0 : savedScroll );
     await finished;
 
     // Names never rest: clear the dressing the moment the transition
-    // is over, and unfreeze. A skipped transition still lands here.
+    // is over, drop its rules, and unfreeze. A skipped or stalled
+    // transition still lands here.
     sweepContentNames( nextMain );
+    rules.remove();
     document.documentElement.classList.remove( freezeClass );
-    window.casomer.lastTransition = { names, sweptStale };
+    window.casomer.lastTransition = { names, sweptStale, rules: rules.textContent };
 }
 
 function onClick ( event )

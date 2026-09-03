@@ -7,7 +7,9 @@
 import { suggestNearest } from '../schema/fields.ts';
 import { parseComponentReference, ComponentReferenceError, type SchemaIssue } from '../schema/manifest.ts';
 
-const siteConfigKeys = [ 'casomerSchema', 'theme', 'components', 'use', 'name', 'icon', 'regions', 'menus', 'notFound', 'partials', 'media' ];
+const siteConfigKeys = [ 'casomerSchema', 'theme', 'components', 'use', 'name', 'icon', 'regions', 'menus', 'notFound', 'partials', 'media', 'templates' ];
+const templateKeys = [ 'header', 'blocks', 'footer' ];
+const templateNameShape = /^[a-z][a-z0-9-]*$/;
 const regionNames = [ 'header', 'footer' ];
 const menuRecordKeys = [ 'topLevelPages', 'childPages', 'collectionIndexes', 'taxonomyIndexes', 'items' ];
 const menuRuleKeys = [ 'topLevelPages', 'childPages', 'collectionIndexes', 'taxonomyIndexes' ] as const;
@@ -63,9 +65,13 @@ export interface SiteConfig
     readonly name?: string;
     readonly icon?: string;
 
-    // Regions (SCHEMA 12.5): the persistent chrome - header and
-    // footer block lists rendered on every page, outside <main>.
-    readonly regions?: { readonly header?: readonly unknown[]; readonly footer?: readonly unknown[] };
+    // Page templates (SCHEMA 12.6): the chrome and the main layout
+    // pages render through, shared by name. "default" always exists
+    // here - materialized from the file's "templates.default", else
+    // from the retired "regions" spelling (mirrored, never both), else
+    // the header and footer partials around the content slot - so
+    // consumers never special-case it.
+    readonly templates: Readonly<Record<string, PageTemplate>>;
 
     // The user-authored 404 page (Mikey): a block list emitted as
     // /404.html - the static-hosting convention - and served by the
@@ -73,11 +79,11 @@ export interface SiteConfig
     // emitted; nothing is ever scaffolded.
     readonly notFound?: readonly unknown[];
 
-    // User-defined template partials (SCHEMA 12.5, Mikey's vision):
-    // named block lists edited once and inserted into pages as
-    // { "partial": "<name>" } blocks. Header and footer stay the two
-    // well-known names with their own storage; these are the rest of
-    // that system.
+    // Template partials (SCHEMA 12.5, Mikey's vision): named block
+    // lists edited once and inserted anywhere as { "partial": "<name>" }
+    // blocks. "header" and "footer" always exist here (empty when the
+    // file lacks them): the default template places them, and the
+    // Site workspace edits them like any partial.
     readonly partials?: Readonly<Record<string, readonly unknown[]>>;
 
     // Media metadata and policy (SCHEMA 13.4): labels map UUID
@@ -98,6 +104,117 @@ export interface SiteConfig
     // array is the pre-nesting spelling, read as { items } (Studio
     // saves migrate it).
     readonly menus?: Readonly<Record<string, MenuRecord>>;
+}
+
+// A page template (SCHEMA 12.6): header and footer are the chrome,
+// block lists outside <main>; blocks is the main layout holding
+// exactly one { "slot": "content" } where the page's own blocks pour
+// in. A page names one, or owns an inline one of the same shape.
+export interface PageTemplate
+{
+    readonly header?: readonly unknown[];
+    readonly blocks: readonly unknown[];
+    readonly footer?: readonly unknown[];
+}
+
+export const contentSlot = { slot: 'content' } as const;
+
+// The bare template: nothing but the slot. Partial and chrome
+// canvases render through it.
+export function bareTemplate (): PageTemplate
+{
+    return { blocks: [ { ...contentSlot } ] };
+}
+
+// The implicit default (Mikey, 2026-09-02): the site's header and
+// footer partials around the slot. The loader never reports a site
+// for lacking templates.
+export function defaultTemplate (): PageTemplate
+{
+    return { header: [ { partial: 'header' } ], blocks: [ { ...contentSlot } ], footer: [ { partial: 'footer' } ] };
+}
+
+// Counts content slots at any depth of a block list (sections nest).
+export function countSlots ( blocks: readonly unknown[] ): number
+{
+    let count = 0;
+
+    for ( const block of blocks )
+    {
+        if ( block === null || typeof block !== 'object' ) { continue; }
+
+        const record = block as Record<string, unknown>;
+
+        if ( record.slot !== undefined ) { count += 1; }
+        if ( Array.isArray( record.blocks ) ) { count += countSlots( record.blocks ); }
+    }
+
+    return count;
+}
+
+// One template's shape, shared by site.templates entries and a page's
+// own inline template (SCHEMA 12.6). Returns undefined when the shape
+// is unusable; softer problems are issues on a usable result.
+export function validatePageTemplate ( raw: unknown, path: string, issues: SchemaIssue[] ): PageTemplate | undefined
+{
+    if ( raw === null || typeof raw !== 'object' || Array.isArray( raw ) )
+    {
+        issues.push( { path, message: 'A page template is an object: { "header": [...blocks], "blocks": [ ..., { "slot": "content" }, ... ], "footer": [...blocks] } (SCHEMA 12.6).' } );
+        return undefined;
+    }
+
+    const record = raw as Record<string, unknown>;
+
+    for ( const key of Object.keys( record ) )
+    {
+        if ( !templateKeys.includes( key ) )
+        {
+            issues.push( { path: `${path}.${key}`, message: `Unknown template key "${key}".${suggestNearest( key, templateKeys )} A template has header, blocks, and footer.` } );
+        }
+    }
+
+    let usable = true;
+
+    for ( const part of [ 'header', 'footer' ] as const )
+    {
+        if ( record[ part ] !== undefined && !Array.isArray( record[ part ] ) )
+        {
+            issues.push( { path: `${path}.${part}`, message: `"${part}" is an array of blocks: the chrome outside <main>.` } );
+            usable = false;
+        }
+    }
+
+    if ( record.blocks !== undefined && !Array.isArray( record.blocks ) )
+    {
+        issues.push( { path: `${path}.blocks`, message: '"blocks" is the main layout: an array of blocks holding one { "slot": "content" }.' } );
+        usable = false;
+    }
+
+    if ( !usable ) { return undefined; }
+
+    const header = record.header as readonly unknown[] | undefined;
+    const footer = record.footer as readonly unknown[] | undefined;
+    const blocks = ( record.blocks as readonly unknown[] | undefined ) ?? [ { ...contentSlot } ];
+    const slotsInMain = countSlots( blocks );
+
+    if ( slotsInMain !== 1 )
+    {
+        issues.push( { path: `${path}.blocks`, message: `A template's blocks hold exactly one { "slot": "content" } - the page's content pours in there; found ${slotsInMain}.` } );
+    }
+
+    for ( const [ part, list ] of [ [ 'header', header ], [ 'footer', footer ] ] as const )
+    {
+        if ( list !== undefined && countSlots( list ) > 0 )
+        {
+            issues.push( { path: `${path}.${part}`, message: 'The content slot belongs in "blocks", the main layout - chrome holds no slot.' } );
+        }
+    }
+
+    return {
+        ...( header === undefined ? {} : { header } ),
+        blocks,
+        ...( footer === undefined ? {} : { footer } ),
+    };
 }
 
 export interface MenuRecord
@@ -283,7 +400,7 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
     if ( raw === null || typeof raw !== 'object' || Array.isArray( raw ) )
     {
         issues.push( { path: 'site', message: 'site.json is a JSON object.' } );
-        return { theme: emptyTheme, governance: { disabled: [] } };
+        return { theme: emptyTheme, governance: { disabled: [] }, templates: { default: defaultTemplate() }, partials: { header: [], footer: [] } };
     }
 
     const record = raw as Record<string, unknown>;
@@ -587,9 +704,10 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
         }
     }
 
-    // Regions: header and footer only, each an array of blocks
-    // (block-level scrutiny happens in the site loader, where the
-    // packages are known).
+    // Regions: the retired spelling of the default template's chrome
+    // (SCHEMA 12.5, absorbed by 12.6): header and footer only, each an
+    // array of blocks, read here and mirrored onto templates.default
+    // below when the file has no default of its own.
     let regions: { header?: readonly unknown[]; footer?: readonly unknown[] } | undefined;
 
     if ( record.regions !== undefined )
@@ -619,6 +737,50 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
                 regions = { ...regions, [ name ]: blocks };
             }
         }
+    }
+
+    // Page templates (SCHEMA 12.6): named { header, blocks, footer }
+    // records; "default" is what every page without a name renders
+    // through. Block-level scrutiny happens in the site loader.
+    const templates: Record<string, PageTemplate> = {};
+
+    if ( record.templates !== undefined )
+    {
+        if ( record.templates === null || typeof record.templates !== 'object' || Array.isArray( record.templates ) )
+        {
+            issues.push( { path: 'site.templates', message: '"templates" is an object of named page templates (SCHEMA 12.6).' } );
+        }
+        else
+        {
+            for ( const [ name, raw ] of Object.entries( record.templates as Record<string, unknown> ) )
+            {
+                if ( !templateNameShape.test( name ) )
+                {
+                    issues.push( { path: `site.templates.${name}`, message: 'A template name is token shaped: lowercase, digits, hyphens, starting with a letter.' } );
+                    continue;
+                }
+
+                const template = validatePageTemplate( raw, `site.templates.${name}`, issues );
+
+                if ( template !== undefined ) { templates[ name ] = template; }
+            }
+        }
+    }
+
+    // The mirror: a file still spelling its chrome as "regions" reads
+    // as the default template's header and footer; a part the file
+    // does not spell is the site's partial of that name. A file
+    // carrying both keeps templates.default and leaves regions to
+    // Studio's migration on its next write.
+    if ( templates.default === undefined )
+    {
+        const implicit = defaultTemplate();
+
+        templates.default = {
+            header: regions?.header ?? implicit.header ?? [],
+            blocks: [ { ...contentSlot } ],
+            footer: regions?.footer ?? implicit.footer ?? [],
+        };
     }
 
     // Menus: named records of { topLevelPages, items }, items nesting
@@ -695,9 +857,9 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
 
             for ( const [ name, blocks ] of Object.entries( record.partials as Record<string, unknown> ) )
             {
-                if ( !/^[a-z][a-z0-9-]*$/.test( name ) || [ 'header', 'footer', 'notFound' ].includes( name ) )
+                if ( !/^[a-z][a-z0-9-]*$/.test( name ) || name === 'notFound' )
                 {
-                    issues.push( { path: `site.partials.${name}`, message: 'A partial name is token shaped, and header/footer/notFound are reserved.' } );
+                    issues.push( { path: `site.partials.${name}`, message: 'A partial name is token shaped, and notFound is reserved.' } );
                     continue;
                 }
 
@@ -811,10 +973,10 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
         ...( declaredUse === undefined ? {} : { declaredUse } ),
         ...( siteName === undefined ? {} : { name: siteName } ),
         ...( icon === undefined ? {} : { icon } ),
-        ...( regions === undefined ? {} : { regions } ),
+        templates,
         ...( menus === undefined ? {} : { menus } ),
         ...( notFound === undefined ? {} : { notFound } ),
-        ...( partials === undefined ? {} : { partials } ),
+        partials: { header: [], footer: [], ...( partials ?? {} ) },
         ...( media === undefined ? {} : { media } ),
     };
 }

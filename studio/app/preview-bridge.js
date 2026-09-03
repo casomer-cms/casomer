@@ -84,6 +84,10 @@ function markedAncestors ( element )
 
 function select ( element )
 {
+    // A selection change ends any inline edit outside the new target
+    // (a blur may not arrive when focus was never real).
+    if ( inlineEl !== null && ( element === null || !element.contains( inlineEl ) ) ) { endInline( true ); }
+
     if ( element === null || !element.isConnected )
     {
         const hadSelection = selected !== null;
@@ -183,12 +187,213 @@ function descend ()
     if ( child instanceof Element ) { select( child ); }
 }
 
-document.addEventListener( 'click', ( event ) =>
+// Inline text editing (EDITOR 3): a double-click on text inside the
+// selected block puts a caret there. A paragraph or heading from a
+// markdown field carries its source range (data-casomer-md) and edits
+// write back to exactly that range, inline formatting serialized to
+// markdown; any other text is a text field, matched by its value.
+// Enter in markdown starts a new paragraph; Enter in a text field
+// commits; Escape and blur commit too. Structure stays the
+// inspector's (the ceiling).
+let inlineEl = null;
+let lastMorph = Promise.resolve();
+let inlineMode = null;
+let inlinePath = null;
+let inlineCaret = null;
+
+function serializeInline ( node )
 {
+    let out = '';
+
+    for ( const child of node.childNodes )
+    {
+        if ( child.nodeType === Node.TEXT_NODE )
+        {
+            out += child.nodeValue;
+            continue;
+        }
+
+        if ( child.nodeType !== Node.ELEMENT_NODE ) { continue; }
+
+        const tag = child.tagName;
+        const inner = serializeInline( child );
+
+        if ( tag === 'BR' ) { out += '  \n'; }
+        else if ( tag === 'STRONG' || tag === 'B' ) { out += inner === '' ? '' : `**${inner}**`; }
+        else if ( tag === 'EM' || tag === 'I' ) { out += inner === '' ? '' : `*${inner}*`; }
+        else if ( tag === 'CODE' ) { out += inner === '' ? '' : `\`${inner}\``; }
+        else if ( tag === 'DEL' || tag === 'S' ) { out += inner === '' ? '' : `~~${inner}~~`; }
+        else if ( tag === 'A' ) { out += `[${inner}](${child.getAttribute( 'href' ) ?? ''})`; }
+        else { out += inner; }
+    }
+
+    return out;
+}
+
+function inlineSplitAtCaret ()
+{
+    const selection = window.getSelection();
+
+    if ( selection === null || selection.rangeCount === 0 || inlineEl === null ) { return null; }
+
+    const caret = selection.getRangeAt( 0 );
+    const before = document.createRange();
+    const after = document.createRange();
+
+    before.setStart( inlineEl, 0 );
+    before.setEnd( caret.startContainer, caret.startOffset );
+    after.setStart( caret.endContainer, caret.endOffset );
+    after.setEnd( inlineEl, inlineEl.childNodes.length );
+
+    return { before: serializeInline( before.cloneContents() ), after: serializeInline( after.cloneContents() ) };
+}
+
+function inlineReport ()
+{
+    if ( inlineEl === null ) { return; }
+
+    post( {
+        kind: 'inline-input',
+        path: inlinePath,
+        mode: inlineMode,
+        text: inlineEl.textContent,
+        markdown: inlineMode === 'markdown' ? serializeInline( inlineEl ) : undefined,
+    } );
+}
+
+function inlineKey ( event )
+{
+    if ( inlineEl === null ) { return; }
+
+    if ( event.key === 'Escape' )
+    {
+        event.preventDefault();
+        inlineEl.blur();
+        return;
+    }
+
+    if ( event.key === 'Enter' && !event.shiftKey )
+    {
+        event.preventDefault();
+
+        if ( inlineMode === 'text' )
+        {
+            inlineEl.blur();
+            return;
+        }
+
+        const split = inlineSplitAtCaret();
+
+        if ( split !== null ) { post( { kind: 'inline-split', path: inlinePath, ...split } ); }
+
+        endInline( false );
+    }
+}
+
+function endInline ( report = true )
+{
+    const element = inlineEl;
+
+    if ( element === null ) { return; }
+
+    inlineEl = null;
+    element.removeAttribute( 'contenteditable' );
+    element.removeEventListener( 'input', inlineReport );
+    element.removeEventListener( 'keydown', inlineKey );
+    element.removeEventListener( 'blur', onInlineBlur );
+
+    if ( report ) { post( { kind: 'inline-end', path: inlinePath } ); }
+
+    inlinePath = null;
+    inlineMode = null;
+}
+
+function onInlineBlur ()
+{
+    endInline( true );
+}
+
+function beginInline ( element, mode, path, caret )
+{
+    endInline( true );
+    inlineEl = element;
+    inlineMode = mode;
+    inlinePath = path;
+    element.setAttribute( 'contenteditable', mode === 'text' ? 'plaintext-only' : 'true' );
+    element.addEventListener( 'input', inlineReport );
+    element.addEventListener( 'keydown', inlineKey );
+    element.addEventListener( 'blur', onInlineBlur );
+    element.focus( { preventScroll: true } );
+
+    const selection = window.getSelection();
+
+    if ( selection !== null && caret !== null )
+    {
+        selection.removeAllRanges();
+        selection.addRange( caret );
+    }
+}
+
+document.addEventListener( 'dblclick', ( event ) =>
+{
+    if ( !( event.target instanceof Element ) || selected === null || !selected.contains( event.target ) ) { return; }
+    if ( inlineEl !== null && inlineEl.contains( event.target ) ) { return; }
+
     event.preventDefault();
     event.stopPropagation();
 
-    select( blockAt( event.target ) );
+    const mapped = event.target.closest( '[data-casomer-md]' );
+    const element = mapped !== null && selected.contains( mapped ) ? mapped : event.target;
+
+    inlineCaret = document.caretRangeFromPoint?.( event.clientX, event.clientY ) ?? null;
+
+    post( {
+        kind: 'inline-start',
+        path: selected.dataset.casomerBlock,
+        mode: mapped !== null && selected.contains( mapped ) ? 'markdown' : 'text',
+        range: mapped?.dataset.casomerMd ?? null,
+        text: element.textContent,
+    } );
+
+    inlineEl = null;
+    window.__casomerInlineCandidate = element;
+}, true );
+
+document.addEventListener( 'click', ( event ) =>
+{
+    // A click inside the live inline edit is the caret's, not ours.
+    if ( inlineEl !== null && event.target instanceof Node && inlineEl.contains( event.target ) ) { return; }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const block = blockAt( event.target );
+
+    if ( block !== null )
+    {
+        select( block );
+        return;
+    }
+
+    // Chrome and layout on a page canvas (EDITOR 2): a click on a
+    // partial's content or a template's own block jumps to the canvas
+    // that owns it. The partial wins when both apply (it is inside).
+    const partial = event.target instanceof Element ? event.target.closest( '[data-casomer-partial]' ) : null;
+    const template = event.target instanceof Element ? event.target.closest( '[data-casomer-template]' ) : null;
+
+    if ( partial !== null && partial.dataset.casomerPartial !== undefined )
+    {
+        post( { kind: 'jump', partial: partial.dataset.casomerPartial } );
+        return;
+    }
+
+    if ( template !== null && typeof template.dataset.casomerTemplate === 'string' && template.dataset.casomerTemplate !== '' )
+    {
+        post( { kind: 'jump', template: template.dataset.casomerTemplate } );
+        return;
+    }
+
+    select( null );
 }, true );
 
 // The add-block seam (EDITOR section 2, the AddBlock board): when the
@@ -264,13 +469,73 @@ ghostStyle.textContent = `
 `;
 document.head.append( ghostStyle );
 
+// The template canvas (SCHEMA 12.6): the content slot fades and wears
+// a centered stamp - it is the page's, not the template's - and an
+// empty header or footer keeps a ghost box with its name so its
+// seams stay reachable. Selection passes through the slot.
+const templateStyle = document.createElement( 'style' );
+const slotStamp = encodeURIComponent( '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none"><rect x="6" y="8" width="36" height="32" rx="6" stroke="#E8A13D" stroke-width="2.4"/><path d="M14 18h20M14 25h20M14 32h12" stroke="#E8A13D" stroke-width="2.4" stroke-linecap="round"/></svg>' );
+
+templateStyle.textContent = `
+body[data-casomer-template] [data-casomer-slot] {
+    position: relative;
+    min-height: 96px;
+    cursor: default;
+}
+
+body[data-casomer-template] [data-casomer-slot] > * {
+    opacity: 0.38;
+    filter: saturate(0.55);
+    pointer-events: none;
+}
+
+body[data-casomer-template] [data-casomer-slot]::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(-45deg, rgba(232, 161, 61, 0.16) 0 2px, transparent 2px 16px);
+    pointer-events: none;
+}
+
+body[data-casomer-template] [data-casomer-slot]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: url("data:image/svg+xml,${slotStamp}") center / 48px 48px no-repeat;
+    pointer-events: none;
+}
+
+body[data-casomer-template] > [data-casomer-part]:empty {
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    outline: 1px dashed rgba(163, 158, 143, 0.7);
+    outline-offset: -1px;
+}
+
+body[data-casomer-template] > [data-casomer-part]:empty::before {
+    content: attr(data-casomer-part);
+    font: 600 11px/1 system-ui, sans-serif;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #A39E8F;
+}
+`;
+document.head.append( templateStyle );
+
 function directChildBlocks ( containerPath )
 {
-    const prefix = containerPath === '' ? 'blocks[' : `${containerPath}.blocks[`;
+    // A template canvas's chrome parts address as header[i] and
+    // footer[i] (SCHEMA 12.6): their root container IS the part name.
+    const prefix = containerPath === '' ? 'blocks[' : ( containerPath === 'header' || containerPath === 'footer' ? `${containerPath}[` : `${containerPath}.blocks[` );
     const shape = new RegExp( `^${prefix.replace( /[.[\]]/g, '\\$&' )}\\d+\\]$` );
 
-    return [ ...document.querySelectorAll( '[data-casomer-block]' ) ]
-        .filter( ( element ) => shape.test( element.dataset.casomerBlock ) );
+    // A template canvas's content slot is a sibling for seam purposes
+    // (a plus above and below it insert into the template's layout),
+    // never a selectable block.
+    return [ ...document.querySelectorAll( '[data-casomer-block], [data-casomer-slot]' ) ]
+        .filter( ( element ) => shape.test( element.dataset.casomerBlock ?? element.dataset.casomerSlot ?? '' ) );
 }
 
 // A container's flow axis comes from the element the children lay out
@@ -296,8 +561,12 @@ function candidatesFor ( containerPath, layoutElement )
             at: box.top + box.height / 2,
             crossStart: box.left,
             crossSize: box.width,
-            crossLow: box.top,
-            crossHigh: box.bottom,
+
+            // A horizontal seam's cross axis is x: the pointer must be
+            // within the box's width, not its height (the empty footer's
+            // seam was unreachable at any x outside its y range).
+            crossLow: box.left,
+            crossHigh: box.right,
         } ];
     }
 
@@ -334,6 +603,18 @@ function seamAt ( clientX, clientY )
     if ( main === null ) { return null; }
 
     const candidates = candidatesFor( '', main );
+
+    // On a template canvas the header and footer are surfaces of
+    // their own: root seams inside each landmark, when it is marked.
+    for ( const part of [ 'header', 'footer' ] )
+    {
+        const landmark = document.querySelector( `body > ${part}` );
+
+        if ( landmark !== null && document.body.hasAttribute( 'data-casomer-template' ) )
+        {
+            candidates.push( ...candidatesFor( part, landmark ) );
+        }
+    }
 
     // Every marked section with (or without) children is a container
     // of its own; deeper containers win ties, so a boundary just
@@ -481,6 +762,43 @@ window.addEventListener( 'message', ( event ) =>
     }
 
     if ( message.kind === 'deselect' ) { select( null ); }
+
+    // The chrome matched the double-clicked text to a field (or not).
+    if ( message.kind === 'inline-edit' )
+    {
+        const candidate = window.__casomerInlineCandidate ?? null;
+
+        window.__casomerInlineCandidate = null;
+
+        if ( message.ok === true && candidate instanceof Element && candidate.isConnected )
+        {
+            beginInline( candidate, message.mode, message.path, inlineCaret );
+        }
+    }
+
+    // After an Enter split the chrome re-rendered; the new paragraph
+    // takes the caret at its start.
+    if ( message.kind === 'inline-focus' )
+    {
+        // The morph that made the new paragraph may still be landing.
+        void lastMorph.then( () =>
+        {
+            const block = document.querySelector( `[data-casomer-block="${CSS.escape( message.path )}"]` );
+            const target = block?.querySelector( `[data-casomer-md="${CSS.escape( message.range )}"]` ) ?? null;
+
+            if ( target instanceof Element )
+            {
+                const caret = document.createRange();
+
+                caret.setStart( target, 0 );
+                caret.collapse( true );
+                beginInline( target, 'markdown', message.path, caret );
+                return;
+            }
+
+            post( { kind: 'inline-end', path: message.path } );
+        } );
+    }
     if ( message.kind === 'ascend' ) { ascend(); }
     if ( message.kind === 'descend' ) { descend(); }
 
@@ -490,7 +808,11 @@ window.addEventListener( 'message', ( event ) =>
     // never blanks. Spammed steps coalesce: one refresh in flight,
     // at most one queued behind it, and the last always runs against
     // the newest content.
-    if ( message.kind === 'refresh' ) { requestRefresh(); }
+    if ( message.kind === 'refresh' )
+    {
+        endInline( true );
+        requestRefresh();
+    }
 
     // Per-keystroke updates (DEVELOPMENT section 5): the chrome sends
     // the block's re-rendered INNER html; morph merges it under the
@@ -502,7 +824,7 @@ window.addEventListener( 'message', ( event ) =>
 
         if ( target?.firstElementChild instanceof Element )
         {
-            void morphInto( target.firstElementChild, message.html ).then( () => queueUpdate() );
+            lastMorph = morphInto( target.firstElementChild, message.html ).then( () => queueUpdate() );
         }
     }
 } );

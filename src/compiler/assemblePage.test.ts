@@ -233,8 +233,9 @@ describe( 'assemblePage behaviors', () =>
         // the anchor id as its view-transition-name (SCHEMA 6); the
         // duplicate reports and stays unstamped - transition names
         // are unique per page.
-        assert.ok( html.includes( 'src="/a.jpg" alt="A" style="view-transition-name: hero-image"' ) );
+        assert.ok( html.includes( 'src="/a.jpg" alt="A" style="view-transition-name: hero-image" data-morph="hero-image"' ) );
         assert.equal( html.match( /view-transition-name: hero-image/g )?.length, 1 );
+        assert.equal( html.match( /data-morph="hero-image"/g )?.length, 1, 'the runtime pairs soft navigations by data-morph' );
         assert.equal( issues.length, 1 );
         assert.match( issues[ 0 ]!.message, /already used at blocks\[0\]/ );
     } );

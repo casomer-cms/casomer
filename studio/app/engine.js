@@ -4153,27 +4153,31 @@ function Ei(e) {
 	};
 	return n(e), t;
 }
-function $(e, t) {
-	return (e.children ?? []).map((e) => Oi(e, t)).join("");
+function Di(e) {
+	let t = e.children ?? [], n = t[0]?.position?.start.offset, r = t[t.length - 1]?.position?.end.offset;
+	return n === void 0 || r === void 0 ? "" : ` data-casomer-md="${n}-${r}"`;
 }
-function Di(e, t) {
+function $(e, t) {
+	return (e.children ?? []).map((e) => ki(e, t)).join("");
+}
+function Oi(e, t) {
 	let n = e.align ?? [], r = (e, r) => `<tr>${e.children.map((e, i) => {
 		let a = n[i];
 		return `<${r}${a == null ? "" : ` style="text-align: ${a}"`}>${$(e, t)}</${r}>`;
 	}).join("")}</tr>\n`, [i, ...a] = e.children;
 	return `<table>\n${i === void 0 ? "" : `<thead>\n${r(i, "th")}</thead>\n`}${a.length === 0 ? "" : `<tbody>\n${a.map((e) => r(e, "td")).join("")}</tbody>\n`}</table>\n`;
 }
-function Oi(e, t) {
+function ki(e, t) {
 	switch (e.type) {
-		case "paragraph": return `<p>${$(e, t)}</p>\n`;
+		case "paragraph": return `<p${t.sourceMap ? Di(e) : ""}>${$(e, t)}</p>\n`;
 		case "heading": {
-			let n = e, r = $(n, t);
-			if (t.plan.kickers.has(n)) return `<p class="kicker">${r}</p>\n`;
-			let i = t.plan.levelByDepth.get(n.depth) ?? 6, a = n.depth === i ? "" : ` class="h${n.depth}"`;
+			let n = e, r = $(n, t), i = t.sourceMap ? Di(n) : "";
+			if (t.plan.kickers.has(n)) return `<p class="kicker"${i}>${r}</p>\n`;
+			let a = t.plan.levelByDepth.get(n.depth) ?? 6, o = n.depth === a ? "" : ` class="h${n.depth}"`;
 			return t.outline.push({
-				level: i,
+				level: a,
 				text: wi(n)
-			}), `<h${i}${a}>${r}</h${i}>\n`;
+			}), `<h${a}${o}${i}>${r}</h${a}>\n`;
 		}
 		case "text": return Q(e.value).replace(/\n/g, "<br>\n");
 		case "emphasis": return `<em>${$(e, t)}</em>`;
@@ -4183,12 +4187,12 @@ function Oi(e, t) {
 		case "break": return "<br>\n";
 		case "thematicBreak": return "<hr>\n";
 		case "blockquote": return `<blockquote>\n${$(e, t)}</blockquote>\n`;
-		case "table": return Di(e, t);
+		case "table": return Oi(e, t);
 		case "list": {
 			let n = e, r = n.ordered === !0 ? "ol" : "ul";
 			return `<${r}>\n${$(n, t)}</${r}>\n`;
 		}
-		case "listItem": return `<li>${e.children.map((e) => e.type === "paragraph" ? $(e, t) : Oi(e, t)).join("")}</li>\n`;
+		case "listItem": return `<li>${e.children.map((e) => e.type === "paragraph" ? $(e, t) : ki(e, t)).join("")}</li>\n`;
 		case "code": {
 			let t = e;
 			return `<pre><code${typeof t.lang == "string" && t.lang !== "" ? ` class="language-${Q(t.lang)}"` : ""}>${Q(t.value)}\n</code></pre>\n`;
@@ -4207,34 +4211,35 @@ function Oi(e, t) {
 		default: return "";
 	}
 }
-function ki(e, t = 2) {
-	let n = Ci(e), r = {
-		plan: Ti(Ei(n), t),
-		outline: []
+function Ai(e, t = 2, n = {}) {
+	let r = Ci(e), i = {
+		plan: Ti(Ei(r), t),
+		outline: [],
+		sourceMap: n.sourceMap === !0
 	};
 	return {
-		html: $(n, r),
-		outline: r.outline
+		html: $(r, i),
+		outline: i.outline
 	};
 }
 //#endregion
 //#region src/compiler/assemblePage.ts
-function Ai(e, t) {
-	let n = { ...t };
-	for (let [t, r] of Object.entries(e)) {
-		let e = n[t];
-		e !== void 0 && (r.type === "markdown" && typeof e == "string" && (n[t] = ki(e, 1).html), r.type === "list" && Array.isArray(e) && (n[t] = e.map((e) => Ai(r.fields ?? {}, e))), r.type === "group" && typeof e == "object" && e && !Array.isArray(e) && (n[t] = Ai(r.fields ?? {}, e)));
+function ji(e, t, n = {}) {
+	let r = { ...t };
+	for (let [t, i] of Object.entries(e)) {
+		let e = r[t];
+		e !== void 0 && (i.type === "markdown" && typeof e == "string" && (r[t] = Ai(e, 1, n).html), i.type === "list" && Array.isArray(e) && (r[t] = e.map((e) => ji(i.fields ?? {}, e, n))), i.type === "group" && typeof e == "object" && e && !Array.isArray(e) && (r[t] = ji(i.fields ?? {}, e, n)));
 	}
-	return n;
+	return r;
 }
 //#endregion
 //#region studio/engine/engine.ts
-function ji(e, t) {
+function Mi(e, t) {
 	let n = te(t);
 	return { render(t) {
-		let r = Ai(e, le(e, t));
+		let r = ji(e, le(e, t), { sourceMap: !0 });
 		return ie(n, r, e);
 	} };
 }
 //#endregion
-export { ji as createBlockRenderer, _ as morphPlugin };
+export { Mi as createBlockRenderer, _ as morphPlugin };

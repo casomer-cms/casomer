@@ -93,6 +93,12 @@ describe( 'buildSite on the golden fixture', () =>
         assert.ok( css.includes( '.gap-md' ) );
         assert.ok( css.includes( '@view-transition' ), 'the crossfade net ships' );
         assert.ok( css.includes( '.casomer-vt' ), 'the stillness freeze ships' );
+        // The stylesheet is reformatted by the CSS pipeline, so the
+        // geometry hygiene (TRANSITIONS 2.9) is matched loosely.
+        assert.match( css, /::view-transition-group\(\*\)\s*\{\s*overflow:\s*clip;?\s*\}/, 'every group clips' );
+        assert.match( css, /::view-transition-old\(\*\):only-child/, 'one-sided captures fade' );
+        assert.match( css, /scrollbar-gutter:\s*stable/, 'the viewport width holds between pages' );
+        assert.match( css, /prefers-reduced-motion: reduce\)\s*\{\s*@view-transition\s*\{\s*navigation:\s*none;?\s*\}/, 'reduced motion switches the net off' );
     } );
 
     it( 'refuses to write anything when validation fails', async () =>

@@ -18,7 +18,7 @@ import { type SchemaIssue } from '../schema/manifest.ts';
 import { type LoadedPackage } from '../schema/loadPackage.ts';
 import { loadSiteDirectory, type SiteLoadResult } from '../content/loadSiteDirectory.ts';
 import { collectionIsDraft, collectionPathSegments, entrySlug, pageIsDraft, pagePathSegments, pagesById, resolveEntryUrls, resolveMenus } from '../content/urlTree.ts';
-import { termAndDescendantIds } from '../content/contentDocuments.ts';
+import { termAndDescendantIds, entryLayoutOf } from '../content/contentDocuments.ts';
 import { entryRequiredProblems } from '../content/contentProblems.ts';
 import { loadCoreComponents } from './coreComponents.ts';
 import { assemblePage, entryScopeOf, termScopeOf, type PageInput } from './assemblePage.ts';
@@ -122,7 +122,7 @@ function collectionPages ( site: SiteLoadResult, issues: SchemaIssue[] ): Collec
         if ( collection.indexBlocks === false ) { continue; }
 
         pages.push( {
-            page: { id: `collection:${stem}`, title: collection.label, slug: address, blocks: collection.indexBlocks ?? [] },
+            page: { id: `collection:${stem}`, title: collection.label, slug: address, blocks: collection.indexBlocks ?? [], ...( collection.indexTemplate === undefined ? {} : { template: collection.indexTemplate } ) },
             relativeFile: `${address}/index.html`,
             ...( collection.indexPageSize === undefined
                 ? {}
@@ -135,14 +135,15 @@ function collectionPages ( site: SiteLoadResult, issues: SchemaIssue[] ): Collec
         {
             if ( entry.draft === true ) { continue; }
 
-            const blocks = entry.blocks ?? collection.templateBlocks;
+            const chosen = entryLayoutOf( collection, entry );
+            const blocks = chosen.blocks;
 
             if ( blocks === undefined ) { continue; }
 
             const slug = entrySlug( entry.values.title, entry.id, taken );
 
             pages.push( {
-                page: { id: entry.id, title: String( entry.values.title ?? collection.label ), slug: `${address}/${slug}`, blocks },
+                page: { id: entry.id, title: String( entry.values.title ?? collection.label ), slug: `${address}/${slug}`, blocks, ...( chosen.template === undefined ? {} : { template: chosen.template } ) },
                 relativeFile: `${address}/${slug}/index.html`,
                 // The inherent entry.url points at THIS page; a real
                 // field named "url" wins by spreading after.
@@ -178,7 +179,7 @@ function taxonomyPages ( site: SiteLoadResult, issues: SchemaIssue[] ): Collecti
         }
 
         pages.push( {
-            page: { id: `taxonomy:${stem}`, title: taxonomy.label, slug: stem, blocks: taxonomy.indexBlocks ?? [] },
+            page: { id: `taxonomy:${stem}`, title: taxonomy.label, slug: stem, blocks: taxonomy.indexBlocks ?? [], ...( taxonomy.indexTemplate === undefined ? {} : { template: taxonomy.indexTemplate } ) },
             relativeFile: `${stem}/index.html`,
         } );
 
@@ -205,7 +206,7 @@ function taxonomyPages ( site: SiteLoadResult, issues: SchemaIssue[] ): Collecti
             const address = `${stem}/${segments.join( '/' )}`;
 
             pages.push( {
-                page: { id: term.id, title: term.name, slug: address, blocks: taxonomy.templateBlocks },
+                page: { id: term.id, title: term.name, slug: address, blocks: taxonomy.templateBlocks, ...( taxonomy.termTemplate === undefined ? {} : { template: taxonomy.termTemplate } ) },
                 relativeFile: `${address}/index.html`,
                 termScope: termScopeOf( term ),
                 termContext: { taxonomyStem: stem, termIds: termAndDescendantIds( taxonomy.terms, term.id ) },
@@ -322,7 +323,8 @@ export async function buildSite ( options: BuildOptions ): Promise<BuildResult>
     {
         // Draft pages persist and edit; the delivered site omits them,
         // and a draft ancestor drafts the whole subtree (SCHEMA 13.6).
-        if ( pageIsDraft( page, treeIndex ) ) { continue; }
+        // The 404 page has no address in the tree; it emits below.
+        if ( pageIsDraft( page, treeIndex ) || page.slug === '404' ) { continue; }
 
         const assembled = await assemblePage( page, assembleOptions );
 
@@ -381,15 +383,14 @@ export async function buildSite ( options: BuildOptions ): Promise<BuildResult>
         }
     }
 
-    // The user-authored 404 page (Mikey) emits as /404.html - the
-    // static-hosting convention - only when blocks are authored:
+    // The 404 page (SCHEMA 13.6, a reserved page) emits as /404.html -
+    // the static-hosting convention - only when blocks are authored:
     // nothing is ever scaffolded.
-    if ( site.config.notFound !== undefined && site.config.notFound.length > 0 )
+    const notFoundPage = site.pages.find( ( page ) => page.slug === '404' );
+
+    if ( notFoundPage !== undefined && notFoundPage.blocks.length > 0 )
     {
-        const assembled = await assemblePage(
-            { id: 'not-found', title: 'Not found', slug: '404', blocks: site.config.notFound },
-            assembleOptions,
-        );
+        const assembled = await assemblePage( notFoundPage, assembleOptions );
 
         issues.push( ...assembled.issues.map( ( issue ) => ( { path: `404: ${issue.path}`, message: issue.message } ) ) );
         await writeFile( join( options.outputDirectory, '404.html' ), options.minify === false ? prettifyHtml( assembled.html ) : minifyHtml( assembled.html ), 'utf8' );

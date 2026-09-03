@@ -7,6 +7,9 @@
 // cookie. The session watches the content documents so hand edits
 // reflect in the chrome (section 15's watching rule).
 
+import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { watch, type FSWatcher } from 'node:fs';
@@ -16,7 +19,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, extname, join, normalize, sep } from 'node:path';
 
 import { defaultMediaSettings, optimizeUpload } from './optimize.ts';
-import { loadSiteDirectory } from '../content/loadSiteDirectory.ts';
+import { NOT_FOUND_PAGE_ID, loadSiteDirectory } from '../content/loadSiteDirectory.ts';
 import { parseJsonDocument, serializeCanonicalJson, type JsonValue } from '../content/canonicalJson.ts';
 import { buildSite } from '../compiler/buildSite.ts';
 import { appendIgnoreLines, commit, hasRemote, hasStagedChanges, pushCurrentBranch, removeIgnoreLines, runGit, stagePaths } from '../git/repository.ts';
@@ -249,6 +252,10 @@ function blockSummary ( block: unknown, packages: readonly LoadedPackage[], core
 
     if ( typeof record.partial === 'string' ) { return { kind: 'partial', title: record.partial }; }
 
+    // A template's content slot (SCHEMA 12.6): selectable on the
+    // template canvas, never editable or deletable there.
+    if ( record.slot !== undefined ) { return { kind: 'slot' }; }
+
     const children = ( ( record.blocks ?? [] ) as unknown[] )
         .map( ( child ) => blockSummary( child, packages, core ) );
 
@@ -354,6 +361,49 @@ function userConfigDirectory (): string
     return join( homedir(), '.config', 'casomer' );
 }
 
+// The person at the keyboard, for the user chip's menu: the user
+// config's name and email when set, else git's, else nothing. A
+// local studio has no accounts; this is identity, not authentication.
+async function userIdentity (): Promise<{ name: string; email: string }>
+{
+    let name = '';
+    let email = '';
+
+    try
+    {
+        const config = JSON.parse( await readFile( join( userConfigDirectory(), 'config.json' ), 'utf8' ) ) as { name?: unknown; email?: unknown };
+
+        if ( typeof config.name === 'string' ) { name = config.name.trim(); }
+        if ( typeof config.email === 'string' ) { email = config.email.trim(); }
+    }
+    catch
+    {
+        // No user config: git may still know.
+    }
+
+    const git = ( key: string ): Promise<string> => new Promise( ( resolve ) =>
+    {
+        execFile( 'git', [ 'config', '--get', key ], { timeout: 1500 }, ( error, stdout ) => resolve( error ? '' : stdout.trim() ) );
+    } );
+
+    if ( name === '' ) { name = await git( 'user.name' ); }
+    if ( email === '' ) { email = await git( 'user.email' ); }
+
+    return { name, email };
+}
+
+const studioVersion = ( (): string =>
+{
+    try
+    {
+        return String( ( JSON.parse( readFileSync( fileURLToPath( new URL( '../../package.json', import.meta.url ) ), 'utf8' ) ) as { version?: unknown } ).version ?? '' );
+    }
+    catch
+    {
+        return '';
+    }
+} )();
+
 async function avatarFile (): Promise<string | undefined>
 {
     try
@@ -397,6 +447,8 @@ async function serveSite ( options: StudioServerOptions, response: ServerRespons
         changedFiles: changed.files,
         changedPageIds: changed.pageIds,
         hasAvatar: await avatarFile() !== undefined,
+        user: await userIdentity(),
+        studioVersion,
         declaredUse: result.config.declaredUse ?? 'personal',
         remoteUrl: remote.code === 0 ? remote.stdout.trim() : '',
         lastPublishedAt: lastPublish.code === 0 ? lastPublish.stdout.trim() : '',
@@ -407,12 +459,22 @@ async function serveSite ( options: StudioServerOptions, response: ServerRespons
             slug: page.slug,
             draft: page.draft === true,
             ...( page.parent === undefined ? {} : { parent: page.parent } ),
+
+            // The page's template (SCHEMA 12.6): a name, or "custom"
+            // for a page owning its own.
+            template: typeof page.template === 'string' ? page.template : ( page.template === undefined ? 'default' : 'custom' ),
             blocks: page.blocks.map( ( block ) => blockSummary( block, packages, core ) ),
         } ) ),
+        templates: Object.fromEntries( Object.entries( result.config.templates ).map( ( [ name, template ] ) => [ name, {
+            header: ( template.header ?? [] ).map( ( block ) => blockSummary( block, packages, core ) ),
+            blocks: template.blocks.map( ( block ) => blockSummary( block, packages, core ) ),
+            footer: ( template.footer ?? [] ).map( ( block ) => blockSummary( block, packages, core ) ),
+            pages: result.pages.filter( ( page ) => ( page.template ?? 'default' ) === name ).length,
+        } ] ) ),
+        // Header and footer ride in the partials now (SCHEMA 12.5);
+        // the 404 is a page reachable under its old surface name.
         regionBlocks: {
-            header: ( result.config.regions?.header ?? [] ).map( ( block ) => blockSummary( block, packages, core ) ),
-            footer: ( result.config.regions?.footer ?? [] ).map( ( block ) => blockSummary( block, packages, core ) ),
-            notFound: ( result.config.notFound ?? [] ).map( ( block ) => blockSummary( block, packages, core ) ),
+            notFound: ( result.pages.find( ( page ) => page.slug === '404' )?.blocks ?? [] ).map( ( block ) => blockSummary( block, packages, core ) ),
             ...Object.fromEntries( Object.entries( result.config.partials ?? {} )
                 .map( ( [ name, blocks ] ) => [ name, blocks.map( ( block ) => blockSummary( block, packages, core ) ) ] ) ),
         },
@@ -439,7 +501,9 @@ async function serveSite ( options: StudioServerOptions, response: ServerRespons
 
 function pathIndexes ( path: string ): number[]
 {
-    return [ ...path.matchAll( /blocks\[(\d+)\]/g ) ].map( ( match ) => Number( match[ 1 ] ) );
+    // A template part's paths start with the part (header[0]); the
+    // indexes read the same way (SCHEMA 12.6).
+    return [ ...path.matchAll( /(?:blocks|header|footer)\[(\d+)\]/g ) ].map( ( match ) => Number( match[ 1 ] ) );
 }
 
 function blockAtPath ( blocks: readonly unknown[], path: string ): Record<string, unknown> | undefined
@@ -472,6 +536,7 @@ function collectionSurfaceBlocks (
     result: Awaited<ReturnType<typeof loadSiteDirectory>>,
     doc: string,
     surface: string,
+    layoutName = 'default',
 ): readonly unknown[] | undefined
 {
     const document = result.collections.find( ( candidate ) => candidate.file === `${doc}.json` )
@@ -479,7 +544,10 @@ function collectionSurfaceBlocks (
 
     if ( document === undefined ) { return undefined; }
 
-    if ( surface === 'template' ) { return document.templateBlocks ?? []; }
+    if ( surface === 'template' )
+    {
+        return 'layouts' in document ? ( document.layouts[ layoutName ]?.blocks ?? [] ) : ( document.templateBlocks ?? [] );
+    }
 
     return document.indexBlocks === false ? [] : ( document.indexBlocks ?? [] );
 }
@@ -497,20 +565,22 @@ async function serveBlock ( options: StudioServerOptions, url: URL, response: Se
     const doc = url.searchParams.get( 'doc' );
     const surface = url.searchParams.get( 'surface' );
     const region = url.searchParams.get( 'region' );
+    const templateName = url.searchParams.get( 'template' );
+    const templatePart = url.searchParams.get( 'part' ) ?? 'blocks';
     const page = result.pages.find( ( candidate ) => candidate.id === url.searchParams.get( 'page' ) );
     const entryId = url.searchParams.get( 'entry' );
-    const blocks = region !== null
-        ? ( region === 'notFound'
-                ? ( result.config.notFound ?? [] )
-                : ( region === 'header' || region === 'footer'
-                        ? ( result.config.regions?.[ region ] ?? [] )
-                        : ( result.config.partials?.[ region ] ?? [] ) ) )
-        : ( doc !== null && surface === 'entry' && entryId !== null
-                ? ( result.collections.find( ( candidate ) => candidate.file === `${doc}.json` )
-                        ?.entries.find( ( candidate ) => candidate.id === entryId )?.blocks ?? [] )
-                : ( doc !== null && surface !== null
-                        ? collectionSurfaceBlocks( result, doc, surface )
-                        : page?.blocks ) );
+    const blocks = templateName !== null
+        ? ( ( result.config.templates[ templateName ] as Record<string, readonly unknown[] | undefined> | undefined )?.[ templatePart ] ?? [] )
+        : region !== null
+            ? ( region === 'notFound'
+                    ? ( result.pages.find( ( page ) => page.slug === '404' )?.blocks ?? [] )
+                    : ( result.config.partials?.[ region ] ?? [] ) )
+            : ( doc !== null && surface === 'entry' && entryId !== null
+                    ? ( result.collections.find( ( candidate ) => candidate.file === `${doc}.json` )
+                            ?.entries.find( ( candidate ) => candidate.id === entryId )?.blocks ?? [] )
+                    : ( doc !== null && surface !== null
+                            ? collectionSurfaceBlocks( result, doc, surface, url.searchParams.get( 'layout' ) ?? 'default' )
+                            : page?.blocks ) );
     const block = blocks === undefined ? undefined : blockAtPath( blocks, url.searchParams.get( 'path' ) ?? '' );
 
     // A repeat block's food (SCHEMA 13.5, the Repeat inspector):
@@ -699,14 +769,163 @@ interface BlockWriteTarget
 // template or index surface; this resolves the raw document and the
 // blocks array the edit addresses. A missing surface materializes as
 // an empty one, so the first insert can create it.
+// The regions spelling folds into templates.default on the first
+// write that touches templates (SCHEMA 12.6): the loader reads either
+// as the default's chrome; the file settles on one. Returns the
+// templates record, with default materialized.
+function migrateRegionsIntoTemplates ( document: Record<string, unknown> ): Record<string, Record<string, unknown>>
+{
+    const templates = ( document.templates !== null && typeof document.templates === 'object' && !Array.isArray( document.templates )
+        ? document.templates
+        : {} ) as Record<string, Record<string, unknown>>;
+    const regions = document.regions as Record<string, unknown> | undefined;
+
+    // The written default mirrors the loader's implicit one: a part
+    // the file never spelled is the site's partial of that name.
+    if ( templates.default === undefined )
+    {
+        templates.default = {
+            header: Array.isArray( regions?.header ) ? regions.header : [ { partial: 'header' } ],
+            blocks: [ { slot: 'content' } ],
+            footer: Array.isArray( regions?.footer ) ? regions.footer : [ { partial: 'footer' } ],
+        };
+    }
+
+    delete document.regions;
+    document.templates = templates;
+    return templates;
+}
+
+const templateParts = [ 'header', 'blocks', 'footer' ];
+
+// The 404 page materializes in pages.json on its first write (SCHEMA
+// 13.6): a retired site.notFound's blocks move in with it, and the key
+// leaves site.json. Returns the page record to write into.
+// A layout's page template (SCHEMA 12.6): "index.template" or
+// "template.template" on a collection or taxonomy record. null or
+// "default" clears the key; a name must be a template of the site.
+async function applyLayoutTemplate ( options: StudioServerOptions, document: Record<string, unknown>, layout: string, value: unknown ): Promise<string | undefined>
+{
+    if ( value === undefined ) { return undefined; }
+
+    const record = document[ layout ];
+    const isRecord = record !== null && typeof record === 'object' && !Array.isArray( record );
+
+    if ( value === null || value === 'default' )
+    {
+        if ( isRecord ) { delete ( record as Record<string, unknown> ).template; }
+
+        return undefined;
+    }
+
+    if ( typeof value !== 'string' || !/^[a-z][a-z0-9-]*$/.test( value ) ) { return 'A layout template is a page template name.'; }
+
+    const site = parseJsonDocument( await readFile( join( options.contentDirectory, 'site.json' ), 'utf8' ) ) as Record<string, unknown>;
+    const templates = ( site.templates ?? {} ) as Record<string, unknown>;
+
+    if ( templates[ value ] === undefined ) { return `There is no page template "${value}".`; }
+
+    if ( record === false ) { return 'This listing is switched off; turn it on before choosing its template.'; }
+
+    const target = isRecord ? record as Record<string, unknown> : { blocks: [] };
+
+    target.template = value;
+    document[ layout ] = target;
+    return undefined;
+}
+
+// Collection and taxonomy layouts name templates too (SCHEMA 12.6): a
+// rename follows them; a delete moves them along with the pages.
+async function sweepLayoutTemplates ( options: StudioServerOptions, from: string, to: string | undefined ): Promise<number>
+{
+    let swept = 0;
+
+    for ( const file of await readdir( options.contentDirectory ) )
+    {
+        if ( !file.endsWith( '.json' ) || file === 'site.json' || file === 'pages.json' ) { continue; }
+
+        const path = join( options.contentDirectory, file );
+        const document = parseJsonDocument( await readFile( path, 'utf8' ) ) as Record<string, unknown>;
+        let changed = false;
+
+        const named = document.layouts !== null && typeof document.layouts === 'object' && !Array.isArray( document.layouts ) ? Object.values( document.layouts as Record<string, unknown> ) : [];
+
+        for ( const record of [ document.index, document.layout, document.template, ...named ] )
+        {
+            if ( record === null || typeof record !== 'object' || Array.isArray( record ) || ( record as Record<string, unknown> ).template !== from ) { continue; }
+
+            if ( to === undefined ) { delete ( record as Record<string, unknown> ).template; }
+            else { ( record as Record<string, unknown> ).template = to; }
+
+            changed = true;
+            swept += 1;
+        }
+
+        if ( changed ) { await writeFile( path, serializeCanonicalJson( document as JsonValue ), 'utf8' ); }
+    }
+
+    return swept;
+}
+
+async function materializeNotFoundPage ( options: StudioServerOptions ): Promise<{ file: string; document: Record<string, unknown>; page: Record<string, unknown> }>
+{
+    const file = join( options.contentDirectory, 'pages.json' );
+    const document = parseJsonDocument( await readFile( file, 'utf8' ) ) as Record<string, unknown>;
+    const pages = ( Array.isArray( document.pages ) ? document.pages : [] ) as Record<string, unknown>[];
+    let page = pages.find( ( candidate ) => candidate.slug === '404' );
+
+    if ( page === undefined )
+    {
+        const siteFile = join( options.contentDirectory, 'site.json' );
+        const site = parseJsonDocument( await readFile( siteFile, 'utf8' ) ) as Record<string, unknown>;
+        const blocks = Array.isArray( site.notFound ) ? site.notFound : [];
+
+        page = { id: NOT_FOUND_PAGE_ID, title: 'Not found', slug: '404', blocks };
+        pages.push( page );
+        document.pages = pages;
+
+        if ( site.notFound !== undefined )
+        {
+            delete site.notFound;
+            await writeFile( siteFile, serializeCanonicalJson( site as JsonValue ), 'utf8' );
+        }
+    }
+
+    if ( !Array.isArray( page.blocks ) ) { page.blocks = []; }
+
+    return { file, document, page };
+}
+
 async function resolveBlockTarget (
     options: StudioServerOptions,
-    body: { pageId?: string; doc?: string; surface?: string; region?: string; entry?: string },
+    body: { pageId?: string; doc?: string; surface?: string; region?: string; entry?: string; template?: string; part?: string; path?: string; container?: string; layout?: string },
 ): Promise<BlockWriteTarget | undefined>
 {
-    // A region write (SCHEMA 12.5) edits site.json's regions record;
-    // the region array is created on first touch. The 404 page rides
-    // the same plumbing under its own top-level key.
+    // A page template's part (SCHEMA 12.6): header, blocks, or footer
+    // of a named template. Only existing templates are writable -
+    // creation is explicit - except default, which materializes.
+    if ( body.template !== undefined )
+    {
+        const part = body.part ?? ( /^(header|footer)/.exec( body.path ?? body.container ?? '' )?.[ 1 ] ?? 'blocks' );
+
+        if ( !/^[a-z][a-z0-9-]*$/.test( body.template ) || !templateParts.includes( part ) ) { return undefined; }
+
+        const file = join( options.contentDirectory, 'site.json' );
+        const document = parseJsonDocument( await readFile( file, 'utf8' ) ) as Record<string, unknown>;
+        const templates = migrateRegionsIntoTemplates( document );
+        const template = templates[ body.template ];
+
+        if ( template === undefined ) { return undefined; }
+
+        if ( !Array.isArray( template[ part ] ) ) { template[ part ] = part === 'blocks' ? [ { slot: 'content' } ] : []; }
+
+        return { file, document, blocks: template[ part ] as unknown[] };
+    }
+
+    // A region write (SCHEMA 12.5) edits the default template's
+    // chrome - the spelling the chrome's header and footer canvases
+    // still use - migrating a regions record on the way. The 404
+    // page rides the same plumbing under its own top-level key.
     if ( body.region !== undefined )
     {
         if ( !/^[a-zA-Z][a-zA-Z0-9-]*$/.test( body.region ) ) { return undefined; }
@@ -714,27 +933,29 @@ async function resolveBlockTarget (
         const file = join( options.contentDirectory, 'site.json' );
         const document = parseJsonDocument( await readFile( file, 'utf8' ) ) as Record<string, unknown>;
 
+        // The 404 is a page now; the old surface name still lands on it.
         if ( body.region === 'notFound' )
         {
-            if ( !Array.isArray( document.notFound ) ) { document.notFound = []; }
+            const target = await materializeNotFoundPage( options );
 
-            return { file, document, blocks: document.notFound as unknown[] };
+            return { file: target.file, document: target.document, blocks: target.page.blocks as unknown[] };
         }
 
+        // Header and footer are partials every site has (SCHEMA 12.5):
+        // the file materializes them on the first write.
         if ( body.region === 'header' || body.region === 'footer' )
         {
-            const regions = ( document.regions ?? {} ) as Record<string, unknown>;
+            const partials = ( document.partials ?? {} ) as Record<string, unknown>;
 
-            if ( !Array.isArray( regions[ body.region ] ) ) { regions[ body.region ] = []; }
+            if ( !Array.isArray( partials[ body.region ] ) ) { partials[ body.region ] = []; }
 
-            document.regions = regions;
-            return { file, document, blocks: regions[ body.region ] as unknown[] };
+            document.partials = partials;
+            return { file, document, blocks: partials[ body.region ] as unknown[] };
         }
 
-        // A user-defined partial (SCHEMA 12.5): the same plumbing,
-        // its own record. Only EXISTING partials are writable - a
-        // partial is created explicitly, never as an edit side
-        // effect.
+        // Any other partial (SCHEMA 12.5): the same plumbing, its own
+        // record. Only EXISTING partials are writable - a partial is
+        // created explicitly, never as an edit side effect.
         const partials = document.partials as Record<string, unknown> | undefined;
 
         if ( partials === undefined || !Array.isArray( partials[ body.region ] ) ) { return undefined; }
@@ -766,18 +987,45 @@ async function resolveBlockTarget (
 
         const file = join( options.contentDirectory, `${body.doc}.json` );
         const document = parseJsonDocument( await readFile( file, 'utf8' ) ) as Record<string, unknown>;
-        const surface = document[ body.surface ];
+
+        // A collection's entry layout is one of its named layouts
+        // ("layout" in the body, default when unnamed); a taxonomy's
+        // term layout stays the single "layout" object.
+        if ( body.surface === 'template' && document.kind === 'collection' )
+        {
+            const layouts = collectionLayouts( document );
+            const name = typeof body.layout === 'string' && /^[a-z][a-z0-9-]*$/.test( body.layout ) ? body.layout : 'default';
+
+            if ( layouts[ name ] === undefined ) { return undefined; }
+            if ( !Array.isArray( layouts[ name ].blocks ) ) { layouts[ name ].blocks = []; }
+
+            return { file, document, blocks: layouts[ name ].blocks as unknown[] };
+        }
+
+        migrateEntryLayoutKey( document );
+
+        const key = body.surface === 'template' ? 'layout' : body.surface;
+        const surface = document[ key ];
 
         if ( surface === undefined || surface === false || surface === null || typeof surface !== 'object' )
         {
-            document[ body.surface ] = { blocks: [] };
+            document[ key ] = { blocks: [] };
         }
 
-        const surfaceRecord = document[ body.surface ] as Record<string, unknown>;
+        const surfaceRecord = document[ key ] as Record<string, unknown>;
 
         if ( !Array.isArray( surfaceRecord.blocks ) ) { surfaceRecord.blocks = []; }
 
         return { file, document, blocks: surfaceRecord.blocks as unknown[] };
+    }
+
+    // A synthesized 404 page (not yet in pages.json) materializes on
+    // its first write.
+    if ( body.pageId === NOT_FOUND_PAGE_ID )
+    {
+        const target = await materializeNotFoundPage( options );
+
+        return { file: target.file, document: target.document, blocks: target.page.blocks as unknown[] };
     }
 
     const file = join( options.contentDirectory, 'pages.json' );
@@ -888,7 +1136,9 @@ async function insertBlock ( options: StudioServerOptions, request: IncomingMess
 
     let container: unknown[] | undefined = target.blocks;
 
-    if ( body.container !== undefined && body.container !== '' )
+    // A template part's root is named by the part itself (header,
+    // footer): the target already resolved to that list.
+    if ( body.container !== undefined && body.container !== '' && body.container !== 'header' && body.container !== 'footer' )
     {
         const parent = blockAtPath( target.blocks, body.container );
 
@@ -1262,6 +1512,109 @@ function slugFor ( label: string ): string
     return slug === '' ? 'untitled' : slug;
 }
 
+// One namespace for collections and taxonomies (Mikey, 2026-09-02):
+// a label another document already carries - or one whose slug an
+// existing file already owns - is refused, on create and on rename.
+// Two "Events" would collide in the rail and at /events/.
+// A collection's named entry layouts (SCHEMA 13.4, named 2026-09-02):
+// "layouts": { "<name>": { "blocks", "template"? } }. A file still on
+// the single "layout" object (or its retired "template" spelling)
+// folds it into layouts.default on the first write that touches
+// layouts; a file with none gets an empty default. Taxonomies keep
+// the single term "layout" object.
+function migrateEntryLayoutKey ( document: Record<string, unknown> ): void
+{
+    if ( document.layout === undefined && document.template !== undefined )
+    {
+        document.layout = document.template;
+        delete document.template;
+    }
+}
+
+function collectionLayouts ( document: Record<string, unknown> ): Record<string, Record<string, unknown>>
+{
+    if ( document.kind !== 'collection' ) { throw new Error( 'Layouts are a collection\'s.' ); }
+
+    migrateEntryLayoutKey( document );
+
+    if ( document.layouts === null || typeof document.layouts !== 'object' || Array.isArray( document.layouts ) )
+    {
+        const single = document.layout;
+
+        document.layouts = single !== null && typeof single === 'object' && !Array.isArray( single ) ? { default: single } : {};
+        delete document.layout;
+    }
+
+    const layouts = document.layouts as Record<string, Record<string, unknown>>;
+
+    if ( layouts.default === undefined ) { layouts.default = { blocks: [] }; }
+
+    return layouts;
+}
+
+async function documentLabelTaken ( directory: string, label: string, exceptFile?: string ): Promise<string | undefined>
+{
+    const wanted = label.trim().toLowerCase();
+    const stem = slugFor( label );
+
+    for ( const file of await readdir( directory ) )
+    {
+        if ( !file.endsWith( '.json' ) || file === 'site.json' || file === 'pages.json' || file === exceptFile ) { continue; }
+
+        const document = await readOwnedDocument( directory, file );
+
+        if ( document === undefined || ( document.kind !== 'collection' && document.kind !== 'taxonomy' ) ) { continue; }
+
+        const existing = String( document.label ?? '' ).trim().toLowerCase();
+
+        if ( existing === wanted || file === `${stem}.json` )
+        {
+            return `A ${document.kind} named "${String( document.label ?? '' )}" already exists.`;
+        }
+    }
+
+    // Addresses are one namespace too (Mikey, 2026-09-02): a top-level
+    // page already at /<stem>/ keeps it; the label may repeat, the
+    // address may not.
+    if ( await topLevelPageOwns( directory, stem ) ) { return `A page already owns "/${stem}/".`; }
+
+    return undefined;
+}
+
+async function topLevelPageOwns ( directory: string, slug: string ): Promise<boolean>
+{
+    try
+    {
+        const document = parseJsonDocument( await readFile( join( directory, 'pages.json' ), 'utf8' ) ) as { pages?: { slug?: unknown; parent?: unknown }[] };
+
+        return ( document.pages ?? [] ).some( ( page ) => page.parent === undefined && page.slug === slug );
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+// The stems collections and taxonomies own: their public addresses.
+async function documentStems ( directory: string ): Promise<Map<string, string>>
+{
+    const stems = new Map<string, string>();
+
+    for ( const file of await readdir( directory ) )
+    {
+        if ( !file.endsWith( '.json' ) || file === 'site.json' || file === 'pages.json' ) { continue; }
+
+        const document = await readOwnedDocument( directory, file );
+
+        if ( document !== undefined && ( document.kind === 'collection' || document.kind === 'taxonomy' ) )
+        {
+            stems.set( file.replace( /\.json$/, '' ), String( document.kind ) );
+        }
+    }
+
+    return stems;
+}
+
 async function freshDocumentName ( directory: string, label: string ): Promise<string>
 {
     const base = slugFor( label );
@@ -1312,9 +1665,20 @@ async function handleCollection ( options: StudioServerOptions, request: Incomin
             parent: collection.parent ?? null,
             index: raw?.index !== false,
             pageSize: collection.indexPageSize ?? null,
+            indexTemplate: collection.indexTemplate ?? null,
+            entryTemplate: collection.entryTemplate ?? null,
             table: raw?.table,
             entries: collection.entries,
             hasTemplate: collection.templateBlocks !== undefined,
+
+            // Every named layout (SCHEMA 13.4): its page template, its
+            // blocks summarized for the canvas, and how many entries
+            // follow it (the default counts the unnamed).
+            layouts: Object.fromEntries( Object.entries( collection.layouts ).map( ( [ name, layout ] ) => [ name, {
+                template: layout.template ?? null,
+                blocks: layout.blocks.map( ( block ) => blockSummary( block, packages, core ) ),
+                entries: collection.entries.filter( ( entry ) => entry.blocks === undefined && ( entry.layout ?? 'default' ) === name ).length,
+            } ] ) ),
 
             // Diverged entries' own layouts, summarized for the
             // entry-layout canvas (SCHEMA 13.4).
@@ -1358,6 +1722,14 @@ async function handleCollection ( options: StudioServerOptions, request: Incomin
             return;
         }
 
+        const taken = await documentLabelTaken( directory, body.label );
+
+        if ( taken !== undefined )
+        {
+            jsonResponse( response, 409, { error: taken } );
+            return;
+        }
+
         const file = await freshDocumentName( directory, body.label );
 
         await writeOwnedDocument( directory, file, {
@@ -1392,7 +1764,18 @@ async function handleCollection ( options: StudioServerOptions, request: Incomin
     {
         const patch = body.patch ?? {};
 
-        if ( typeof patch.label === 'string' && patch.label.trim() !== '' ) { document.label = patch.label.trim(); }
+        if ( typeof patch.label === 'string' && patch.label.trim() !== '' )
+        {
+            const taken = await documentLabelTaken( directory, patch.label, file );
+
+            if ( taken !== undefined )
+            {
+                jsonResponse( response, 409, { error: taken } );
+                return;
+            }
+
+            document.label = patch.label.trim();
+        }
 
         // Re-enabling a public index only clears the opt-out flag; an
         // authored index page ({ "blocks" }) is never deleted by it.
@@ -1418,6 +1801,41 @@ async function handleCollection ( options: StudioServerOptions, request: Incomin
             else if ( document.index !== undefined && document.index !== null && typeof document.index === 'object' )
             {
                 delete ( document.index as Record<string, unknown> ).pageSize;
+            }
+        }
+
+        // The layouts' page templates (SCHEMA 12.6): the index page and
+        // the entry template each render through one.
+        {
+            const problem = await applyLayoutTemplate( options, document, 'index', patch.indexTemplate );
+
+            if ( problem !== undefined )
+            {
+                jsonResponse( response, 400, { error: problem } );
+                return;
+            }
+        }
+
+        // The entry layouts' page templates: entryTemplate speaks for
+        // the default; layoutTemplates names any.
+        const layoutTemplates = { ...( patch.entryTemplate === undefined ? {} : { default: patch.entryTemplate } ), ...( patch.layoutTemplates !== null && typeof patch.layoutTemplates === 'object' ? patch.layoutTemplates as Record<string, unknown> : {} ) };
+
+        for ( const [ name, value ] of Object.entries( layoutTemplates ) )
+        {
+            const layouts = collectionLayouts( document );
+
+            if ( layouts[ name ] === undefined )
+            {
+                jsonResponse( response, 404, { error: `There is no layout "${name}".` } );
+                return;
+            }
+
+            const problem = await applyLayoutTemplate( options, layouts as Record<string, unknown>, name, value );
+
+            if ( problem !== undefined )
+            {
+                jsonResponse( response, 400, { error: problem } );
+                return;
             }
         }
 
@@ -1595,7 +2013,7 @@ async function handleCollection ( options: StudioServerOptions, request: Incomin
 async function handleEntry ( options: StudioServerOptions, request: IncomingMessage, response: ServerResponse ): Promise<void>
 {
     const directory = options.contentDirectory;
-    const body = JSON.parse( await readBody( request ) ) as { file?: unknown; id?: unknown; values?: Record<string, unknown>; draft?: unknown };
+    const body = JSON.parse( await readBody( request ) ) as { file?: unknown; id?: unknown; values?: Record<string, unknown>; draft?: unknown; layout?: unknown };
     const file = safeDocumentName( body.file );
     const document = file === undefined ? undefined : await readOwnedDocument( directory, file );
 
@@ -1650,11 +2068,30 @@ async function handleEntry ( options: StudioServerOptions, request: IncomingMess
         // either leaves both alone).
         const draft = typeof body.draft === 'boolean' ? body.draft : current.draft === true;
 
+        // The layout choice (SCHEMA 13.4): a name the collection has,
+        // null for the default; absent leaves it.
+        let layoutChoice = typeof current.layout === 'string' ? current.layout : undefined;
+
+        if ( body.layout === null ) { layoutChoice = undefined; }
+        else if ( typeof body.layout === 'string' )
+        {
+            const layouts = collectionLayouts( document );
+
+            if ( layouts[ body.layout ] === undefined )
+            {
+                jsonResponse( response, 404, { error: `There is no layout "${body.layout}".` } );
+                return;
+            }
+
+            layoutChoice = body.layout === 'default' ? undefined : body.layout;
+        }
+
         entries[ index ] = {
             id: current.id,
             ...current.blocks === undefined ? {} : { blocks: current.blocks },
+            ...( layoutChoice === undefined ? {} : { layout: layoutChoice } ),
             ...( draft ? { draft: true } : {} ),
-            ...body.values ?? Object.fromEntries( Object.entries( current ).filter( ( [ key ] ) => ![ 'id', 'blocks', 'draft' ].includes( key ) ) ),
+            ...body.values ?? Object.fromEntries( Object.entries( current ).filter( ( [ key ] ) => ![ 'id', 'blocks', 'draft', 'layout' ].includes( key ) ) ),
         };
         await writeOwnedDocument( directory, file, document as JsonValue );
         jsonResponse( response, 200, { saved: true } );
@@ -1693,6 +2130,8 @@ async function handleTaxonomy ( options: StudioServerOptions, request: IncomingM
             terms: taxonomy.terms,
             index: rawTaxonomy?.index !== false,
             hierarchical: taxonomy.hierarchical,
+            indexTemplate: taxonomy.indexTemplate ?? null,
+            termTemplate: taxonomy.termTemplate ?? null,
             templateBlocks: ( taxonomy.templateBlocks ?? [] ).map( ( block ) => blockSummary( block, packages, core ) ),
             indexBlocks: ( Array.isArray( taxonomy.indexBlocks ) ? taxonomy.indexBlocks : [] )
                 .map( ( block ) => blockSummary( block, packages, core ) ),
@@ -1707,6 +2146,14 @@ async function handleTaxonomy ( options: StudioServerOptions, request: IncomingM
         if ( typeof body.label !== 'string' || body.label.trim() === '' )
         {
             jsonResponse( response, 400, { error: 'A taxonomy needs a label.' } );
+            return;
+        }
+
+        const taken = await documentLabelTaken( directory, body.label );
+
+        if ( taken !== undefined )
+        {
+            jsonResponse( response, 409, { error: taken } );
             return;
         }
 
@@ -1744,10 +2191,34 @@ async function handleTaxonomy ( options: StudioServerOptions, request: IncomingM
     {
         const patch = body.patch ?? {};
 
-        if ( typeof patch.label === 'string' && patch.label.trim() !== '' ) { document.label = patch.label.trim(); }
+        if ( typeof patch.label === 'string' && patch.label.trim() !== '' )
+        {
+            const taken = await documentLabelTaken( directory, patch.label, file );
+
+            if ( taken !== undefined )
+            {
+                jsonResponse( response, 409, { error: taken } );
+                return;
+            }
+
+            document.label = patch.label.trim();
+        }
 
         if ( patch.index === false ) { document.index = false; }
         else if ( patch.index === true && document.index === false ) { delete document.index; }
+
+        migrateEntryLayoutKey( document );
+
+        for ( const [ key, layout ] of [ [ 'indexTemplate', 'index' ], [ 'termTemplate', 'layout' ] ] as const )
+        {
+            const problem = await applyLayoutTemplate( options, document, layout, patch[ key ] );
+
+            if ( problem !== undefined )
+            {
+                jsonResponse( response, 400, { error: problem } );
+                return;
+            }
+        }
 
         // Drag-and-drop sort order (Mikey): the terms array IS the
         // sort order; a reorder patch rewrites it by id.
@@ -2030,9 +2501,10 @@ async function serveCollectionPreview (
     surface: 'index' | 'template',
     response: ServerResponse,
     sampleEntryId?: string,
+    layoutName?: string,
 ): Promise<void>
 {
-    const rendered = await pipeline.renderCollectionSurface( stem, surface, true, sampleEntryId );
+    const rendered = await pipeline.renderCollectionSurface( stem, surface, true, sampleEntryId, 1, surface === 'template' ? ( layoutName ?? 'default' ) : undefined );
     const html = rendered.html?.replace( '</body>', '<script type="module" src="/preview-bridge.js"></script>\n</body>' );
 
     response.writeHead( 200, { 'content-type': 'text/html; charset=utf-8' } );
@@ -2219,6 +2691,77 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
             // into the entry as its own layout; "adopt" discards the
             // entry's layout and returns it to the template. Both
             // journaled - undo has a step either way.
+            // Named layouts (Mikey, 2026-09-02): create one as a copy of
+            // the default; delete one - never the default - and the
+            // entries that followed it fall back to the default.
+            if ( url.pathname === '/api/layout' && ( request.method === 'POST' || request.method === 'DELETE' ) )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { file?: unknown; name?: unknown };
+                const file = safeDocumentName( body.file );
+                const document = file === undefined ? undefined : await readOwnedDocument( options.contentDirectory, file );
+
+                if ( file === undefined || document === undefined || document.kind !== 'collection' )
+                {
+                    jsonResponse( response, 404, { error: 'No collection lives in that file.' } );
+                    return;
+                }
+
+                const layouts = collectionLayouts( document );
+                const raw = typeof body.name === 'string' ? body.name : '';
+
+                if ( request.method === 'POST' )
+                {
+                    const stem = raw.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' ).replace( /^[^a-z]+/, '' );
+
+                    if ( stem === '' )
+                    {
+                        jsonResponse( response, 400, { error: 'A layout needs a token-shaped name.' } );
+                        return;
+                    }
+
+                    if ( layouts[ stem ] !== undefined )
+                    {
+                        jsonResponse( response, 409, { error: `A layout named "${stem}" already exists.` } );
+                        return;
+                    }
+
+                    const seed = layouts.default ?? { blocks: [] };
+
+                    layouts[ stem ] = { blocks: structuredClone( Array.isArray( seed.blocks ) ? seed.blocks : [] ), ...( typeof seed.template === 'string' ? { template: seed.template } : {} ) };
+                    await writeOwnedDocument( options.contentDirectory, file, document as JsonValue );
+                    jsonResponse( response, 200, { created: true, name: stem } );
+                    return;
+                }
+
+                if ( raw === 'default' )
+                {
+                    jsonResponse( response, 400, { error: 'The default layout is every entry\'s fallback; it cannot be deleted.' } );
+                    return;
+                }
+
+                if ( layouts[ raw ] === undefined )
+                {
+                    jsonResponse( response, 404, { error: `There is no layout "${raw}".` } );
+                    return;
+                }
+
+                delete layouts[ raw ];
+
+                let moved = 0;
+
+                for ( const entry of ( Array.isArray( document.entries ) ? document.entries : [] ) as Record<string, unknown>[] )
+                {
+                    if ( entry.layout !== raw ) { continue; }
+
+                    delete entry.layout;
+                    moved += 1;
+                }
+
+                await writeOwnedDocument( options.contentDirectory, file, document as JsonValue );
+                jsonResponse( response, 200, { deleted: true, moved } );
+                return;
+            }
+
             if ( url.pathname === '/api/entry-layout' && request.method === 'POST' )
             {
                 const body = JSON.parse( await readBody( request ) ) as { file?: unknown; id?: unknown; action?: unknown };
@@ -2241,9 +2784,10 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
 
                 if ( body.action === 'diverge' )
                 {
-                    const template = ( document.template as { blocks?: unknown[] } | undefined )?.blocks ?? [];
+                    const layouts = collectionLayouts( document );
+                    const chosen = ( typeof entry.layout === 'string' ? layouts[ entry.layout ] : undefined ) ?? layouts.default ?? { blocks: [] };
 
-                    entry.blocks = structuredClone( template );
+                    entry.blocks = structuredClone( Array.isArray( chosen.blocks ) ? chosen.blocks : [] );
                 }
                 else if ( body.action === 'adopt' )
                 {
@@ -2276,6 +2820,11 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                 const document = parseJsonDocument( await readFile( pagesFile, 'utf8' ) ) as { pages?: Record<string, unknown>[] };
                 const pages = document.pages ?? [];
                 const taken = new Set( pages.map( ( page ) => String( page.slug ?? '' ) ) );
+
+                // A new page is top-level: its address steps around
+                // the collections' and taxonomies' own.
+                for ( const stem of ( await documentStems( options.contentDirectory ) ).keys() ) { taken.add( stem ); }
+
                 const base = slugFor( body.title );
                 let slug = base;
 
@@ -2313,14 +2862,27 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
             // under another, null returns it to the top level.
             if ( url.pathname === '/api/page' && request.method === 'PUT' )
             {
-                const body = JSON.parse( await readBody( request ) ) as { id?: string; patch?: { title?: unknown; slug?: unknown; draft?: unknown; parent?: unknown } };
+                const body = JSON.parse( await readBody( request ) ) as { id?: string; patch?: { title?: unknown; slug?: unknown; draft?: unknown; parent?: unknown; template?: unknown; detach?: unknown } };
                 const pagesFile = join( options.contentDirectory, 'pages.json' );
+
+                // A synthesized 404 page joins pages.json on its first
+                // settings write, like its first block write.
+                if ( body.id === NOT_FOUND_PAGE_ID ) { await materializeNotFoundPage( options ); }
+
                 const document = parseJsonDocument( await readFile( pagesFile, 'utf8' ) ) as { pages?: Record<string, unknown>[] };
                 const page = document.pages?.find( ( candidate ) => candidate.id === body.id );
 
                 if ( page === undefined )
                 {
                     jsonResponse( response, 404, { error: 'No page has that id.' } );
+                    return;
+                }
+
+                // The 404 page keeps its slug, sits outside the tree, and
+                // is never a draft (SCHEMA 13.6).
+                if ( page.slug === '404' && ( body.patch?.slug !== undefined || body.patch?.parent !== undefined || body.patch?.draft !== undefined ) )
+                {
+                    jsonResponse( response, 400, { error: 'The 404 page has no address of its own, no parent, and no draft state.' } );
                     return;
                 }
 
@@ -2357,7 +2919,22 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                         return;
                     }
 
+                    const owner = page.parent === undefined ? ( await documentStems( options.contentDirectory ) ).get( slug ) : undefined;
+
+                    if ( owner !== undefined )
+                    {
+                        jsonResponse( response, 409, { error: `A ${owner} already owns "/${slug}/".` } );
+                        return;
+                    }
+
                     page.slug = slug;
+                }
+
+                // Home is the site's root: never a draft (Mikey).
+                if ( body.patch?.draft === true && page.slug === 'home' )
+                {
+                    jsonResponse( response, 400, { error: 'Home is the site\'s root; it cannot be a draft.' } );
+                    return;
                 }
 
                 if ( body.patch?.draft === true ) { page.draft = true; }
@@ -2368,9 +2945,9 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                 {
                     const target = document.pages?.find( ( candidate ) => candidate.id === body.patch?.parent );
 
-                    if ( target === undefined || page.slug === 'home' || target.slug === 'home' )
+                    if ( target === undefined || page.slug === 'home' || target.slug === 'home' || target.slug === '404' )
                     {
-                        jsonResponse( response, 400, { error: 'A parent is an existing page; home neither takes nor grants one.' } );
+                        jsonResponse( response, 400, { error: 'A parent is an existing page; home and the 404 page neither take nor grant one.' } );
                         return;
                     }
 
@@ -2392,6 +2969,38 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                     }
 
                     page.parent = body.patch.parent;
+                }
+
+                // The page's template (SCHEMA 12.6): a name (default
+                // clears the key), null for the default, or DETACH -
+                // the page takes its own copy of the template it
+                // renders through today, chrome and layout.
+                if ( body.patch?.template === null || body.patch?.template === 'default' ) { delete page.template; }
+                else if ( typeof body.patch?.template === 'string' )
+                {
+                    const siteDocument = parseJsonDocument( await readFile( join( options.contentDirectory, 'site.json' ), 'utf8' ) ) as Record<string, unknown>;
+                    const templates = ( siteDocument.templates ?? {} ) as Record<string, unknown>;
+
+                    if ( templates[ body.patch.template ] === undefined )
+                    {
+                        jsonResponse( response, 404, { error: `There is no page template "${body.patch.template}".` } );
+                        return;
+                    }
+
+                    page.template = body.patch.template;
+                }
+
+                if ( body.patch?.detach === true )
+                {
+                    const siteFile = join( options.contentDirectory, 'site.json' );
+                    const siteDocument = parseJsonDocument( await readFile( siteFile, 'utf8' ) ) as Record<string, unknown>;
+                    const templates = migrateRegionsIntoTemplates( siteDocument );
+                    const current = typeof page.template === 'string' ? templates[ page.template ] : ( page.template ?? templates.default );
+
+                    if ( current !== null && typeof current === 'object' && !Array.isArray( current ) )
+                    {
+                        page.template = structuredClone( current );
+                    }
                 }
 
                 await withJournalLock( async () =>
@@ -2422,31 +3031,54 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                     return;
                 }
 
-                if ( page.slug === 'home' )
+                if ( page.slug === 'home' || page.slug === '404' )
                 {
-                    jsonResponse( response, 400, { error: 'Home is the site\'s root; it cannot be deleted.' } );
+                    jsonResponse( response, 400, { error: page.slug === 'home' ? 'Home is the site\'s root; it cannot be deleted.' : 'Every site has a 404 page; it cannot be deleted.' } );
                     return;
                 }
 
-                if ( document.pages?.some( ( candidate ) => candidate.parent === page.id ) )
+                // A parent deletes too (Mikey, 2026-09-02): its children -
+                // pages and mounted collections - rise one level, to
+                // where it was.
+                const risen = page.parent;
+
+                document.pages = ( document.pages ?? [] )
+                    .filter( ( candidate ) => candidate.id !== page.id )
+                    .map( ( candidate ) =>
+                    {
+                        if ( candidate.parent !== page.id ) { return candidate; }
+
+                        const { parent: _gone, ...rest } = candidate;
+
+                        return typeof risen === 'string' ? { ...rest, parent: risen } : rest;
+                    } );
+
+                const mounted: { file: string; document: Record<string, unknown> }[] = [];
+
+                for ( const file of await readdir( options.contentDirectory ) )
                 {
-                    jsonResponse( response, 409, { error: 'Pages are nested under this one; move them first.' } );
-                    return;
+                    if ( !file.endsWith( '.json' ) || file === 'site.json' || file === 'pages.json' ) { continue; }
+
+                    const record = await readOwnedDocument( options.contentDirectory, file );
+
+                    if ( record === undefined || record.parent !== page.id ) { continue; }
+
+                    if ( typeof risen === 'string' ) { record.parent = risen; }
+                    else { delete record.parent; }
+
+                    mounted.push( { file, document: record } );
                 }
 
-                const loaded = await loadSiteDirectory( options.contentDirectory, options.packages ?? [] );
-
-                if ( loaded.collections.some( ( collection ) => collection.parent === page.id ) )
-                {
-                    jsonResponse( response, 409, { error: 'A collection is mounted under this page; move it first.' } );
-                    return;
-                }
-
-                document.pages = ( document.pages ?? [] ).filter( ( candidate ) => candidate.id !== page.id );
                 await withJournalLock( async () =>
                 {
                     await journalSnapshot( options.contentDirectory );
                     await writeFile( pagesFile, serializeCanonicalJson( document as JsonValue ), 'utf8' );
+
+                    for ( const entry of mounted )
+                    {
+                        await writeFile( join( options.contentDirectory, entry.file ), serializeCanonicalJson( entry.document as JsonValue ), 'utf8' );
+                    }
+
                     await journalSnapshot( options.contentDirectory );
                 } );
                 jsonResponse( response, 200, { deleted: true } );
@@ -2712,9 +3344,9 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                 {
                     const stem = raw.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' ).replace( /^[^a-z]+/, '' );
 
-                    if ( stem === '' || [ 'header', 'footer', 'notfound' ].includes( stem ) )
+                    if ( stem === '' || stem === 'notfound' )
                     {
-                        jsonResponse( response, 400, { error: 'A partial needs a token-shaped name; header, footer, and notFound are reserved.' } );
+                        jsonResponse( response, 400, { error: 'A partial needs a token-shaped name; notFound is reserved.' } );
                         return;
                     }
 
@@ -2739,6 +3371,14 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                     return;
                 }
 
+                // Header and footer are every site's (SCHEMA 12.5): they
+                // empty, never delete.
+                if ( raw === 'header' || raw === 'footer' )
+                {
+                    jsonResponse( response, 400, { error: 'The header and footer partials belong to every site; empty one instead of deleting it.' } );
+                    return;
+                }
+
                 if ( partials[ raw ] === undefined )
                 {
                     jsonResponse( response, 404, { error: `There is no partial "${raw}".` } );
@@ -2757,6 +3397,246 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                     await journalSnapshot( options.contentDirectory );
                 } );
                 jsonResponse( response, 200, { deleted: true } );
+                return;
+            }
+
+            // Page templates (SCHEMA 12.6): create (empty, or from
+            // another), delete (moving its pages elsewhere, never
+            // silently), rename (sweeping page records). default is
+            // never deleted or renamed.
+            if ( url.pathname === '/api/template' && ( request.method === 'POST' || request.method === 'DELETE' ) )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { name?: unknown; from?: unknown; moveTo?: unknown };
+                const raw = typeof body.name === 'string' ? body.name : '';
+                const siteFile = join( options.contentDirectory, 'site.json' );
+                const document = parseJsonDocument( await readFile( siteFile, 'utf8' ) ) as Record<string, unknown>;
+                const templates = migrateRegionsIntoTemplates( document );
+
+                if ( request.method === 'POST' )
+                {
+                    const stem = raw.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' ).replace( /^[^a-z]+/, '' );
+
+                    if ( stem === '' )
+                    {
+                        jsonResponse( response, 400, { error: 'A template needs a token-shaped name.' } );
+                        return;
+                    }
+
+                    let unique = stem;
+                    let suffix = 2;
+
+                    while ( templates[ unique ] !== undefined )
+                    {
+                        unique = `${stem}-${suffix}`;
+                        suffix += 1;
+                    }
+
+                    const from = typeof body.from === 'string' ? templates[ body.from ] : undefined;
+
+                    templates[ unique ] = from === undefined ? { blocks: [ { slot: 'content' } ] } : structuredClone( from );
+                    await withJournalLock( async () =>
+                    {
+                        await journalSnapshot( options.contentDirectory );
+                        await writeFile( siteFile, serializeCanonicalJson( document as JsonValue ), 'utf8' );
+                        await journalSnapshot( options.contentDirectory );
+                    } );
+                    jsonResponse( response, 200, { created: true, name: unique } );
+                    return;
+                }
+
+                if ( raw === 'default' )
+                {
+                    jsonResponse( response, 400, { error: 'The default template is every page\'s fallback; it cannot be deleted.' } );
+                    return;
+                }
+
+                if ( templates[ raw ] === undefined )
+                {
+                    jsonResponse( response, 404, { error: `There is no page template "${raw}".` } );
+                    return;
+                }
+
+                const moveTo = typeof body.moveTo === 'string' && body.moveTo !== 'default' && templates[ body.moveTo ] !== undefined ? body.moveTo : undefined;
+
+                delete templates[ raw ];
+
+                const pagesFile = join( options.contentDirectory, 'pages.json' );
+                const pagesDocument = parseJsonDocument( await readFile( pagesFile, 'utf8' ) ) as { pages?: Record<string, unknown>[] };
+                let moved = 0;
+
+                for ( const page of pagesDocument.pages ?? [] )
+                {
+                    if ( page.template !== raw ) { continue; }
+
+                    if ( moveTo === undefined ) { delete page.template; }
+                    else { page.template = moveTo; }
+
+                    moved += 1;
+                }
+
+                await withJournalLock( async () =>
+                {
+                    await journalSnapshot( options.contentDirectory );
+                    await writeFile( siteFile, serializeCanonicalJson( document as JsonValue ), 'utf8' );
+
+                    if ( moved > 0 ) { await writeFile( pagesFile, serializeCanonicalJson( pagesDocument as JsonValue ), 'utf8' ); }
+
+                    moved += await sweepLayoutTemplates( options, raw, moveTo );
+
+                    await journalSnapshot( options.contentDirectory );
+                } );
+                jsonResponse( response, 200, { deleted: true, moved, to: moveTo ?? 'default' } );
+                return;
+            }
+
+            if ( url.pathname === '/api/template-rename' && request.method === 'POST' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { from?: unknown; to?: unknown };
+                const from = typeof body.from === 'string' ? body.from : '';
+                const to = typeof body.to === 'string' ? body.to.toLowerCase().replace( /[^a-z0-9]+/g, '-' ).replace( /^-+|-+$/g, '' ).replace( /^[^a-z]+/, '' ) : '';
+                const siteFile = join( options.contentDirectory, 'site.json' );
+                const document = parseJsonDocument( await readFile( siteFile, 'utf8' ) ) as Record<string, unknown>;
+                const templates = migrateRegionsIntoTemplates( document );
+
+                if ( from === 'default' || to === 'default' )
+                {
+                    jsonResponse( response, 400, { error: 'The default template keeps its name.' } );
+                    return;
+                }
+
+                if ( templates[ from ] === undefined )
+                {
+                    jsonResponse( response, 404, { error: `There is no page template "${from}".` } );
+                    return;
+                }
+
+                if ( to === '' || ( to !== from && templates[ to ] !== undefined ) )
+                {
+                    jsonResponse( response, to === '' ? 400 : 409, { error: to === '' ? 'A template needs a token-shaped name.' : `A template named "${to}" already exists.` } );
+                    return;
+                }
+
+                if ( to === from )
+                {
+                    jsonResponse( response, 200, { renamed: to } );
+                    return;
+                }
+
+                document.templates = Object.fromEntries( Object.entries( templates ).map( ( [ name, value ] ) => [ name === from ? to : name, value ] ) );
+
+                const pagesFile = join( options.contentDirectory, 'pages.json' );
+                const pagesDocument = parseJsonDocument( await readFile( pagesFile, 'utf8' ) ) as { pages?: Record<string, unknown>[] };
+                let swept = 0;
+
+                for ( const page of pagesDocument.pages ?? [] )
+                {
+                    if ( page.template === from )
+                    {
+                        page.template = to;
+                        swept += 1;
+                    }
+                }
+
+                await withJournalLock( async () =>
+                {
+                    await journalSnapshot( options.contentDirectory );
+                    await writeFile( siteFile, serializeCanonicalJson( document as JsonValue ), 'utf8' );
+
+                    if ( swept > 0 ) { await writeFile( pagesFile, serializeCanonicalJson( pagesDocument as JsonValue ), 'utf8' ); }
+
+                    swept += await sweepLayoutTemplates( options, from, to );
+
+                    await journalSnapshot( options.contentDirectory );
+                } );
+                jsonResponse( response, 200, { renamed: to, swept } );
+                return;
+            }
+
+            // The pages table's drag (SCHEMA 13.6): the whole order with
+            // each page's parent, written at once. Home stays first
+            // and parentless, the 404 last and parentless, no loops,
+            // and every page of the file appears exactly once.
+            if ( url.pathname === '/api/pages-order' && request.method === 'PUT' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { pages?: { id?: unknown; parent?: unknown }[] };
+
+                // The chrome orders the reserved 404 too; a file that
+                // still lacks it gets it in this write.
+                const { file: pagesFile, document } = await materializeNotFoundPage( options );
+                const existing = ( Array.isArray( document.pages ) ? document.pages : [] ) as Record<string, unknown>[];
+                const byId = new Map( existing.map( ( page ) => [ String( page.id ), page ] ) );
+                const order = Array.isArray( body.pages ) ? body.pages : [];
+
+                if ( order.length !== existing.length || order.some( ( entry ) => typeof entry.id !== 'string' || !byId.has( entry.id ) ) || new Set( order.map( ( entry ) => entry.id ) ).size !== order.length )
+                {
+                    jsonResponse( response, 400, { error: 'The order lists every page of the site exactly once.' } );
+                    return;
+                }
+
+                const parents = new Map( order.map( ( entry ) => [ String( entry.id ), typeof entry.parent === 'string' ? entry.parent : undefined ] ) );
+                const slugOf = ( id: string ): string => String( byId.get( id )?.slug ?? '' );
+
+                for ( const entry of order )
+                {
+                    const id = String( entry.id );
+                    const parent = parents.get( id );
+                    const slug = slugOf( id );
+
+                    if ( parent === undefined ) { continue; }
+
+                    if ( slug === 'home' || slug === '404' || !byId.has( parent ) || slugOf( parent ) === 'home' || slugOf( parent ) === '404' || parent === id )
+                    {
+                        jsonResponse( response, 400, { error: 'A parent is an existing page; home and the 404 page neither take nor grant one.' } );
+                        return;
+                    }
+
+                    let ancestor: string | undefined = parent;
+                    const seen = new Set<string>( [ id ] );
+
+                    while ( ancestor !== undefined )
+                    {
+                        if ( seen.has( ancestor ) )
+                        {
+                            jsonResponse( response, 409, { error: 'That nesting would loop the tree.' } );
+                            return;
+                        }
+
+                        seen.add( ancestor );
+                        ancestor = parents.get( ancestor );
+                    }
+                }
+
+                const first = slugOf( String( order[ 0 ]?.id ) );
+                const last = slugOf( String( order[ order.length - 1 ]?.id ) );
+
+                if ( existing.some( ( page ) => page.slug === 'home' ) && first !== 'home' )
+                {
+                    jsonResponse( response, 400, { error: 'Home stays first.' } );
+                    return;
+                }
+
+                if ( existing.some( ( page ) => page.slug === '404' ) && last !== '404' )
+                {
+                    jsonResponse( response, 400, { error: 'The 404 page stays last.' } );
+                    return;
+                }
+
+                document.pages = order.map( ( entry ) =>
+                {
+                    const page = byId.get( String( entry.id ) ) as Record<string, unknown>;
+                    const parent = parents.get( String( entry.id ) );
+                    const { parent: _dropped, ...rest } = page;
+
+                    return parent === undefined ? rest : { ...rest, parent };
+                } );
+
+                await withJournalLock( async () =>
+                {
+                    await journalSnapshot( options.contentDirectory );
+                    await writeFile( pagesFile, serializeCanonicalJson( document as JsonValue ), 'utf8' );
+                    await journalSnapshot( options.contentDirectory );
+                } );
+                jsonResponse( response, 200, { saved: true } );
                 return;
             }
 
@@ -2906,6 +3786,9 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                         Object.entries( menusRecord ).map( ( [ name, value ] ) => [ name === from ? to : name, value ] ),
                     );
                     rewriteSources( siteRaw.regions );
+                    rewriteSources( siteRaw.templates );
+                    rewriteSources( siteRaw.partials );
+                    rewriteSources( siteRaw.notFound );
                     await writeFile( siteFile, serializeCanonicalJson( siteRaw as JsonValue ), 'utf8' );
 
                     for ( const file of await readdir( options.contentDirectory ) )
@@ -3043,6 +3926,12 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                             Object.fromEntries( Object.entries( entry ).map( ( [ key, item ] ) => [ key === from ? to : key, item ] ) ) );
                     }
 
+                    if ( document.layout !== undefined ) { document.layout = walk( document.layout, true ); }
+
+                    if ( document.layouts !== null && typeof document.layouts === 'object' && !Array.isArray( document.layouts ) )
+                    {
+                        document.layouts = Object.fromEntries( Object.entries( document.layouts as Record<string, unknown> ).map( ( [ name, layout ] ) => [ name, walk( layout, true ) ] ) );
+                    }
                     if ( document.template !== undefined ) { document.template = walk( document.template, true ); }
                     if ( document.index !== undefined && document.index !== false ) { document.index = walk( document.index, true ); }
                     document.entries = walk( document.entries, true );
@@ -3185,9 +4074,15 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                         // target, not a use of it - only real site
                         // areas count.
                         const regions = document.regions as Record<string, unknown> | undefined;
+                        const templates = ( document.templates ?? {} ) as Record<string, Record<string, unknown>>;
                         const areas: [ string, unknown ][] = [
                             [ 'header', regions?.header ],
                             [ 'footer', regions?.footer ],
+                            ...Object.entries( templates ).flatMap( ( [ name, template ] ): [ string, unknown ][] => [
+                                [ name === 'default' ? 'header' : `template:${name}:header`, template.header ],
+                                [ `template:${name}`, template.blocks ],
+                                [ name === 'default' ? 'footer' : `template:${name}:footer`, template.footer ],
+                            ] ),
                             [ 'notFound', document.notFound ],
                             ...Object.entries( document.partials as Record<string, unknown> ?? {} )
                                 .map( ( [ name, blocks ] ): [ string, unknown ] => [ `partial:${name}`, blocks ] ),
@@ -3526,9 +4421,11 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
 
             // The 404 page's editing canvas (a full page, not a
             // partial: visitors meet it as a real page).
+            // The 404 page's canvas: the reserved page under its old
+            // address, for anything still asking.
             if ( url.pathname === '/preview-404' || url.pathname === '/preview-404/' )
             {
-                const rendered = await pipeline.renderNotFound( true );
+                const rendered = await pipeline.renderPage( '404', true );
                 const html = rendered.html?.replace( '</body>', '<script type="module" src="/preview-bridge.js"></script>\n</body>' );
 
                 response.writeHead( 200, { 'content-type': 'text/html; charset=utf-8' } );
@@ -3578,6 +4475,26 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
             }
 
             // The region canvas (SCHEMA 12.5).
+            // A page template's canvas (SCHEMA 12.6), lit by a sample page.
+            if ( url.pathname.startsWith( '/preview-page-template/' ) )
+            {
+                const name = decodeURIComponent( url.pathname.slice( '/preview-page-template/'.length ) ).replace( /\/+$/, '' );
+
+                if ( !/^[a-z][a-z0-9-]*$/.test( name ) )
+                {
+                    response.writeHead( 404, { 'content-type': 'text/plain; charset=utf-8' } );
+                    response.end( 'No such page template.' );
+                    return;
+                }
+
+                const rendered = await pipeline.renderPageTemplate( name, url.searchParams.get( 'page' ) ?? undefined, true );
+                const html = rendered.html?.replace( '</body>', '<script type="module" src="/preview-bridge.js"></script>\n</body>' );
+
+                response.writeHead( 200, { 'content-type': 'text/html; charset=utf-8' } );
+                response.end( html ?? issuesPreviewPage( rendered.issues ) );
+                return;
+            }
+
             if ( url.pathname.startsWith( '/preview-region/' ) )
             {
                 const region = decodeURIComponent( url.pathname.slice( '/preview-region/'.length ) ).replace( /\/+$/, '' );
@@ -3597,10 +4514,10 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                 return;
             }
 
-            if ( url.pathname.startsWith( '/preview-tax-index/' ) || url.pathname.startsWith( '/preview-tax-template/' ) )
+            if ( url.pathname.startsWith( '/preview-term-index/' ) || url.pathname.startsWith( '/preview-term-template/' ) )
             {
-                const surface = url.pathname.startsWith( '/preview-tax-index/' ) ? 'index' : 'template';
-                const stem = decodeURIComponent( url.pathname.slice( `/preview-tax-${surface}/`.length ) ).replace( /\/+$/, '' );
+                const surface = url.pathname.startsWith( '/preview-term-index/' ) ? 'index' : 'template';
+                const stem = decodeURIComponent( url.pathname.slice( `/preview-term-${surface}/`.length ) ).replace( /\/+$/, '' );
 
                 if ( !/^[a-z0-9-]+$/.test( stem ) )
                 {
@@ -3636,10 +4553,14 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                 return;
             }
 
-            if ( url.pathname.startsWith( '/preview-index/' ) || url.pathname.startsWith( '/preview-template/' ) )
+            // Canvas documents are /preview-<surface>/<key> with explicit
+            // surface names: index, entry-template, term-index,
+            // term-template, page-template, region (chrome and partials),
+            // 404. /preview/<address> is the visitor's view.
+            if ( url.pathname.startsWith( '/preview-index/' ) || url.pathname.startsWith( '/preview-entry-template/' ) )
             {
                 const surface = url.pathname.startsWith( '/preview-index/' ) ? 'index' : 'template';
-                const stem = decodeURIComponent( url.pathname.slice( `/preview-${surface}/`.length ) ).replace( /\/+$/, '' );
+                const stem = decodeURIComponent( url.pathname.slice( ( surface === 'index' ? '/preview-index/' : '/preview-entry-template/' ).length ) ).replace( /\/+$/, '' );
 
                 if ( !/^[a-z0-9-]+$/.test( stem ) )
                 {
@@ -3648,7 +4569,7 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                     return;
                 }
 
-                await serveCollectionPreview( pipeline, stem, surface, response, url.searchParams.get( 'entry' ) ?? undefined );
+                await serveCollectionPreview( pipeline, stem, surface, response, url.searchParams.get( 'entry' ) ?? undefined, url.searchParams.get( 'layout' ) ?? undefined );
                 return;
             }
 

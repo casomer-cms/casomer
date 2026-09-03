@@ -171,3 +171,18 @@ describe( 'the GFM content features', () =>
         assert.ok( tasks.html.includes( '<li>[x] done</li>' ) );
     } );
 } );
+
+describe( 'the source map (EDITOR 3.1)', () =>
+{
+    it( 'marks paragraphs and headings with their content range only when asked', () =>
+    {
+        const source = '# Title\n\nHello **world**.';
+        const mapped = compileMarkdown( source, 2, { sourceMap: true } ).html;
+        const plain = compileMarkdown( source, 2 ).html;
+
+        assert.match( mapped, /<h2[^>]*data-casomer-md="2-7">Title<\/h2>/, 'the heading range excludes its marker' );
+        assert.match( mapped, /<p data-casomer-md="9-25">Hello <strong>world<\/strong>\.<\/p>/ );
+        assert.equal( source.slice( 9, 25 ), 'Hello **world**.' );
+        assert.ok( !plain.includes( 'data-casomer-md' ), 'the delivered output never carries it' );
+    } );
+} );

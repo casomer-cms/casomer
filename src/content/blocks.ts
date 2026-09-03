@@ -13,6 +13,11 @@ export type TokenValue = string | Readonly<Record<string, string>>;
 
 const componentBlockKeys = [ 'component', 'props', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull', 'morph' ];
 const partialBlockKeys = [ 'partial', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull' ];
+
+// The content slot (SCHEMA 12.6): the one block a page template holds
+// where the page's own blocks pour in. It carries nothing else - the
+// page's blocks bring their own wrappers.
+const slotBlockKeys = [ 'slot' ];
 const morphShape = /^[a-z][a-z0-9-]*$/;
 const sectionBlockKeys = [ 'section', 'blocks', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull' ];
 const repeatBlockKeys = [ 'repeat', 'size', 'hidden', 'slug', 'spaceBefore', 'spaceAfter', 'pull' ];
@@ -45,6 +50,11 @@ export interface BlocksAnalysis
     readonly references: readonly CollectedReference[];
     readonly spacingValues: readonly CollectedTokenValue[];
     readonly repeatSources: readonly { readonly collection: string; readonly path: string }[];
+
+    // Every content slot's path (SCHEMA 12.6). A page template's
+    // main layout holds exactly one; any other surface holds none -
+    // the loader, which knows the surface, judges the count.
+    readonly slots: readonly string[];
 }
 
 function validateTokenValue (
@@ -210,6 +220,7 @@ function validateBlock (
     references: CollectedReference[],
     spacingValues: CollectedTokenValue[],
     repeatSources: { collection: string; path: string }[],
+    slots: string[],
 ): void
 {
     if ( raw === null || typeof raw !== 'object' || Array.isArray( raw ) )
@@ -223,19 +234,20 @@ function validateBlock (
     const isSection = record.section !== undefined;
     const isRepeat = record.repeat !== undefined;
     const isPartial = record.partial !== undefined;
+    const isSlot = record.slot !== undefined;
 
-    if ( [ isComponent, isSection, isRepeat, isPartial ].filter( Boolean ).length !== 1 )
+    if ( [ isComponent, isSection, isRepeat, isPartial, isSlot ].filter( Boolean ).length !== 1 )
     {
         issues.push( {
             path,
-            message: 'A block is exactly one of a component instance ({ "component", "props" }), a section ({ "section", "blocks" }), a repeat ({ "repeat" }), or a partial ({ "partial": "<name>" }, SCHEMA 12.5).',
+            message: 'A block is exactly one of a component instance ({ "component", "props" }), a section ({ "section", "blocks" }), a repeat ({ "repeat" }), a partial ({ "partial" }), or a page template\'s content slot ({ "slot": "content" }).',
         } );
         return;
     }
 
     const allowedKeys = isComponent
         ? componentBlockKeys
-        : ( isRepeat ? repeatBlockKeys : ( isPartial ? partialBlockKeys : sectionBlockKeys ) );
+        : ( isRepeat ? repeatBlockKeys : ( isPartial ? partialBlockKeys : ( isSlot ? slotBlockKeys : sectionBlockKeys ) ) );
 
     for ( const key of Object.keys( record ) )
     {
@@ -246,6 +258,17 @@ function validateBlock (
                 message: `Unknown block key "${key}".${suggestNearest( key, allowedKeys )} Layout lives on wrappers and sections, never in component props.`,
             } );
         }
+    }
+
+    if ( isSlot )
+    {
+        if ( record.slot !== 'content' )
+        {
+            issues.push( { path: `${path}.slot`, message: 'The content slot is spelled { "slot": "content" } (SCHEMA 12.6).' } );
+        }
+
+        slots.push( path );
+        return;
     }
 
     validateWrapperCommon( record, path, issues, slugs, spacingValues );
@@ -471,7 +494,7 @@ function validateBlock (
 
     for ( const [ index, child ] of record.blocks.entries() )
     {
-        validateBlock( child, `${path}.blocks[${index}]`, issues, slugs, references, spacingValues, repeatSources );
+        validateBlock( child, `${path}.blocks[${index}]`, issues, slugs, references, spacingValues, repeatSources, slots );
     }
 }
 
@@ -480,18 +503,19 @@ export function analyzeBlocks ( raw: unknown, path: string, issues: SchemaIssue[
     const references: CollectedReference[] = [];
     const spacingValues: CollectedTokenValue[] = [];
     const repeatSources: { collection: string; path: string }[] = [];
+    const slots: string[] = [];
     const slugs = new Map<string, string>();
 
     if ( !Array.isArray( raw ) )
     {
         issues.push( { path, message: 'A page\'s content is a "blocks" array; the page is the root section.' } );
-        return { references, spacingValues, repeatSources };
+        return { references, spacingValues, repeatSources, slots };
     }
 
     for ( const [ index, block ] of raw.entries() )
     {
-        validateBlock( block, `${path}[${index}]`, issues, slugs, references, spacingValues, repeatSources );
+        validateBlock( block, `${path}[${index}]`, issues, slugs, references, spacingValues, repeatSources, slots );
     }
 
-    return { references, spacingValues, repeatSources };
+    return { references, spacingValues, repeatSources, slots };
 }

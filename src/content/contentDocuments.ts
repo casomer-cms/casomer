@@ -12,8 +12,8 @@ import { join } from 'node:path';
 import { normalizeFields, suggestNearest, FieldSchemaError, type NormalizedFields, type SchemaIssue } from '../schema/fields.ts';
 
 const contentKinds = [ 'collection', 'taxonomy', 'comments' ];
-const collectionHeaderKeys = [ 'casomerSchema', 'kind', 'label', 'fields', 'template', 'index', 'table', 'locked', 'parent', 'entries' ];
-const taxonomyHeaderKeys = [ 'casomerSchema', 'kind', 'label', 'terms', 'index', 'template', 'hierarchical' ];
+const collectionHeaderKeys = [ 'casomerSchema', 'kind', 'label', 'fields', 'layouts', 'layout', 'template', 'index', 'table', 'locked', 'parent', 'entries' ];
+const taxonomyHeaderKeys = [ 'casomerSchema', 'kind', 'label', 'terms', 'index', 'layout', 'template', 'hierarchical' ];
 const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export interface LoadedEntry
@@ -22,6 +22,10 @@ export interface LoadedEntry
     readonly values: Readonly<Record<string, unknown>>;
     readonly hasOwnBlocks: boolean;
     readonly blocks?: readonly unknown[];
+
+    // The named layout this entry follows (SCHEMA 13.4, named layouts
+    // 2026-09-02); absent means "default". Own blocks win over it.
+    readonly layout?: string;
 
     // A draft persists and stays editable but is omitted from every
     // public rendering: build emission, repeats, the pure preview -
@@ -47,6 +51,41 @@ export interface LoadedCollection
     // Pagination (SCHEMA 13.5): entries per index page; absent means
     // the whole listing on one page.
     readonly indexPageSize?: number;
+
+    // The page templates the layouts render through (SCHEMA 12.6,
+    // Mikey): "index.template" and the default layout's "template";
+    // absent means default.
+    readonly indexTemplate?: string;
+    readonly entryTemplate?: string;
+
+    // Every named entry layout (SCHEMA 13.4, Mikey 2026-09-02):
+    // "layouts": { "<name>": { "blocks", "template"? } }. "default" is
+    // the one entries follow unless they name another or carry their
+    // own blocks. templateBlocks and entryTemplate above mirror the
+    // default's, for the consumers that predate names.
+    readonly layouts: Readonly<Record<string, EntryLayout>>;
+}
+
+export interface EntryLayout
+{
+    readonly blocks: readonly unknown[];
+    readonly template?: string;
+}
+
+// The layout an entry renders through: its own blocks when it has
+// them (rogue), else the named layout, else the default. The page
+// template rides with the layout it left when rogue.
+export function entryLayoutOf ( collection: Pick<LoadedCollection, 'layouts'>, entry: Pick<LoadedEntry, 'blocks' | 'layout'> ): { readonly name: string; readonly own: boolean; readonly blocks?: readonly unknown[]; readonly template?: string }
+{
+    const name = entry.layout ?? 'default';
+    const layout = collection.layouts[ name ] ?? collection.layouts.default;
+
+    if ( entry.blocks !== undefined )
+    {
+        return { name, own: true, blocks: entry.blocks, ...( layout?.template === undefined ? {} : { template: layout.template } ) };
+    }
+
+    return { name, own: false, ...( layout === undefined ? {} : { blocks: layout.blocks, ...( layout.template === undefined ? {} : { template: layout.template } ) } ) };
 }
 
 export interface LoadedTaxonomy
@@ -67,6 +106,22 @@ export interface LoadedTaxonomy
     // the term listing (index) and the shared term template.
     readonly templateBlocks?: readonly unknown[];
     readonly indexBlocks?: readonly unknown[] | false;
+
+    // The page templates the two render through (SCHEMA 12.6).
+    readonly indexTemplate?: string;
+    readonly termTemplate?: string;
+}
+
+// A layout's page template (SCHEMA 12.6): "template" inside an index
+// or entry layout names the page template it renders through; absent
+// means default.
+function templateNameOf ( value: unknown, path: string, issues: { path: string; message: string }[] ): string | undefined
+{
+    if ( value === undefined ) { return undefined; }
+    if ( typeof value === 'string' && /^[a-z][a-z0-9-]*$/.test( value ) ) { return value; }
+
+    issues.push( { path, message: '"template" names a page template: lowercase, digits, hyphens.' } );
+    return undefined;
 }
 
 export interface LoadedTerm
@@ -161,7 +216,7 @@ function parseCollection ( record: Record<string, unknown>, file: string, issues
         return undefined;
     }
 
-    const entryKeys = [ 'id', 'blocks', 'draft', ...Object.keys( fields ) ];
+    const entryKeys = [ 'id', 'blocks', 'draft', 'layout', ...Object.keys( fields ) ];
     const entries: LoadedEntry[] = [];
 
     for ( const [ index, rawEntry ] of entryList.entries() )
@@ -194,11 +249,16 @@ function parseCollection ( record: Record<string, unknown>, file: string, issues
             }
         }
 
-        const { id, blocks, draft, ...values } = entry;
+        const { id, blocks, draft, layout: layoutName, ...values } = entry;
 
         if ( blocks !== undefined && !Array.isArray( blocks ) )
         {
             issues.push( { path: `${entryPath}.blocks`, message: 'A diverged entry\'s "blocks" is a blocks array (SCHEMA section 13.4).' } );
+        }
+
+        if ( layoutName !== undefined && ( typeof layoutName !== 'string' || !/^[a-z][a-z0-9-]*$/.test( layoutName ) ) )
+        {
+            issues.push( { path: `${entryPath}.layout`, message: '"layout" names one of the collection\'s layouts: lowercase, digits, hyphens.' } );
         }
 
         entries.push( {
@@ -206,6 +266,7 @@ function parseCollection ( record: Record<string, unknown>, file: string, issues
             values,
             hasOwnBlocks: blocks !== undefined,
             ...( Array.isArray( blocks ) ? { blocks } : {} ),
+            ...( typeof layoutName === 'string' && /^[a-z][a-z0-9-]*$/.test( layoutName ) ? { layout: layoutName } : {} ),
             ...( draft === true ? { draft: true } : {} ),
         } );
     }
@@ -215,19 +276,78 @@ function parseCollection ( record: Record<string, unknown>, file: string, issues
     // index means the listing page exists and is empty; index: false
     // opts the collection out of a public listing entirely.
     let templateBlocks: readonly unknown[] | undefined;
+    let layoutTemplate: string | undefined;
 
-    if ( record.template !== undefined )
+    // Named layouts (Mikey, 2026-09-02): "layouts": { "<name>": {
+    // "blocks", "template"? } }. A file still on the single "layout"
+    // object (or its retired "template" spelling) reads that object as
+    // the default layout until Studio's next write to the file.
+    const layouts: Record<string, EntryLayout> = {};
+    const readLayout = ( value: unknown, path: string ): EntryLayout | undefined =>
     {
-        const template = record.template as Record<string, unknown> | null;
+        const record = value as Record<string, unknown> | null;
 
-        if ( template === null || typeof template !== 'object' || Array.isArray( template ) || !Array.isArray( template.blocks ) )
+        if ( record === null || typeof record !== 'object' || Array.isArray( record ) || !Array.isArray( record.blocks ) )
         {
-            issues.push( { path: `${file}.template`, message: '"template" is an object with a "blocks" array - the shared entry layout.' } );
+            issues.push( { path, message: '"layout" is an object with a "blocks" array - an entry layout.' } );
+            return undefined;
         }
-        else { templateBlocks = template.blocks; }
+
+        const template = templateNameOf( record.template, `${path}.template`, issues );
+
+        return { blocks: record.blocks, ...( template === undefined ? {} : { template } ) };
+    };
+
+    if ( record.layouts !== undefined )
+    {
+        if ( record.layouts === null || typeof record.layouts !== 'object' || Array.isArray( record.layouts ) )
+        {
+            issues.push( { path: `${file}.layouts`, message: '"layouts" is an object of named entry layouts.' } );
+        }
+        else
+        {
+            for ( const [ name, value ] of Object.entries( record.layouts as Record<string, unknown> ) )
+            {
+                if ( !/^[a-z][a-z0-9-]*$/.test( name ) )
+                {
+                    issues.push( { path: `${file}.layouts.${name}`, message: 'A layout name is token shaped: lowercase, digits, hyphens.' } );
+                    continue;
+                }
+
+                const layout = readLayout( value, `${file}.layouts.${name}` );
+
+                if ( layout !== undefined ) { layouts[ name ] = layout; }
+            }
+        }
+    }
+    else
+    {
+        const layoutKey = record.layout !== undefined ? 'layout' : 'template';
+
+        if ( record[ layoutKey ] !== undefined )
+        {
+            const layout = readLayout( record[ layoutKey ], `${file}.${layoutKey}` );
+
+            if ( layout !== undefined ) { layouts.default = layout; }
+        }
+    }
+
+    if ( layouts.default !== undefined )
+    {
+        templateBlocks = layouts.default.blocks;
+        layoutTemplate = layouts.default.template;
+    }
+
+    for ( const [ index, entry ] of entries.entries() )
+    {
+        if ( entry.layout !== undefined && layouts[ entry.layout ] === undefined )
+        {
+            issues.push( { path: `${file}.entries[${index}].layout`, message: `There is no layout "${entry.layout}" in this collection.` } );
+        }
     }
 
     let indexBlocks: readonly unknown[] | false | undefined;
+    let indexTemplate: string | undefined;
     let indexPageSize: number | undefined;
 
     if ( record.index === false ) { indexBlocks = false; }
@@ -242,6 +362,7 @@ function parseCollection ( record: Record<string, unknown>, file: string, issues
         else
         {
             indexBlocks = indexPage.blocks;
+            indexTemplate = templateNameOf( indexPage.template, `${file}.index.template`, issues );
 
             // Pagination (SCHEMA 13.5): "pageSize" splits the index
             // into /page/2/ and beyond; absent means one page.
@@ -273,9 +394,12 @@ function parseCollection ( record: Record<string, unknown>, file: string, issues
         entries,
         locked: record.locked === true,
         ...( typeof record.parent === 'string' ? { parent: record.parent } : {} ),
+        layouts,
         ...( templateBlocks === undefined ? {} : { templateBlocks } ),
         ...( indexBlocks === undefined ? {} : { indexBlocks } ),
         ...( indexPageSize === undefined ? {} : { indexPageSize } ),
+        ...( indexTemplate === undefined ? {} : { indexTemplate } ),
+        ...( layoutTemplate === undefined ? {} : { entryTemplate: layoutTemplate } ),
     };
 }
 
@@ -380,19 +504,27 @@ function parseTaxonomy ( record: Record<string, unknown>, file: string, issues: 
     }
 
     let templateBlocks: readonly unknown[] | undefined;
+    let layoutTemplate: string | undefined;
 
-    if ( record.template !== undefined )
+    const layoutKey = record.layout !== undefined ? 'layout' : 'template';
+
+    if ( record[ layoutKey ] !== undefined )
     {
-        const template = record.template as Record<string, unknown> | null;
+        const template = record[ layoutKey ] as Record<string, unknown> | null;
 
         if ( template === null || typeof template !== 'object' || Array.isArray( template ) || !Array.isArray( template.blocks ) )
         {
-            issues.push( { path: `${file}.template`, message: '"template" is an object with a "blocks" array - the layout every term page follows.' } );
+            issues.push( { path: `${file}.${layoutKey}`, message: '"layout" is an object with a "blocks" array - the layout every term page follows.' } );
         }
-        else { templateBlocks = template.blocks; }
+        else
+        {
+            templateBlocks = template.blocks;
+            layoutTemplate = templateNameOf( template.template, `${file}.${layoutKey}.template`, issues );
+        }
     }
 
     let indexBlocks: readonly unknown[] | false | undefined;
+    let indexTemplate: string | undefined;
 
     if ( record.index === false ) { indexBlocks = false; }
     else if ( record.index !== undefined )
@@ -403,7 +535,11 @@ function parseTaxonomy ( record: Record<string, unknown>, file: string, issues: 
         {
             issues.push( { path: `${file}.index`, message: '"index" is false, or an object with a "blocks" array - the public term listing.' } );
         }
-        else { indexBlocks = indexPage.blocks; }
+        else
+        {
+            indexBlocks = indexPage.blocks;
+            indexTemplate = templateNameOf( indexPage.template, `${file}.index.template`, issues );
+        }
     }
 
     if ( label === undefined ) { return undefined; }
@@ -415,6 +551,8 @@ function parseTaxonomy ( record: Record<string, unknown>, file: string, issues: 
         terms,
         ...( templateBlocks === undefined ? {} : { templateBlocks } ),
         ...( indexBlocks === undefined ? {} : { indexBlocks } ),
+        ...( indexTemplate === undefined ? {} : { indexTemplate } ),
+        ...( layoutTemplate === undefined ? {} : { termTemplate: layoutTemplate } ),
     };
 }
 

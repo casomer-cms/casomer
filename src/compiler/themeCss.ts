@@ -115,10 +115,34 @@ export function generateThemeInputCss ( config: SiteConfig, tailwindImport = 'ta
         // there is no collision risk. A courtesy, not a system.
         '@view-transition { navigation: auto; }',
         '',
+        // Snapshot geometry (TRANSITIONS 2.9): a group's overflow is
+        // visible by default, the door every ghost leaks through when
+        // a snapshot keeps its own aspect inside a box tweening
+        // between two shapes. Clipping every group closes it; the
+        // runtime adds the per-pair cover-fit and radius rules.
+        '::view-transition-group(*) { overflow: clip; }',
+        '',
+        // One-sided captures fade, never pop (TRANSITIONS 2.8): a name
+        // with no counterpart on the other side is :only-child in its
+        // group. Matched pairs stay untouched, so these compose with
+        // the morph rules.
+        '@keyframes casomer-vt-exit { to { opacity: 0; } }',
+        '@keyframes casomer-vt-enter { from { opacity: 0; } }',
+        '::view-transition-old(*):only-child { animation: casomer-vt-exit 0.25s ease both; }',
+        '::view-transition-new(*):only-child { animation: casomer-vt-enter 0.35s ease both; }',
+        '',
+        // A scrollbar appearing or vanishing between capture and
+        // animation changes the viewport width, which aborts the whole
+        // transition (TRANSITIONS 2.9). A stable gutter keeps the width
+        // constant between a short page and a long one.
+        'html { scrollbar-gutter: stable; }',
+        '',
         // Motion respects prefers-reduced-motion, emitted by the
-        // compiler so no component can opt out (SCHEMA 7): morphs and
-        // crossfades snap instead of animating.
+        // compiler so no component can opt out (SCHEMA 7): the
+        // crossfade net switches off and morphs snap instead of
+        // animating.
         '@media (prefers-reduced-motion: reduce) {',
+        '    @view-transition { navigation: none; }',
         '    ::view-transition-group(*), ::view-transition-image-pair(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }',
         '}',
         '',

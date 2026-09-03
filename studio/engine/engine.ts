@@ -26,7 +26,7 @@ export function createBlockRenderer ( fields: NormalizedFields, templateText: st
     return {
         render ( props )
         {
-            const payload = compileMarkdownFields( fields, resolveRenderPayload( fields, props ) as RenderPayload );
+            const payload = compileMarkdownFields( fields, resolveRenderPayload( fields, props ) as RenderPayload, { sourceMap: true } );
 
             return renderTemplate( template, payload, fields );
         },

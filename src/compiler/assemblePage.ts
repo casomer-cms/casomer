@@ -20,7 +20,7 @@ import { type SchemaIssue } from '../schema/manifest.ts';
 import { parseComponentReference } from '../schema/manifest.ts';
 import { type LoadedComponent, type LoadedPackage } from '../schema/loadPackage.ts';
 import { type NormalizedFields } from '../schema/fields.ts';
-import { type SiteConfig } from '../content/siteConfig.ts';
+import { bareTemplate, type PageTemplate, type SiteConfig } from '../content/siteConfig.ts';
 import { type TokenValue } from '../content/blocks.ts';
 import { missingRequiredFields, resolveRenderPayload, type RenderPayload } from '../resolver/resolvePayload.ts';
 import { presentEntryValues, type PresentationDocs } from '../content/presentation.ts';
@@ -29,7 +29,7 @@ import { type LoadedCollection, type LoadedEntry, type LoadedTaxonomy, type Load
 import { entrySlug, type ResolvedMenuItem } from '../content/urlTree.ts';
 import { evaluateExpression, parseExpression, type FieldValues } from '../schema/expressions.ts';
 import { parseTemplate, renderTemplate, type TemplateNode } from './template.ts';
-import { compileMarkdown } from './markdown.ts';
+import { compileMarkdown, type MarkdownOptions } from './markdown.ts';
 
 export interface PageInput
 {
@@ -37,6 +37,10 @@ export interface PageInput
     readonly title: string;
     readonly slug: string;
     readonly blocks: readonly unknown[];
+
+    // The page template (SCHEMA 12.6): a site template's name, or the
+    // page's own inline template. Absent means the default.
+    readonly template?: string | PageTemplate;
 }
 
 export interface AssembleOptions
@@ -59,6 +63,20 @@ export interface AssembleOptions
     // the editing bridge can select it (EDITOR section 2). Never set
     // by caso build: delivered output carries no editing markers.
     readonly blockMarkers?: boolean;
+
+    // The template canvas (SCHEMA 12.6): the TEMPLATE's blocks carry
+    // markers, addressed as header[i] / blocks[i] / footer[i], and the
+    // page's own blocks (lighting the slot) carry none.
+    readonly templateMarkers?: boolean;
+
+    // Set by the page assembler on the template assembler for a page
+    // canvas: the template's blocks name it for the jump.
+    readonly templateScope?: string;
+
+    // A bare surface renders the page's blocks as the whole <main>
+    // with no template around them: the partial and chrome canvases,
+    // the component sample. Never a visitor page.
+    readonly bare?: boolean;
 
     // Repeat blocks (SCHEMA section 13.5) draw their items from the
     // site's collections; absent, a repeat renders empty with an issue.
@@ -161,7 +179,7 @@ function classAttribute ( classes: readonly string[] ): string
 // Exported for the same reason renderComponentInstance is public: the
 // Studio preview engine is this pass's second importer, and preview
 // parity depends on there being exactly one implementation.
-export function compileMarkdownFields ( fields: NormalizedFields, payload: RenderPayload ): RenderPayload
+export function compileMarkdownFields ( fields: NormalizedFields, payload: RenderPayload, options: MarkdownOptions = {} ): RenderPayload
 {
     const transformed: Record<string, unknown> = { ...payload };
 
@@ -173,18 +191,18 @@ export function compileMarkdownFields ( fields: NormalizedFields, payload: Rende
 
         if ( field.type === 'markdown' && typeof value === 'string' )
         {
-            transformed[ key ] = compileMarkdown( value, 1 ).html;
+            transformed[ key ] = compileMarkdown( value, 1, options ).html;
         }
 
         if ( field.type === 'list' && Array.isArray( value ) )
         {
             transformed[ key ] = value.map( ( item ) =>
-                compileMarkdownFields( field.fields ?? {}, item as RenderPayload ) );
+                compileMarkdownFields( field.fields ?? {}, item as RenderPayload, options ) );
         }
 
         if ( field.type === 'group' && value !== null && typeof value === 'object' && !Array.isArray( value ) )
         {
-            transformed[ key ] = compileMarkdownFields( field.fields ?? {}, value as RenderPayload );
+            transformed[ key ] = compileMarkdownFields( field.fields ?? {}, value as RenderPayload, options );
         }
     }
 
@@ -237,6 +255,18 @@ export function clampHeadingSequence ( html: string ): string
 // as <h2 class="h4">, structurally the block's lead heading,
 // visually the small heading its author chose. The theme CSS styles
 // .h1-.h6 beside the elements.
+// Final headings hide from later remaps behind a tag no heading
+// pattern matches, and come back at the end of the page.
+function shieldHeadings ( html: string ): string
+{
+    return html.replace( /<(\/?)h([1-6])(?=[\s>])/g, '<$1casomer-final-h$2' );
+}
+
+function restoreHeadings ( html: string ): string
+{
+    return html.replace( /<(\/?)casomer-final-h([1-6])(?=[\s>])/g, '<$1h$2' );
+}
+
 function remapHeadings ( html: string, baseLevel: number ): string
 {
     const levels = headingLevelsIn( html );
@@ -271,11 +301,24 @@ interface Assembler
     // to view-transition-names, which must be unique per page.
     readonly morphNames: Map<string, string>;
 
-    // Set by a repeat that applied the pageWindow (SCHEMA 13.5).
-    pagination?: { total: number; totalPages: number };
+    // Shared across the assembler's copies (the template and slot
+    // assemblers spread this one): set by a repeat that applied the
+    // pageWindow (SCHEMA 13.5).
+    readonly state: {
+        pagination?: { total: number; totalPages: number };
+
+        // The page-wide h1 rule (SCHEMA 8): the first heading scope
+        // of the composed main claims h1, wherever the slot sits.
+        firstHeadingScopeSeen?: boolean;
+    };
 
     // Partials currently rendering, for the self-reference guard.
     readonly activePartials: Set<string>;
+
+    // The content slot's filling (SCHEMA 12.6): the page's own blocks,
+    // rendered where the template's layout says { "slot": "content" },
+    // with the page surface's markers. Absent on a bare surface.
+    readonly slot?: { readonly blocks: readonly unknown[]; readonly markers: boolean };
 }
 
 function findComponent ( assembler: Assembler, reference: string ): LoadedComponent | undefined
@@ -328,14 +371,18 @@ async function renderComponentBlock (
         } );
     }
 
-    const html = await renderComponentInstance( component, props, assembler.templateCache );
+    const html = await renderComponentInstance( component, props, assembler.templateCache, { sourceMap: assembler.options.blockMarkers === true } );
 
     // Morph links (SCHEMA 6): the block's link name plus each
     // declared anchor id becomes the anchored element's
     // view-transition-name - the SAME name on another page's block
     // pairs the two for the navigation morph. Names are unique per
     // page; a duplicate reports and does not stamp, so the build
-    // never emits colliding transition names.
+    // never emits colliding transition names. The name is stamped
+    // twice on purpose: the inline style pairs hard navigations
+    // through the crossfade net, and data-morph is what the runtime
+    // pairs by for soft navigation (it sweeps the inline names, since
+    // names are dressing for one transition, never resting state).
     const morph = block.morph;
 
     if ( typeof morph !== 'string' || morph === '' ) { return html; }
@@ -355,12 +402,14 @@ async function renderComponentBlock (
 
     return html.replace( /<([a-z][a-z0-9-]*)((?:[^>"]|"[^"]*")*\bdata-anchor="([^"]+)"(?:[^>"]|"[^"]*")*)>/g, ( _match, tag: string, attributes: string, anchorId: string ) =>
     {
-        const name = `view-transition-name: ${morph}-${anchorId}`;
-        const withStyle = /\bstyle="/.test( attributes )
-            ? attributes.replace( /\bstyle="/, `style="${name}; ` )
-            : `${attributes} style="${name}"`;
+        const name = `${morph}-${anchorId}`;
+        const declaration = `view-transition-name: ${name}`;
+        const bare = attributes.replace( /\s*\bdata-morph="[^"]*"/, '' );
+        const withStyle = /\bstyle="/.test( bare )
+            ? bare.replace( /\bstyle="/, `style="${declaration}; ` )
+            : `${bare} style="${declaration}"`;
 
-        return `<${tag}${withStyle}>`;
+        return `<${tag}${withStyle} data-morph="${name}">`;
     } );
 }
 
@@ -472,7 +521,7 @@ async function renderRepeatBlock (
                     };
                     const props = resolveBindings( repeat.props ?? {}, scope ) as Record<string, unknown>;
 
-                    inner = await renderComponentInstance( component, props, assembler.templateCache );
+                    inner = await renderComponentInstance( component, props, assembler.templateCache, { sourceMap: assembler.options.blockMarkers === true } );
                 }
 
                 const children = item.items ?? [];
@@ -653,7 +702,7 @@ async function renderRepeatBlock (
 
     if ( window !== undefined && repeat.source.collection === window.stem )
     {
-        assembler.pagination = { total: entries.length, totalPages: Math.max( 1, Math.ceil( entries.length / window.size ) ) };
+        assembler.state.pagination = { total: entries.length, totalPages: Math.max( 1, Math.ceil( entries.length / window.size ) ) };
         entries = entries.slice( ( window.number - 1 ) * window.size, window.number * window.size );
     }
 
@@ -690,7 +739,7 @@ async function renderRepeatBlock (
             } );
         }
 
-        items.push( await renderComponentInstance( component, props, assembler.templateCache ) );
+        items.push( await renderComponentInstance( component, props, assembler.templateCache, { sourceMap: assembler.options.blockMarkers === true } ) );
     }
 
     // The author-owned empty state (SCHEMA 13.5): markdown shown when
@@ -718,6 +767,7 @@ export async function renderComponentInstance (
     component: LoadedComponent,
     props: Readonly<Record<string, unknown>>,
     templateCache?: Map<string, readonly TemplateNode[]>,
+    options: MarkdownOptions = {},
 ): Promise<string>
 {
     let template = templateCache?.get( component.templateFile );
@@ -731,6 +781,7 @@ export async function renderComponentInstance (
     const payload = compileMarkdownFields(
         component.manifest.fields,
         resolveRenderPayload( component.manifest.fields, props ),
+        options,
     );
 
     return renderTemplate( template, payload, component.manifest.fields );
@@ -863,7 +914,50 @@ async function renderBlock (
     // Studio's canvas addresses every block by its document path, so
     // selection works at each level of page > section > component
     // (EDITOR section 2). Never emitted by caso build.
-    const marker = assembler.options.blockMarkers === true ? ` data-casomer-block="${path}"` : '';
+    // On a PAGE canvas the template's own blocks render without block
+    // markers (they edit on the template canvas) but each top-level one
+    // names its template, so a click jumps there (EDITOR 2). A partial
+    // names itself on every canvas for the same reason.
+    const scopeMarker = assembler.options.templateScope !== undefined && depth === 1 ? ` data-casomer-template="${assembler.options.templateScope}"` : '';
+    const marker = ( assembler.options.blockMarkers === true ? ` data-casomer-block="${path}"` : '' ) + scopeMarker;
+
+    // The content slot (SCHEMA 12.6): the page's own blocks pour in
+    // here, at the slot's depth, each with its own wrapper - the slot
+    // adds none. Marked or not by the PAGE surface, never the
+    // template's. A slot with nothing in scope renders nothing.
+    if ( block.slot !== undefined )
+    {
+        const slot = assembler.slot;
+
+        if ( slot === undefined ) { return ''; }
+
+        const pageAssembler: Assembler = { ...assembler, options: { ...assembler.options, blockMarkers: slot.markers } };
+        const rendered: string[] = [];
+
+        // Inside a section the page's blocks would share the
+        // section's heading scope and every sibling heading would
+        // map alike; instead each page block is a scope of its own -
+        // the first with a heading claims h1 unless something before
+        // it already did - and its final levels are shielded from the
+        // enclosing remaps until the page restores them at the end.
+        for ( const [ index, child ] of slot.blocks.entries() )
+        {
+            const html = await renderBlock( pageAssembler, child, `blocks[${index}]`, depth, parentFlow );
+            const hasHeadings = headingLevelsIn( html ).length > 0;
+            const base = hasHeadings && assembler.state.firstHeadingScopeSeen !== true ? 1 : 2;
+
+            if ( hasHeadings ) { assembler.state.firstHeadingScopeSeen = true; }
+
+            rendered.push( shieldHeadings( remapHeadings( html, base ) ) );
+        }
+
+        // On the template canvas the slot is one region: wrapped so
+        // the bridge can fade it, stamp it, and count it as a sibling
+        // for seams (SCHEMA 12.6). Never in delivered output.
+        return assembler.options.templateMarkers === true
+            ? `<div data-casomer-slot="${path}" data-casomer-block="${path}" class="flex flex-col">\n${rendered.join( '' )}</div>\n`
+            : rendered.join( '' );
+    }
 
     if ( block.component !== undefined )
     {
@@ -898,6 +992,11 @@ async function renderBlock (
             return `<div${marker}${classAttribute( classes )}${slugAttribute}></div>\n`;
         }
 
+        // An empty partial is silence, not an empty box: the default
+        // template's header and footer partials start empty on every
+        // site, and the delivered chrome stays exactly as it was.
+        if ( blocks.length === 0 ) { return ''; }
+
         assembler.activePartials.add( name );
 
         const partialAssembler: Assembler = { ...assembler, options: { ...assembler.options, blockMarkers: false } };
@@ -910,7 +1009,10 @@ async function renderBlock (
 
         assembler.activePartials.delete( name );
 
-        return `<div${marker}${classAttribute( classes )}${slugAttribute}>\n${rendered.join( '' )}</div>\n`;
+        const onCanvas = assembler.options.blockMarkers === true || assembler.options.templateMarkers === true || assembler.options.templateScope !== undefined;
+        const partialMarker = onCanvas ? ` data-casomer-partial="${name}"` : '';
+
+        return `<div${marker}${partialMarker}${classAttribute( classes )}${slugAttribute}>\n${rendered.join( '' )}</div>\n`;
     }
 
     // A repeat is arrangement, not a special component (13.5): one
@@ -968,6 +1070,22 @@ async function renderBlock (
     return `<${tag}${marker}${emptyFlag}${classAttribute( classes )}${slugAttribute}>\n${inner}</${tag}>\n`;
 }
 
+// The template a page renders through (SCHEMA 12.6): its own inline
+// one, the named one, or the default. A name that resolves to nothing
+// is an issue, never a blank page.
+function resolveTemplate ( page: PageInput, config: SiteConfig, issues: SchemaIssue[] ): PageTemplate
+{
+    if ( page.template !== undefined && typeof page.template !== 'string' ) { return page.template; }
+
+    const name = page.template ?? 'default';
+    const template = config.templates?.[ name ];
+
+    if ( template !== undefined ) { return template; }
+
+    issues.push( { path: 'template', message: `There is no page template "${name}"; the page renders through the default.` } );
+    return config.templates?.default ?? bareTemplate();
+}
+
 export async function assemblePage ( page: PageInput, options: AssembleOptions ): Promise<AssembledPage>
 {
     const assembler: Assembler = {
@@ -975,31 +1093,91 @@ export async function assemblePage ( page: PageInput, options: AssembleOptions )
         issues: [],
         templateCache: new Map(),
 
-        // Shared with the region assembler below by reference, on
+        // Shared with the template assembler below by reference, on
         // purpose: a header morph name and a page morph name collide
         // on the same composed document.
         morphNames: new Map(),
+        state: {},
         activePartials: new Set(),
     };
     const rhythm = options.config.theme.rhythm;
     const scopes: string[] = [];
 
-    // Every top-level block is a heading scope. The FIRST scope that
-    // contains a heading maps from h1 - the page's designated h1 is
-    // whatever the user put first (the default page prefills a
+    // The template (SCHEMA 12.6) wraps the page: its chrome outside
+    // <main>, its main layout inside, the page's blocks in the slot.
+    // A bare surface is the page's blocks alone.
+    const template = options.bare === true ? bareTemplate() : resolveTemplate( page, options.config, assembler.issues );
+    const templateName = typeof page.template === 'string' ? page.template : ( page.template === undefined ? 'default' : undefined );
+
+    // Template blocks address as header[i] / blocks[i] / footer[i] on
+    // the template canvas (the markers the chrome edits through) and
+    // by their site path everywhere else (the issues' spelling).
+    const partPath = ( part: string ): string => ( options.templateMarkers === true
+        ? part
+        : ( templateName === undefined ? `template.${part}` : `site.templates.${templateName}.${part}` ) );
+    const templateAssembler: Assembler = {
+        ...assembler,
+        options: {
+            ...assembler.options,
+            blockMarkers: options.templateMarkers === true,
+            ...( options.blockMarkers === true && options.templateMarkers !== true && templateName !== undefined ? { templateScope: templateName } : {} ),
+        },
+        slot: { blocks: page.blocks, markers: options.blockMarkers === true },
+    };
+
+    // Every top-level block of <main> is a heading scope. The FIRST
+    // scope that contains a heading maps from h1 - the page's
+    // designated h1 is whatever comes first in the composed main,
+    // template layout or page content (the default page prefills a
     // core/heading bound to page.title); later scopes map from h2.
     // Nothing is scaffolded: no content is hard-coded in the output.
-    let firstHeadingScopeSeen = false;
-
-    for ( const [ index, block ] of page.blocks.entries() )
+    const pushScope = ( rendered: string ): void =>
     {
-        const rendered = await renderBlock( assembler, block, `blocks[${index}]`, 1 );
         const hasHeadings = headingLevelsIn( rendered ).length > 0;
-        const base = hasHeadings && !firstHeadingScopeSeen ? 1 : 2;
+        const base = hasHeadings && assembler.state.firstHeadingScopeSeen !== true ? 1 : 2;
 
-        if ( hasHeadings ) { firstHeadingScopeSeen = true; }
+        if ( hasHeadings ) { assembler.state.firstHeadingScopeSeen = true; }
 
         scopes.push( remapHeadings( rendered, base ) );
+    };
+
+    for ( const [ index, block ] of template.blocks.entries() )
+    {
+        const record = block as Record<string, unknown> | null;
+
+        // A top-level slot: the page's blocks are top-level scopes
+        // themselves. A nested slot renders inside its section
+        // through renderBlock's slot case.
+        if ( record !== null && typeof record === 'object' && record.slot !== undefined )
+        {
+            // The template canvas wraps the page's blocks as one
+            // region (the bridge fades and stamps it); a real page
+            // pours them straight into main.
+            const slotScopes: string[] = [];
+
+            for ( const [ pageIndex, pageBlock ] of page.blocks.entries() )
+            {
+                const rendered = await renderBlock( assembler, pageBlock, `blocks[${pageIndex}]`, 1 );
+                const hasHeadings = headingLevelsIn( rendered ).length > 0;
+                const base = hasHeadings && assembler.state.firstHeadingScopeSeen !== true ? 1 : 2;
+
+                if ( hasHeadings ) { assembler.state.firstHeadingScopeSeen = true; }
+
+                slotScopes.push( remapHeadings( rendered, base ) );
+            }
+
+            if ( options.templateMarkers === true )
+            {
+                const wrapperClasses = classAttribute( [ 'flex', 'flex-col', ...( rhythm === undefined ? [] : [ `gap-${rhythm}` ] ) ] );
+
+                scopes.push( `<div data-casomer-slot="${partPath( 'blocks' )}[${index}]" data-casomer-block="${partPath( 'blocks' )}[${index}]"${wrapperClasses}>\n${slotScopes.join( '' )}</div>\n` );
+            }
+            else { scopes.push( ...slotScopes ); }
+
+            continue;
+        }
+
+        pushScope( await renderBlock( templateAssembler, block, `${partPath( 'blocks' )}[${index}]`, 1 ) );
     }
 
     const generator = options.generatorVersion === undefined
@@ -1029,11 +1207,10 @@ export async function assemblePage ( page: PageInput, options: AssembleOptions )
     // otherwise the h1 (and the last block) butt the viewport edge.
     const mainClasses = classAttribute( [ 'flex', 'flex-col', ...( rhythm === undefined ? [] : [ `gap-${rhythm}`, `py-${rhythm}` ] ) ] );
 
-    // Regions (SCHEMA 12.5): the persistent chrome renders outside
-    // <main>, marker-less always - a page canvas never selects into
-    // a region; regions get their own editing surface.
-    const regionAssembler: Assembler = { ...assembler, options: { ...assembler.options, blockMarkers: false } };
-    const renderRegion = async ( blocks: readonly unknown[] | undefined, name: string ): Promise<string> =>
+    // The chrome (SCHEMA 12.5, stored by 12.6): the template's header
+    // and footer render outside <main> under the persistent names, and
+    // their headings map from h2 - a page's h1 lives in <main>.
+    const renderChrome = async ( blocks: readonly unknown[] | undefined, part: 'header' | 'footer' ): Promise<string> =>
     {
         if ( blocks === undefined || blocks.length === 0 ) { return ''; }
 
@@ -1041,20 +1218,22 @@ export async function assemblePage ( page: PageInput, options: AssembleOptions )
 
         for ( const [ index, block ] of blocks.entries() )
         {
-            rendered.push( remapHeadings( await renderBlock( regionAssembler, block, `site.regions.${name}[${index}]`, 1 ), 2 ) );
+            rendered.push( remapHeadings( await renderBlock( templateAssembler, block, `${partPath( part )}[${index}]`, 1 ), 2 ) );
         }
 
-        return `\n${rendered.join( '' )}    `;
+        const joined = rendered.join( '' );
+
+        return joined.trim() === '' ? '' : `\n${joined}    `;
     };
-    const headerHtml = await renderRegion( options.config.regions?.header, 'header' );
-    const footerHtml = await renderRegion( options.config.regions?.footer, 'footer' );
+    const headerHtml = await renderChrome( template.header, 'header' );
+    const footerHtml = await renderChrome( template.footer, 'footer' );
 
     // The pager (SCHEMA 13.5): compiler scaffolding like the skip
     // link - a nav of page links when the window's listing spans
     // more than one page. The theme CSS carries the functional
     // .cs-pager layer; sites restyle freely.
     const window = assembler.options.pageWindow;
-    const totalPages = assembler.pagination?.totalPages ?? 1;
+    const totalPages = assembler.state.pagination?.totalPages ?? 1;
     let pagerHtml = '';
 
     if ( window !== undefined && totalPages > 1 )
@@ -1071,6 +1250,9 @@ export async function assemblePage ( page: PageInput, options: AssembleOptions )
         pagerHtml = `<nav class="cs-pager" aria-label="Pagination"><ul>${previous}${numbers}${next}</ul></nav>\n`;
     }
 
+    // On a page canvas the landmarks themselves name the template, so
+    // a click on chrome padding (not only a block) jumps there too.
+    const landmarkScope = templateAssembler.options.templateScope === undefined ? '' : ` data-casomer-template="${templateAssembler.options.templateScope}"`;
     const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -1081,18 +1263,18 @@ export async function assemblePage ( page: PageInput, options: AssembleOptions )
     <script defer src="${options.assets?.alpineScript ?? '/assets/js/alpine.min.js'}"></script>
     <script type="module" src="${options.assets?.runtimeScript ?? '/assets/js/casomer-runtime.js'}"></script>
 </head>
-<body>
+<body${options.templateMarkers === true ? ' data-casomer-template=""' : ''}>
     <a class="skip-link" href="#main">Skip to content</a>
-    <header style="view-transition-name: casomer-header">${headerHtml}</header>
+    <header style="view-transition-name: casomer-header"${options.templateMarkers === true ? ' data-casomer-part="header"' : ''}${landmarkScope}>${headerHtml}</header>
     <main id="main"${mainClasses}>
 ${scopes.join( '' )}${pagerHtml}    </main>
-    <footer style="view-transition-name: casomer-footer">${footerHtml}</footer>
+    <footer style="view-transition-name: casomer-footer"${options.templateMarkers === true ? ' data-casomer-part="footer"' : ''}${landmarkScope}>${footerHtml}</footer>
 </body>
 </html>
 `;
 
     return {
-        html: clampHeadingSequence( html ),
+        html: clampHeadingSequence( restoreHeadings( html ) ),
         issues: assembler.issues,
         ...( window === undefined ? {} : { pagination: { totalPages } } ),
     };

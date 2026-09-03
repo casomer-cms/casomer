@@ -130,6 +130,29 @@ interface RenderContext
 {
     readonly plan: HeadingPlan;
     readonly outline: OutlineEntry[];
+
+    // The source map (EDITOR 3.1): on an editing canvas each paragraph
+    // and heading carries the character range of its CONTENT in the
+    // source, so an inline edit writes back to exactly that range.
+    readonly sourceMap: boolean;
+}
+
+// Compile options: the source map is editing chrome, never delivered.
+export interface MarkdownOptions
+{
+    readonly sourceMap?: boolean;
+}
+
+// A block's content range: from its first child's start to its last
+// child's end, so a heading's "#" and a list item's marker stay
+// outside the editable span.
+function contentRange ( node: Partial<Parent> ): string
+{
+    const children = node.children ?? [];
+    const first = children[ 0 ]?.position?.start.offset;
+    const last = children[ children.length - 1 ]?.position?.end.offset;
+
+    return first === undefined || last === undefined ? '' : ` data-casomer-md="${first}-${last}"`;
 }
 
 function renderChildren ( node: Partial<Parent>, context: RenderContext ): string
@@ -167,16 +190,18 @@ function renderNode ( node: Node, context: RenderContext ): string
 {
     switch ( node.type )
     {
-        case 'paragraph': return `<p>${renderChildren( node as Parent, context )}</p>\n`;
+        case 'paragraph': return `<p${context.sourceMap ? contentRange( node as Parent ) : ''}>${renderChildren( node as Parent, context )}</p>\n`;
 
         case 'heading':
         {
             const heading = node as Heading;
             const inner = renderChildren( heading, context );
 
+            const range = context.sourceMap ? contentRange( heading ) : '';
+
             if ( context.plan.kickers.has( heading ) )
             {
-                return `<p class="kicker">${inner}</p>\n`;
+                return `<p class="kicker"${range}>${inner}</p>\n`;
             }
 
             const level = context.plan.levelByDepth.get( heading.depth ) ?? 6;
@@ -188,7 +213,7 @@ function renderNode ( node: Node, context: RenderContext ): string
             const visual = heading.depth === level ? '' : ` class="h${heading.depth}"`;
 
             context.outline.push( { level, text: plainTextOf( heading ) } );
-            return `<h${level}${visual}>${inner}</h${level}>\n`;
+            return `<h${level}${visual}${range}>${inner}</h${level}>\n`;
         }
 
         // A single newline is a soft break in CommonMark - rendered
@@ -275,12 +300,13 @@ export function inspectMarkdownHeadings ( source: string ): MarkdownHeadingShape
     return { hasHeadings: headings.length > 0, headingCount: headings.length };
 }
 
-export function compileMarkdown ( source: string, baseLevel = 2 ): CompiledMarkdown
+export function compileMarkdown ( source: string, baseLevel = 2, options: MarkdownOptions = {} ): CompiledMarkdown
 {
     const tree = parseMarkdown( source );
     const context: RenderContext = {
         plan: planHeadings( collectHeadings( tree ), baseLevel ),
         outline: [],
+        sourceMap: options.sourceMap === true,
     };
     const html = renderChildren( tree, context );
 

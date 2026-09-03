@@ -27,10 +27,14 @@ export interface LoadedPage
     // The URL tree (SCHEMA 13.6): a child page nests its URL under
     // its parent's. Home is the root and never carries one.
     readonly parent?: string;
+
+    // The page template (SCHEMA 12.6): a name from site.templates, or
+    // the page's own inline template ("Custom"). Absent means default.
+    readonly template?: string | PageTemplate;
 }
 import { serializeCanonicalJson, type JsonValue } from './canonicalJson.ts';
 import { analyzeBlocks, type BlocksAnalysis } from './blocks.ts';
-import { validateSiteConfig, type MenuItem, type SiteConfig } from './siteConfig.ts';
+import { validatePageTemplate, validateSiteConfig, type MenuItem, type PageTemplate, type SiteConfig } from './siteConfig.ts';
 import { loadContentDocuments, type LoadedCollection, type LoadedTaxonomy } from './contentDocuments.ts';
 
 // The core roster of SCHEMA section 1.1: this small because layout is
@@ -38,8 +42,36 @@ import { loadContentDocuments, type LoadedCollection, type LoadedTaxonomy } from
 // forever.
 const coreComponentIds = [ 'markdown', 'image', 'link', 'heading' ];
 
+// A content slot belongs to a page template's main layout and
+// nowhere else (SCHEMA 12.6): a page, a partial, a collection surface,
+// or the 404 holding one is a mistake, not an empty.
+function checkNoSlots ( analysis: BlocksAnalysis, issues: SchemaIssue[] ): void
+{
+    for ( const path of analysis.slots )
+    {
+        issues.push( { path, message: 'A content slot belongs in a page template\'s main layout (SCHEMA 12.6), not here.' } );
+    }
+}
+
+function templateParts ( template: PageTemplate ): [ string, readonly unknown[] ][]
+{
+    return [
+        ...( template.header === undefined ? [] : [ [ 'header', template.header ] as [ string, readonly unknown[] ] ] ),
+        [ 'blocks', template.blocks ],
+        ...( template.footer === undefined ? [] : [ [ 'footer', template.footer ] as [ string, readonly unknown[] ] ] ),
+    ];
+}
+
+// The 404 page (SCHEMA 13.6, decided 2026-09-02): a reserved page,
+// slug "404", present on every site. A pages.json without one gets it
+// synthesized under this id - carrying an older site.notFound's
+// blocks - and Studio writes it into pages.json on first touch.
+export const NOT_FOUND_PAGE_ID = '00000000-0000-4000-8000-000000000404';
+export const NOT_FOUND_SLUG = '404';
+
 const pagesFileKeys = [ 'casomerSchema', 'pages' ];
-const pageKeys = [ 'id', 'title', 'slug', 'blocks', 'draft', 'parent' ];
+const pageKeys = [ 'id', 'title', 'slug', 'blocks', 'draft', 'parent', 'template' ];
+const templateNameShape = /^[a-z][a-z0-9-]*$/;
 
 const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const pageSlugShape = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -248,13 +280,40 @@ export async function loadSiteDirectory (
                 pageCount += 1;
                 const page = rawPage as Record<string, unknown>;
 
+                // The page's template (SCHEMA 12.6): a name checked
+                // against the site's templates with did-you-mean, or
+                // an inline template validated like a site one.
+                let template: string | PageTemplate | undefined;
+
+                if ( typeof page.template === 'string' )
+                {
+                    if ( !templateNameShape.test( page.template ) || config.templates[ page.template ] === undefined )
+                    {
+                        issues.push( { path: `${pagePath}.template`, message: `There is no page template "${page.template}".${suggestNearest( page.template, Object.keys( config.templates ) )} A page names one of site.templates, or leaves the key out for the default.` } );
+                    }
+                    else { template = page.template; }
+                }
+                else if ( page.template !== undefined )
+                {
+                    template = validatePageTemplate( page.template, `${pagePath}.template`, issues );
+                }
+
+                // The reserved 404 page is never a draft and never in
+                // the tree: an address that does not exist is what it
+                // answers, so it has none of its own.
+                if ( page.slug === NOT_FOUND_SLUG && page.draft === true )
+                {
+                    issues.push( { path: `${pagePath}.draft`, message: 'The 404 page cannot be a draft: it is served whenever an address does not exist.' } );
+                }
+
                 pages.push( {
                     id: String( page.id ?? '' ),
                     title: String( page.title ?? '' ),
                     slug: String( page.slug ?? '' ),
                     blocks: Array.isArray( page.blocks ) ? page.blocks : [],
-                    ...( page.draft === true ? { draft: true } : {} ),
+                    ...( page.draft === true && page.slug !== NOT_FOUND_SLUG ? { draft: true } : {} ),
                     ...( typeof page.parent === 'string' ? { parent: page.parent } : {} ),
+                    ...( template === undefined ? {} : { template } ),
                 } );
 
                 for ( const key of Object.keys( page ) )
@@ -294,14 +353,38 @@ export async function loadSiteDirectory (
 
                 checkReferences( analysis, packages, issues );
                 checkSpacingTokens( analysis, config, issues );
+                checkNoSlots( analysis, issues );
                 repeatSources.push( ...analysis.repeatSources );
+
+                // A page-owned template gets the layout scrutiny of a
+                // site one, under the page's path.
+                if ( template !== undefined && typeof template !== 'string' )
+                {
+                    for ( const [ part, list ] of templateParts( template ) )
+                    {
+                        const partAnalysis = analyzeBlocks( list, `${pagePath}.template.${part}`, issues );
+
+                        checkReferences( partAnalysis, packages, issues );
+                        checkSpacingTokens( partAnalysis, config, issues );
+                        repeatSources.push( ...partAnalysis.repeatSources );
+                    }
+                }
             }
         }
     }
 
+    // Every site has a 404 page: absent from pages.json, it is
+    // synthesized last, carrying the retired site.notFound blocks.
+    if ( !pages.some( ( page ) => page.slug === NOT_FOUND_SLUG ) )
+    {
+        // Counted as a page of the site once it is written; the count
+        // speaks the file (the golden fixture pins it).
+        pages.push( { id: NOT_FOUND_PAGE_ID, title: 'Not found', slug: NOT_FOUND_SLUG, blocks: config.notFound ?? [] } );
+    }
+
     // The URL tree's page rules (SCHEMA 13.6): a parent names an
     // existing page, home neither takes nor grants one, and the chain
-    // never loops.
+    // never loops. The 404 page is outside the tree on both sides.
     const pageById = new Map( pages.map( ( page ) => [ page.id, page ] ) );
 
     for ( const [ index, page ] of pages.entries() )
@@ -309,6 +392,12 @@ export async function loadSiteDirectory (
         if ( page.parent === undefined ) { continue; }
 
         const parentPath = `pages[${index}].parent`;
+
+        if ( page.slug === NOT_FOUND_SLUG )
+        {
+            issues.push( { path: parentPath, message: 'The 404 page has no address of its own; it takes no parent (SCHEMA 13.6).' } );
+            continue;
+        }
 
         if ( page.slug === 'home' )
         {
@@ -321,6 +410,12 @@ export async function loadSiteDirectory (
         if ( parentPage === undefined )
         {
             issues.push( { path: parentPath, message: `"parent" names no page. A page's parent is another page's id (SCHEMA 13.6).` } );
+            continue;
+        }
+
+        if ( parentPage.slug === NOT_FOUND_SLUG )
+        {
+            issues.push( { path: parentPath, message: 'The 404 page has no address, so nothing can nest under it (SCHEMA 13.6).' } );
             continue;
         }
 
@@ -352,13 +447,15 @@ export async function loadSiteDirectory (
 
     // Collection-held layouts get the same block scrutiny as pages:
     // the entry template, the index page, and any diverged entries.
-    const checkLayout = ( blocks: unknown, path: string ): void =>
+    const checkLayout = ( blocks: unknown, path: string, slotsAllowed = false ): void =>
     {
         const analysis = analyzeBlocks( blocks, path, issues );
 
         checkReferences( analysis, packages, issues );
         checkSpacingTokens( analysis, config, issues );
         repeatSources.push( ...analysis.repeatSources );
+
+        if ( !slotsAllowed ) { checkNoSlots( analysis, issues ); }
     };
 
     // A mounted collection's parent must be a real, mountable page
@@ -394,10 +491,18 @@ export async function loadSiteDirectory (
         }
     }
 
-    // Region blocks (SCHEMA 12.5) get the same scrutiny as page
-    // blocks - same grammar, same components, same tokens.
-    if ( config.regions?.header !== undefined ) { checkLayout( config.regions.header, 'site.regions.header' ); }
-    if ( config.regions?.footer !== undefined ) { checkLayout( config.regions.footer, 'site.regions.footer' ); }
+    // Template blocks (SCHEMA 12.6) get the same scrutiny as page
+    // blocks - same grammar, same components, same tokens - and the
+    // main layout is the one place a content slot may sit (the slot
+    // count itself is the config's check).
+    for ( const [ name, template ] of Object.entries( config.templates ) )
+    {
+        for ( const [ part, list ] of templateParts( template ) )
+        {
+            checkLayout( list, `site.templates.${name}.${part}`, true );
+        }
+    }
+
     if ( config.notFound !== undefined ) { checkLayout( config.notFound, 'site.notFound' ); }
 
     for ( const [ partialName, partialBlocks ] of Object.entries( config.partials ?? {} ) )

@@ -7,7 +7,7 @@
         "eventDate": "date",
         "details": "markdown"
     },
-    "template": {
+    "layout": {
         "blocks": [
             {
                 "component": "core/markdown",

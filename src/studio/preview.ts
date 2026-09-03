@@ -21,7 +21,7 @@ import { loadSiteDirectory } from '../content/loadSiteDirectory.ts';
 import { type PresentationDocs } from '../content/presentation.ts';
 import { collectionIsDraft, collectionPathSegments, pageIsDraft, pagePathSegments, pagesById, resolveEntryUrls, resolveMenus } from '../content/urlTree.ts';
 import { entrySlug } from '../compiler/buildSite.ts';
-import { termAndDescendantIds } from '../content/contentDocuments.ts';
+import { termAndDescendantIds, entryLayoutOf } from '../content/contentDocuments.ts';
 import { type LoadedCollection } from '../content/contentDocuments.ts';
 import { type LoadedComponent, type LoadedPackage } from '../schema/loadPackage.ts';
 import { type SchemaIssue } from '../schema/manifest.ts';
@@ -42,9 +42,10 @@ export interface RenderedPreview
 export interface PreviewPipeline
 {
     renderPage ( slug: string, editing?: boolean ): Promise<RenderedPreview>;
-    renderCollectionSurface ( stem: string, surface: 'index' | 'template', editing?: boolean, sampleEntryId?: string, pageNumber?: number ): Promise<RenderedPreview>;
+    renderCollectionSurface ( stem: string, surface: 'index' | 'template', editing?: boolean, sampleEntryId?: string, pageNumber?: number, layoutName?: string ): Promise<RenderedPreview>;
     renderTaxonomySurface ( stem: string, surface: 'index' | 'template', editing?: boolean, sampleTermId?: string ): Promise<RenderedPreview>;
     renderRegion ( region: string ): Promise<RenderedPreview>;
+    renderPageTemplate ( name: string, samplePageId?: string, editing?: boolean ): Promise<RenderedPreview>;
     renderComponentSample ( reference: string ): Promise<RenderedPreview>;
     renderNotFound ( editing?: boolean ): Promise<RenderedPreview>;
     renderEntryLayout ( stem: string, entryId: string, editing?: boolean ): Promise<RenderedPreview>;
@@ -201,7 +202,7 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
             return { html: assembled.html, issues: assembled.issues };
         },
 
-        async renderCollectionSurface ( stem, surface, editing = true, sampleEntryId = undefined, pageNumber = 1 )
+        async renderCollectionSurface ( stem, surface, editing = true, sampleEntryId = undefined, pageNumber = 1, layoutName = undefined )
         {
             const site = await loadSiteDirectory( options.contentDirectory, options.packages );
 
@@ -214,15 +215,27 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
                 return { issues: [ { path: stem, message: `No collection lives in "${stem}.json".` } ] };
             }
 
+            // The entry layout (SCHEMA 13.4, named 2026-09-02): by name
+            // when the canvas asks for one; else the sample entry's
+            // own choice - its named layout, or its own blocks when
+            // rogue - which is also the visitor's view; else default.
             const isIndex = surface === 'index';
+            const sampleEntry = collection.entries.find( ( candidate ) => candidate.id === sampleEntryId );
+            const chosen = layoutName !== undefined
+                ? { blocks: collection.layouts[ layoutName ]?.blocks, template: collection.layouts[ layoutName ]?.template }
+                : ( sampleEntry === undefined
+                        ? { blocks: collection.layouts.default?.blocks, template: collection.layouts.default?.template }
+                        : entryLayoutOf( collection, sampleEntry ) );
             const blocks = isIndex
                 ? ( collection.indexBlocks === false ? [] : ( collection.indexBlocks ?? [] ) )
-                : ( collection.templateBlocks ?? [] );
+                : ( chosen.blocks ?? [] );
+            const layoutTemplate = isIndex ? collection.indexTemplate : chosen.template;
             const page = {
                 id: `collection:${stem}:${surface}`,
                 title: collection.label,
                 slug: stem,
                 blocks,
+                ...( layoutTemplate === undefined ? {} : { template: layoutTemplate } ),
             };
 
             // A paginated index previews through the same window
@@ -268,11 +281,13 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
                 ? ( taxonomy.indexBlocks === false ? [] : ( taxonomy.indexBlocks ?? [] ) )
                 : ( taxonomy.templateBlocks ?? [] );
             const term = taxonomy.terms.find( ( candidate ) => candidate.id === sampleTermId ) ?? taxonomy.terms[ 0 ];
+            const layoutTemplate = isIndex ? taxonomy.indexTemplate : taxonomy.termTemplate;
             const page = {
                 id: `taxonomy:${stem}:${surface}`,
                 title: taxonomy.label,
                 slug: stem,
                 blocks,
+                ...( layoutTemplate === undefined ? {} : { template: layoutTemplate } ),
             };
 
             const assembled = await assemblePage( page, {
@@ -311,7 +326,7 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
 
             for ( const page of site.pages )
             {
-                if ( pagePathSegments( page, treeIndex ).join( '/' ) !== clean ) { continue; }
+                if ( page.slug === '404' || pagePathSegments( page, treeIndex ).join( '/' ) !== clean ) { continue; }
 
                 if ( pageIsDraft( page, treeIndex ) )
                 {
@@ -396,6 +411,40 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
             return { issues: [ { path: clean === '' ? '/' : clean, message: `Nothing is published at "/${clean}".` } ] };
         },
 
+        // The page template canvas (SCHEMA 12.6): the template's chrome
+        // and layout with markers, lit by a sample page's content in
+        // the slot (marker-less: the page edits on its own canvas).
+        async renderPageTemplate ( name, samplePageId = undefined, editing = true )
+        {
+            const site = await loadSiteDirectory( options.contentDirectory, options.packages );
+
+            if ( site.issues.length > 0 ) { return { issues: site.issues }; }
+
+            if ( site.config.templates[ name ] === undefined )
+            {
+                return { issues: [ { path: name, message: `There is no page template "${name}".` } ] };
+            }
+
+            // The slot lights only with a chosen sample (Mikey: default
+            // None); otherwise it is an empty, stamped space.
+            const sample = site.pages.find( ( candidate ) => candidate.id === samplePageId )
+                ?? { id: `template:${name}`, title: name, slug: name, blocks: [] };
+            const assembled = await assemblePage( { ...sample, template: name }, {
+                config: site.config,
+                packages: options.packages,
+                coreComponents: await core(),
+                collections: site.collections,
+                taxonomies: site.taxonomies,
+                entryUrls: resolveEntryUrls( site.pages, site.collections ),
+                blockMarkers: false,
+                templateMarkers: editing,
+                resolvedMenus: resolveMenus( site.config.menus, site.pages, site.collections, site.taxonomies ),
+                ...options.generatorVersion === undefined ? {} : { generatorVersion: options.generatorVersion },
+            } );
+
+            return { html: assembled.html, issues: assembled.issues };
+        },
+
         // The region canvas (SCHEMA 12.5): the region's blocks as
         // their own editable surface - markers on, and the config's
         // own regions stripped so the shell doesn't render the
@@ -406,25 +455,23 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
 
             if ( site.issues.length > 0 ) { return { issues: site.issues }; }
 
-            // Header and footer live in regions; every other name is
-            // a user-defined partial (SCHEMA 12.5) on the same canvas.
-            const blocks = region === 'header' || region === 'footer'
-                ? ( site.config.regions?.[ region ] ?? [] )
-                : site.config.partials?.[ region ];
+            // Every name is a partial (SCHEMA 12.5) on the partial-fit
+            // canvas; header and footer are the two every site has.
+            const blocks = site.config.partials?.[ region ];
 
             if ( blocks === undefined )
             {
                 return { issues: [ { path: region, message: `There is no partial "${region}".` } ] };
             }
 
-            const { regions, ...configWithout } = site.config;
             const assembled = await assemblePage( {
                 id: `region:${region}`,
                 title: region === 'header' ? 'Header' : ( region === 'footer' ? 'Footer' : region ),
                 slug: region,
                 blocks,
             }, {
-                config: configWithout,
+                config: site.config,
+                bare: true,
                 packages: options.packages,
                 coreComponents: await core(),
                 collections: site.collections,
@@ -461,14 +508,14 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
                 return { issues: [ { path: reference, message: `No component answers to "${reference}".` } ] };
             }
 
-            const { regions, ...configWithout } = site.config;
             const assembled = await assemblePage( {
                 id: `sample:${reference}`,
                 title: component.manifest.title,
                 slug: 'component-sample',
                 blocks: [ { component: reference, props: component.manifest.examples[ 0 ]?.props ?? {} } ],
             }, {
-                config: configWithout,
+                config: site.config,
+                bare: true,
                 packages: options.packages,
                 coreComponents: await core(),
                 collections: site.collections,
@@ -505,6 +552,7 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
                 title: String( entry.values.title ?? collection.label ),
                 slug: stem,
                 blocks: entry.blocks ?? [],
+                ...( entryLayoutOf( collection, entry ).template === undefined ? {} : { template: entryLayoutOf( collection, entry ).template } ),
             }, {
                 config: site.config,
                 packages: options.packages,
@@ -529,20 +577,18 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
 
             if ( site.issues.length > 0 ) { return { issues: site.issues }; }
 
-            // Unauthored means unpublished: the pure view declines and
-            // the caller falls back to its plain message; only the
-            // editing canvas renders the empty state.
-            if ( !editing && ( site.config.notFound === undefined || site.config.notFound.length === 0 ) )
+            // The reserved 404 page (SCHEMA 13.6). Unauthored means
+            // unpublished: the pure view declines and the caller falls
+            // back to its plain message; only the editing canvas
+            // renders the empty state.
+            const notFoundPage = site.pages.find( ( page ) => page.slug === '404' ) ?? { id: 'not-found', title: 'Not found', slug: '404', blocks: [] };
+
+            if ( !editing && notFoundPage.blocks.length === 0 )
             {
                 return { issues: [ { path: '404', message: 'No 404 page is authored.' } ] };
             }
 
-            const assembled = await assemblePage( {
-                id: 'not-found',
-                title: 'Not found',
-                slug: '404',
-                blocks: site.config.notFound ?? [],
-            }, {
+            const assembled = await assemblePage( notFoundPage, {
                 config: site.config,
                 packages: options.packages,
                 coreComponents: await core(),
@@ -605,13 +651,14 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
                     const stem = collection.file.replace( /\.json$/, '' );
                     const surfaces = {
                         index: Array.isArray( collection.indexBlocks ) ? collection.indexBlocks : [],
-                        template: collection.templateBlocks ?? [],
+                        ...Object.fromEntries( Object.entries( collection.layouts ).map( ( [ name, layout ] ) => [ `layout-${name}`, layout.blocks ] ) ),
                     };
 
                     for ( const [ kind, blocks ] of Object.entries( surfaces ) )
                     {
+                        const scanTemplate = kind === 'index' ? collection.indexTemplate : collection.layouts[ kind.replace( /^layout-/, '' ) ]?.template;
                         const assembled = await assemblePage(
-                            { id: `scan:${stem}:${kind}`, title: collection.label, slug: stem, blocks },
+                            { id: `scan:${stem}:${kind}`, title: collection.label, slug: stem, blocks, ...( scanTemplate === undefined ? {} : { template: scanTemplate } ) },
                             assembleBase,
                         );
 

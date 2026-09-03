@@ -30,6 +30,9 @@
             --color-control: #DDD9CE;
             --color-control-soft: #EFECE4;
             --color-control-hover: #FFFFFF;
+            --color-button: #FFFFFF;
+            --color-track: rgb(143 136 118 / 15%);
+            --color-highlight: #FBF1DE;
             --color-paper: #F7F5F0;
             --color-ink: #1A1D28;
             --color-text2: #4B4F5C;
@@ -45,6 +48,7 @@
             --color-amber-wash: #FBF1DE;
             --color-amber-soft: #EDD9B4;
             --color-plate: #F3E3C6;
+            --color-media-backdrop: transparent;
             --color-glyph: #CBB57E;
             --color-hairline: #F1EEE7;
             --color-hairline-cap: #EBE8DF;
@@ -58,6 +62,7 @@
             --color-focus-halo: rgba(232, 161, 61, 0.25);
             --shadow-hairline: 0 1px 2px rgba(26, 29, 40, 0.06);
             --shadow-soft: 0 1px 8px rgba(26, 29, 40, 0.05);
+            --shadow-edge: 0 3px 8px rgba(26, 29, 40, 0.07);
             --shadow-card: 0 2px 18px rgba(26, 29, 40, 0.06);
             --shadow-raised: 0 2px 12px rgba(26, 29, 40, 0.08);
             --shadow-chip: 0 1px 4px rgba(26, 29, 40, 0.14);
@@ -90,6 +95,9 @@
             --color-control: #DDD9CE;
             --color-control-soft: #EFECE4;
             --color-control-hover: #FFFFFF;
+            --color-button: #FFFFFF;
+            --color-track: rgb(143 136 118 / 15%);
+            --color-highlight: #FBF1DE;
             --color-paper: #F7F5F0;
             --color-ink: #1A1D28;
             --color-text2: #4B4F5C;
@@ -105,6 +113,7 @@
             --color-amber-wash: #FBF1DE;
             --color-amber-soft: #EDD9B4;
             --color-plate: #F3E3C6;
+            --color-media-backdrop: transparent;
             --color-glyph: #CBB57E;
             --color-hairline: #F1EEE7;
             --color-hairline-cap: #EBE8DF;
@@ -118,6 +127,7 @@
             --color-focus-halo: rgba(232, 161, 61, 0.25);
             --shadow-hairline: 0 1px 2px rgba(26, 29, 40, 0.06);
             --shadow-soft: 0 1px 8px rgba(26, 29, 40, 0.05);
+            --shadow-edge: 0 3px 8px rgba(26, 29, 40, 0.07);
             --shadow-card: 0 2px 18px rgba(26, 29, 40, 0.06);
             --shadow-raised: 0 2px 12px rgba(26, 29, 40, 0.08);
             --shadow-chip: 0 1px 4px rgba(26, 29, 40, 0.14);
@@ -135,15 +145,21 @@
         html[data-theme='dark'] {
             /* BRAND "Dark chrome": chrome-only dark - the site on
                canvas stays light, so paper holds its light value.
-               Amber holds unchanged; grays are the BRAND ink family;
-               in-between steps interpolate within it. */
-            --color-shell: #101218;
-            --color-well: #101218;
-            --color-surface: #1A1D28;
+               Amber holds unchanged; grays are the BRAND ink family.
+               The elevation ladder climbs a FULL tier per level
+               (Mikey: raised pieces were barely lighter than the
+               shell) - shell #101218, panels #1A1D28, cards #232734 -
+               mirroring the light theme's shell/well/white contrast. */
+            --color-shell: #1A1D28;
+            --color-well: #232734;
+            --color-surface: #2D3342;
             --color-input: #232734;
-            --color-control: #232734;
-            --color-control-soft: #1F2330;
-            --color-control-hover: #303542;
+            --color-control: #2D3342;
+            --color-control-soft: #293040;
+            --color-control-hover: #3F4757;
+            --color-button: #3A4150;
+            --color-track: rgba(0, 0, 0, 0.25);
+            --color-highlight: #3F4046;
             --color-paper: #F7F5F0;
             --color-ink: #F7F5F0;
             --color-text2: #C3C3C3;
@@ -155,16 +171,17 @@
             --color-shell-strong: #C3C3C3;
             --color-amber: #E8A13D;
             --color-amber-deep: #CE8A28;
-            --color-amber-text: #D89A3F;
-            --color-amber-wash: #33291A;
-            --color-amber-soft: #4A3B20;
-            --color-plate: #2E2415;
-            --color-glyph: #A08A55;
-            --color-hairline: #232734;
-            --color-hairline-cap: #2A2F3C;
-            --color-border-std: #2E3340;
-            --color-rule: #303542;
-            --color-border-strong: #3D4352;
+            --color-amber-text: #D5A959;
+            --color-amber-wash: #3F4046;
+            --color-amber-soft: #54555B;
+            --color-plate: #474850;
+            --color-media-backdrop: transparent;
+            --color-glyph: #ADA284;
+            --color-hairline: #3A4150;
+            --color-hairline-cap: #3F4757;
+            --color-border-std: #444D5F;
+            --color-rule: #4A5468;
+            --color-border-strong: #576274;
             --color-danger: #CD6B64;
             --color-success: #57A97B;
             --color-on-amber: #1A1D28;
@@ -172,6 +189,7 @@
             --color-focus-halo: rgba(232, 161, 61, 0.3);
             --shadow-hairline: 0 1px 2px rgba(0, 0, 0, 0.25);
             --shadow-soft: 0 1px 8px rgba(0, 0, 0, 0.22);
+            --shadow-edge: 0 3px 8px rgba(0, 0, 0, 0.30);
             --shadow-card: 0 2px 18px rgba(0, 0, 0, 0.25);
             --shadow-raised: 0 2px 12px rgba(0, 0, 0, 0.3);
             --shadow-chip: 0 1px 4px rgba(0, 0, 0, 0.4);
@@ -195,8 +213,32 @@
             user-select: none;
         }
 
+        /* Nothing on the page selects while a drag is on (Mikey): the
+           plugin marks <body> for the duration. */
+        body.sorting, body.sorting * {
+            user-select: none !important;
+            -webkit-user-select: none !important;
+        }
+
         .sort-family-hidden {
             display: none;
+        }
+
+        /* A family in flight: the clone stacks the parent row over its
+           collapsed descendants. Sortable's inline height (measured
+           off the parent row alone) yields to the stack. */
+        .sort-family-clone {
+            display: block;
+            padding: 0 !important;
+            height: auto !important;
+        }
+
+        /* A table row in flight rides inside its own small table so
+           the cells keep their columns off the body. */
+        .sort-clone-table {
+            width: 100%;
+            table-layout: fixed;
+            border-collapse: collapse;
         }
 
         /* Jump-link landing flash: the amber wash blooms behind the
@@ -242,8 +284,198 @@
             }
         }
 
+        /* ---- Sortable lists in flight (UI.md section 1) ----------
+           Every [data-sort-list] (fields, terms, entries, the menu
+           tree) shares this treatment; [data-sort-card] is the list's
+           card and [data-sort-header] the card's header when it has
+           one. These rules are unlayered, so they beat Tailwind's
+           layered utilities on the rows outright.
+
+           The drop slot is the row Sortable walks through the list,
+           as an ABSENCE (Mikey): the center pane's color shows
+           through the card, the rows on either side of the gap wear
+           card edges, so the list reads as two cards with the dragged
+           item lifted out from between them. The slot's content hides
+           (the clone on the cursor already shows it - two copies read
+           as a double) and an amber dashed outline marks the gap, its
+           left edge on the landing indent for the menu tree
+           (--slot-inset; other lists take the default). The pane
+           color bleeds one corner radius past the slot's box under
+           the edge rows (--bleed-top / --bleed-bottom, set by the
+           preview only where an edge row exists). The slot does not
+           animate: Sortable animates every child with transforms, and
+           letting the cut-out and a solid edge row slide past each
+           other left a sliver of the gap on the far side of the row
+           mid-animation; pinned, the gap opens as the rows slide away.
+           A family's slot keeps the family's height, set inline. */
         .sort-drop-slot {
-            opacity: 0.35;
+            position: relative;
+            z-index: 0;
+            border-color: transparent;
+            transform: none !important;
+            transition: none !important;
+        }
+
+        .sort-drop-slot > * {
+            visibility: hidden;
+        }
+
+        .sort-drop-slot::after {
+            content: '';
+            position: absolute;
+            z-index: -1;
+            top: var(--bleed-top, 0);
+            right: 0;
+            bottom: var(--bleed-bottom, 0);
+            left: 0;
+            background: var(--color-well);
+        }
+
+        .sort-drop-slot::before {
+            content: '';
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            bottom: 5px;
+            left: var(--slot-inset, 10px);
+            border: 1.5px dashed var(--color-amber);
+            border-radius: 8px;
+            pointer-events: none;
+            transition: opacity 220ms ease;
+        }
+
+        /* While the islands settle after a slot jump the outline is
+           gone, then it fades back (Mikey). The settling class rides
+           the echo's timer. */
+        .sort-drop-slot.sort-slot-settling::before {
+            opacity: 0;
+            transition: none;
+        }
+
+        /* While an item is lifted, the rows slide OVER the gap, never
+           through it: every row (and the card header) is a solid tile
+           above the slot. The tile is a ::after pseudo, not the row's
+           own background: Sortable writes an inline transition onto
+           every row it slides, which would cancel a transition on the
+           row itself, and the corners and shadow must ease between
+           island and square states (Mikey). The pseudo overlaps the
+           row's own hairline border (it paints above it), so it
+           redraws the hairline itself, and the element's own straight
+           border goes transparent (it showed through the tile's
+           rounded corners). The card goes overflow-visible for the
+           drag so the bottom island's shadow can fall past the card's
+           edge (Mikey); the header tile and the last row carry the
+           card's corner radii so nothing square shows there. The
+           header sits above the row tiles: the first row's tile
+           reaches one pixel up and at equal z painted over the
+           header's hairline. */
+        [data-sort-card]:has(.sort-drop-slot) {
+            overflow: visible;
+        }
+
+        [data-sort-card]:has(.sort-drop-slot) [data-sort-header],
+        [data-sort-list]:has(.sort-drop-slot) > [data-sort-id]:not(.sort-drop-slot) {
+            position: relative;
+            z-index: 1;
+            border-color: transparent;
+        }
+
+        [data-sort-card]:has(.sort-drop-slot) [data-sort-header]::after,
+        [data-sort-list]:has(.sort-drop-slot) > [data-sort-id]:not(.sort-drop-slot)::after {
+            content: '';
+            position: absolute;
+            inset: -1px 0 0 0;
+            z-index: -1;
+            background: var(--color-surface);
+            border-top: 1px solid transparent;
+            transition: border-radius 220ms ease, box-shadow 220ms ease;
+        }
+
+        [data-sort-list]:has(.sort-drop-slot) > [data-sort-id].border-t::after {
+            border-top-color: var(--color-hairline);
+        }
+
+        [data-sort-list]:has(.sort-drop-slot) > .bg-highlight::after {
+            background: var(--color-highlight);
+        }
+
+        [data-sort-card]:has(.sort-drop-slot) [data-sort-header] {
+            z-index: 2;
+        }
+
+        [data-sort-card]:has(.sort-drop-slot) [data-sort-header]::after {
+            inset: 0 0 -1px 0;
+            border-top: 0;
+            border-bottom: 1px solid var(--color-hairline);
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+        }
+
+        /* The header as the upper island (slot first): its shadow,
+           its hairline kept, and FLAT bottom corners (Mikey) - a
+           header alone is not a card. */
+        [data-sort-card]:has(.sort-drop-slot) [data-sort-header].sort-island-bottom::after {
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+
+        /* Outranks the hairline rule above for the lower island's
+           top row (same specificity, later wins). */
+        [data-sort-list]:has(.sort-drop-slot) > [data-sort-id].sort-island-top::after {
+            border-top-color: transparent;
+        }
+
+        /* The echo: when the slot jumps, its old spot would snap back
+           to card surface a beat before the incoming row slides into
+           it (Mikey: "light gray suddenly appears"). A pane-colored
+           echo sits at the old spot under the rows for the length of
+           the slide, so the arriving solid row covers it as it lands,
+           then the echo goes. Positioned against the list. */
+        [data-sort-list] {
+            position: relative;
+        }
+
+        .sort-slot-echo {
+            position: absolute;
+            left: 0;
+            right: 0;
+            z-index: 0;
+            background: var(--color-well);
+            pointer-events: none;
+        }
+
+        /* The card's own shadow fades out while something is lifted
+           and returns on the drop (Mikey). */
+        [data-sort-card] {
+            transition: box-shadow 220ms ease;
+        }
+
+        [data-sort-card]:has(.sort-drop-slot) {
+            box-shadow: 0 0 0 0 transparent;
+        }
+
+        /* Island edges: the bottom row of each island (the row above
+           the gap, the last row of the list, or the card header when
+           the slot sits first) wears the card's bottom corners and
+           its drop shadow; the top row of the lower island wears the
+           top corners. Both ease in and out on the tile. */
+        .sort-island-bottom::after {
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+            border-bottom-color: transparent;
+            box-shadow: var(--shadow-edge);
+        }
+
+        .sort-island-top::after {
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+            border-top-color: transparent;
+        }
+
+        /* A list of one row has nothing to reorder: no grip (Mikey).
+           The drag itself is refused in sortConfig's filter. */
+        [data-sort-list]:has([data-sort-id]:only-of-type) [data-sort-grip] {
+            display: none;
         }
 
         button svg, [role='button'] svg {
@@ -296,6 +528,18 @@
 
         @media (prefers-reduced-motion: reduce) {
             .bootVeil img { animation: none; }
+        }
+
+        /* The brand wears its dark-background variant on dark chrome
+           (BRAND: paper letterforms on dark). Pure CSS, so the boot
+           veil's mark is right from the first paint and the toggle
+           swaps instantly. */
+        html[data-theme='dark'] .casomer-brand-light {
+            display: none;
+        }
+
+        html:not([data-theme='dark']) .casomer-brand-dark {
+            display: none;
         }
 
         /* Branded scrollbars: a quiet rounded thumb in shell tones,
@@ -363,7 +607,8 @@
 <body x-data="studio" class="m-0 flex h-screen flex-col bg-shell font-sans text-ink" @keydown.escape.window="escapePressed()" @keydown.delete.window="deletePressed( $event )" @keydown.ctrl.k.window.prevent="togglePalette()" @keydown.meta.k.window.prevent="togglePalette()">
 
     <div class="bootVeil" :data-state="booting ? 'loading' : 'done'">
-        <img src="./assets/casomer-mark.svg" alt="">
+        <img class="casomer-brand-light" src="./assets/casomer-mark.svg" alt="">
+        <img class="casomer-brand-dark" src="./assets/casomer-mark-dark.svg" alt="">
     </div>
 
     <template id="tpl-field-row">
@@ -498,10 +743,10 @@
                 </button>
             </template>
 
-            <template x-if="field.type === 'image'">
-                <button type="button" class="flex h-16 w-full cursor-pointer items-center justify-center overflow-hidden rounded-[9px] border-0 bg-plate p-0" @click="openMedia()">
+            <template x-if="!isBound && field.type === 'image'">
+                <button type="button" class="flex h-16 w-full cursor-pointer items-center justify-center overflow-hidden rounded-[9px] border border-border-std p-0" :class="typeof value?.src === 'string' && value.src !== '' ? 'bg-transparent' : 'bg-plate'" @click="openMedia()">
                     <template x-if="typeof value?.src === 'string' && value.src !== ''">
-                        <img class="block h-full w-full object-cover" :src="value.src" alt="">
+                        <img class="block h-full w-full bg-media-backdrop object-cover" :src="value.src" alt="">
                     </template>
                     <template x-if="!( typeof value?.src === 'string' && value.src !== '' )">
                         <svg width="26" height="21" viewBox="0 0 40 32" fill="none" class="opacity-70"><rect x="1" y="1" width="38" height="30" rx="3" class="stroke-glyph" stroke-width="2"></rect><circle cx="12" cy="11" r="3" class="stroke-glyph" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" class="stroke-glyph" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
@@ -509,7 +754,7 @@
                 </button>
             </template>
 
-            <template x-if="field.type === 'file'">
+            <template x-if="!isBound && field.type === 'file'">
                 <button type="button" class="flex h-[34px] w-full cursor-pointer items-center gap-2 rounded-[9px] border-0 bg-well px-3 text-left font-sans text-[12.5px]" @click="openMedia()">
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none" class="flex-none"><path d="M9 1.5H4.5A1.5 1.5 0 0 0 3 3v10a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 13V5.5L9 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path><path d="M9 1.5V5.5H13" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path></svg>
                     <span class="min-w-0 flex-1 truncate" :class="typeof value?.name === 'string' && value.name !== '' ? '' : 'text-faint'" x-text="typeof value?.name === 'string' && value.name !== '' ? value.name : $t( 'mediaChooseFile' )"></span>
@@ -547,7 +792,8 @@
     </template>
 
     <header class="flex h-14 flex-none items-center gap-3 pl-[22px] pr-[14px]">
-        <img class="block h-[18px] w-auto" src="./assets/casomer-wordmark-ui.svg" alt="casomer">
+        <img class="casomer-brand-light block h-[18px] w-auto" src="./assets/casomer-wordmark-ui.svg" alt="casomer">
+        <img class="casomer-brand-dark block h-[18px] w-auto" src="./assets/casomer-wordmark-ui-dark.svg" alt="casomer">
         <div class="mx-0.5 text-[15px] font-light text-shell-soft">|</div>
         <div class="text-[15px] font-semibold text-text2" x-text="projectName"></div>
 
@@ -566,7 +812,7 @@
                     <div class="text-[12.5px] font-semibold" x-text="$t( 'discardQuestion' )"></div>
                     <div class="mt-1 text-[11.5px] leading-relaxed text-muted" x-text="$t( 'discardNote' )"></div>
                     <div class="mt-3 flex justify-end gap-2">
-                        <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-xs text-text2" x-text="$t( 'discardCancel' )" @click="discardOpen = false"></button>
+                        <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-xs text-text2" x-text="$t( 'discardCancel' )" @click="discardOpen = false"></button>
                         <button type="button" class="cursor-pointer rounded-[8px] border-0 bg-danger px-3 py-1.5 font-sans text-xs font-semibold text-surface" x-text="$t( 'discardConfirm' )" @click="discardChanges()"></button>
                     </div>
                 </div>
@@ -579,7 +825,7 @@
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H4A1.5 1.5 0 0 0 2.5 5v7A1.5 1.5 0 0 0 4 13.5h7a1.5 1.5 0 0 0 1.5-1.5V9.5M9.5 2.5h4v4M13.2 2.8L8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
         </button>
 
-        <div class="flex gap-[2px] rounded-[9px] bg-control p-[3px]" x-show="canvasActive" role="radiogroup" :aria-label="$t( 'viewportGroup' )">
+        <div class="flex gap-[2px] rounded-[9px] bg-track p-[3px]" x-show="canvasActive" role="radiogroup" :aria-label="$t( 'viewportGroup' )">
             <button type="button" class="flex h-[26px] w-8 cursor-pointer items-center justify-center rounded-[7px] border-0 transition-colors duration-100" :class="viewport === 'desktop' ? 'bg-surface text-ink' : 'bg-transparent text-shell-muted'" :aria-label="$t( 'viewportDesktop' )" @click="viewport = 'desktop'">
                 <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="3" width="13" height="8.5" rx="1" stroke="currentColor" stroke-width="1.4"></rect><path d="M5.5 14h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
             </button>
@@ -606,7 +852,7 @@
         </button>
 
         <div class="ml-0.5 flex w-[292px] flex-none items-center gap-3">
-            <button type="button" class="flex flex-1 cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border border-border-strong bg-surface py-[7px] font-sans text-[13px] text-text2" @click="saveVersion()">
+            <button type="button" class="flex flex-1 cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border border-border-strong bg-button py-[7px] font-sans text-[13px] text-text2" @click="saveVersion()">
                 <svg width="15" height="15" viewBox="0 0 640 640" fill="currentColor"><path d="M160 144C151.2 144 144 151.2 144 160L144 480C144 488.8 151.2 496 160 496L480 496C488.8 496 496 488.8 496 480L496 237.3C496 233.1 494.3 229 491.3 226L416 150.6L416 240C416 257.7 401.7 272 384 272L224 272C206.3 272 192 257.7 192 240L192 144L160 144zM240 144L240 224L368 224L368 144L240 144zM96 160C96 124.7 124.7 96 160 96L402.7 96C419.7 96 436 102.7 448 114.7L525.3 192C537.3 204 544 220.3 544 237.3L544 480C544 515.3 515.3 544 480 544L160 544C124.7 544 96 515.3 96 480L96 160zM256 384C256 348.7 284.7 320 320 320C355.3 320 384 348.7 384 384C384 419.3 355.3 448 320 448C284.7 448 256 419.3 256 384z"></path></svg>
                 <span x-text="saveLabel"></span>
             </button>
@@ -614,23 +860,52 @@
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 10.5V3M4.8 6.2L8 3l3.2 3.2M3 11.5V13h10v-1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                 <span x-text="publishLabel"></span>
             </button>
-            <div class="flex h-[30px] w-[30px] flex-none items-center justify-center overflow-hidden rounded-full bg-ink text-shell" aria-hidden="true">
-                <template x-if="hasAvatar">
-                    <img class="block h-full w-full object-cover" src="/api/avatar" alt="">
-                </template>
-                <template x-if="!hasAvatar">
-                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                        <circle cx="8" cy="5.1" r="2.7" fill="currentColor"></circle>
-                        <path d="M8 8.9 a4.4 4.4 0 0 0 -4.4 4.4 v0.1 a1.2 1.2 0 0 0 1.2 1.2 h6.4 a1.2 1.2 0 0 0 1.2 -1.2 v-0.1 A4.4 4.4 0 0 0 8 8.9 z" fill="currentColor"></path>
-                    </svg>
+            <div class="relative flex-none" @click.outside="userMenuOpen = false">
+                <button type="button" class="flex h-[30px] w-[30px] cursor-pointer items-center justify-center overflow-hidden rounded-full border-0 bg-ink p-0 text-shell" :aria-label="$t( 'userMenu' )" @click="userMenuOpen = !userMenuOpen">
+                    <template x-if="hasAvatar">
+                        <img class="block h-full w-full object-cover" src="/api/avatar" alt="">
+                    </template>
+                    <template x-if="!hasAvatar">
+                        <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                            <circle cx="8" cy="5.1" r="2.7" fill="currentColor"></circle>
+                            <path d="M8 8.9 a4.4 4.4 0 0 0 -4.4 4.4 v0.1 a1.2 1.2 0 0 0 1.2 1.2 h6.4 a1.2 1.2 0 0 0 1.2 -1.2 v-0.1 A4.4 4.4 0 0 0 8 8.9 z" fill="currentColor"></path>
+                        </svg>
+                    </template>
+                </button>
+                <template x-if="userMenuOpen">
+                    <div class="absolute right-0 top-[38px] z-40 w-[232px] rounded-xl bg-surface p-1.5 shadow-[var(--shadow-float)]">
+                        <div class="px-2.5 pb-2 pt-1.5">
+                            <div class="truncate text-[13px] font-semibold" x-text="userName"></div>
+                            <div class="truncate text-[11px] text-muted" x-text="userEmail"></div>
+                        </div>
+                        <div class="my-1 border-t border-hairline"></div>
+                        <button type="button" class="block w-full cursor-pointer rounded-[7px] border-0 bg-transparent px-2.5 py-1.5 text-left font-sans text-[12px] text-ink hover:bg-well" x-text="$t( 'navSiteSettings' )" @click="userMenuGo( 'settings' )"></button>
+                        <button type="button" class="block w-full cursor-pointer rounded-[7px] border-0 bg-transparent px-2.5 py-1.5 text-left font-sans text-[12px] text-ink hover:bg-well" x-text="$t( 'navTheme' )" @click="userMenuGo( 'theme' )"></button>
+                        <button type="button" class="block w-full cursor-pointer rounded-[7px] border-0 bg-transparent px-2.5 py-1.5 text-left font-sans text-[12px] text-ink hover:bg-well" x-text="$t( 'navMedia' )" @click="userMenuGo( 'media' )"></button>
+                        <div class="my-1 border-t border-hairline"></div>
+                        <div class="px-2.5 pb-1 pt-1 text-[10.5px] text-faint" x-text="studioVersionLine"></div>
+                    </div>
                 </template>
             </div>
         </div>
     </header>
 
+    <template x-if="discardPrompt !== null">
+        <div class="fixed inset-0 z-[60] flex items-center justify-center bg-veil" @click.self="keepEditing()">
+            <div class="box-border w-[380px] rounded-xl bg-surface px-7 py-[24px] shadow-[var(--shadow-modal)]" @keydown.escape.stop="keepEditing()">
+                <div class="text-[15px] font-semibold" x-text="$t( 'discardQuestion' )"></div>
+                <p class="m-0 mt-1.5 text-[12px] leading-relaxed text-muted" x-text="$t( 'discardDetail' )"></p>
+                <div class="mt-5 flex justify-end gap-2.5">
+                    <button type="button" class="cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-surface px-3.5 py-[7px] font-sans text-[12.5px] font-semibold text-text2" x-text="$t( 'keepEditing' )" @click="keepEditing()"></button>
+                    <button type="button" class="cursor-pointer whitespace-nowrap rounded-lg border-0 bg-danger px-3.5 py-[7px] font-sans text-[12.5px] font-semibold text-on-amber" x-text="$t( 'discardWord' )" @click="confirmDiscard()"></button>
+                </div>
+            </div>
+        </div>
+    </template>
+
     <template x-if="createKind !== null">
-        <div class="fixed inset-0 z-50 flex items-center justify-center bg-veil" @click.self="createKind = null">
-            <div class="box-border flex max-h-[80vh] w-[440px] flex-col rounded-xl bg-surface px-7 py-[26px] shadow-[var(--shadow-modal)]" x-ref="createForm" @keydown.escape.stop="createKind = null">
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-veil" @click.self="closeCreate()">
+            <div class="box-border flex max-h-[80vh] w-[440px] flex-col rounded-xl bg-surface px-7 py-[26px] shadow-[var(--shadow-modal)]" x-ref="createForm" @keydown.escape.stop="closeCreate()">
                 <div class="flex-none text-[17px] font-semibold" x-text="createTitleLine"></div>
 
                 <template x-if="createKind === 'entry'">
@@ -693,7 +968,7 @@
 
                 <div class="mt-[22px] flex flex-none items-center">
                     <div class="flex-1"></div>
-                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-surface px-4 py-2 font-sans text-[13px] text-text2" x-text="$t( 'cancel' )" @click="createKind = null"></button>
+                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-button px-4 py-2 font-sans text-[13px] text-text2" x-text="$t( 'cancel' )" @click="closeCreate()"></button>
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border-0 bg-amber px-[18px] py-2 font-sans text-[13px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="createConfirmLine" @click="submitCreate()"></button>
                 </div>
             </div>
@@ -709,7 +984,7 @@
                 </div>
                 <div class="flex items-center px-[22px] pb-[18px] pt-4">
                     <div class="flex-1"></div>
-                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-surface px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'cancel' )" @click="renameConfirmOpen = false"></button>
+                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-button px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'cancel' )" @click="renameConfirmOpen = false"></button>
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[9px] border-0 bg-amber px-[18px] py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="$t( 'renameConfirm' )" @click="confirmRename()"></button>
                 </div>
                 <div class="border-t border-hairline bg-input px-[22px] pb-3.5 pt-[11px]">
@@ -728,7 +1003,7 @@
                 </div>
                 <div class="flex items-center px-[22px] pb-[18px] pt-4">
                     <div class="flex-1"></div>
-                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-surface px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'cancel' )" @click="addressConfirmOpen = false"></button>
+                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-button px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'cancel' )" @click="addressConfirmOpen = false"></button>
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[9px] border-0 bg-amber px-[18px] py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="$t( 'addressConfirm' )" @click="confirmAddressChange()"></button>
                 </div>
                 <div class="border-t border-hairline bg-input px-[22px] pb-3.5 pt-[11px]">
@@ -747,7 +1022,7 @@
                 </div>
                 <div class="flex items-center px-[22px] pb-[18px] pt-4">
                     <div class="flex-1"></div>
-                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-surface px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'cancel' )" @click="commercialAssentOpen = false"></button>
+                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-button px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'cancel' )" @click="commercialAssentOpen = false"></button>
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[9px] border-0 bg-amber px-[18px] py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="$t( 'commercialAssentConfirm' )" @click="setDeclaredUse( 'commercial' )"></button>
                 </div>
             </div>
@@ -764,7 +1039,7 @@
                 <div class="flex items-center px-[22px] pb-[18px] pt-4">
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-danger bg-transparent px-3.5 py-2 font-sans text-[12.5px] font-semibold text-danger" x-text="$t( 'discardEntryAction' )" @click="discardEntryAndGo()"></button>
                     <div class="flex-1"></div>
-                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-surface px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'discardCancel' )" @click="cancelAbandon()"></button>
+                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-button px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'discardCancel' )" @click="cancelAbandon()"></button>
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[9px] border-0 bg-amber px-[18px] py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="$t( 'keepDraft' )" @click="keepDraftAndGo()"></button>
                 </div>
                 <div class="border-t border-hairline bg-input px-[22px] pb-3.5 pt-[11px]">
@@ -787,7 +1062,7 @@
                     @drop.prevent="mediaDropped( $event )"
                 >
                     <template x-if="mediaPicker.kind !== 'file' && mediaPicker.draft.src !== ''">
-                        <img class="block max-h-48 w-auto max-w-full rounded-[6px]" :src="mediaPicker.draft.src" alt="">
+                        <img class="block max-h-48 w-auto max-w-full rounded-[6px] border border-border-std bg-media-backdrop" :src="mediaPicker.draft.src" alt="">
                     </template>
                     <template x-if="mediaPicker.kind === 'file' && mediaPicker.draft.src !== ''">
                         <div class="text-[12.5px] font-semibold" x-text="mediaPicker.draft.name"></div>
@@ -803,7 +1078,7 @@
                     <div class="mt-1 max-w-full truncate px-2 text-[11px] text-shell-faint" x-show="mediaPicker.kind !== 'file' && mediaPicker.draft.name !== ''" x-text="mediaPicker.draft.name"></div>
                 </div>
 
-                <button type="button" x-show="mediaPickerLibrary.length > 0" class="mt-3 flex-none cursor-pointer self-start rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'mediaLibraryPick' )" @click="openMediaBrowse()"></button>
+                <button type="button" x-show="mediaPickerLibrary.length > 0" class="mt-3 flex-none cursor-pointer self-start rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'mediaLibraryPick' )" @click="openMediaBrowse()"></button>
 
                 <template x-if="mediaPicker.kind !== 'file'">
                     <div class="mt-4 flex flex-none flex-col gap-3.5">
@@ -826,7 +1101,7 @@
                 <div class="mt-[22px] flex flex-none items-center">
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border border-danger bg-transparent px-3.5 py-2 font-sans text-[12.5px] font-semibold text-danger" x-show="mediaPicker.hadValue" x-text="$t( 'removeWord' )" @click="clearMediaPicker()"></button>
                     <div class="flex-1"></div>
-                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-surface px-4 py-2 font-sans text-[13px] text-text2" x-text="$t( 'cancel' )" @click="mediaPicker = null"></button>
+                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-button px-4 py-2 font-sans text-[13px] text-text2" x-text="$t( 'cancel' )" @click="mediaPicker = null"></button>
                     <button type="button" class="flex-none whitespace-nowrap rounded-lg border-0 bg-amber px-[18px] py-2 font-sans text-[13px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" :class="mediaPicker.draft.src === '' ? 'cursor-default opacity-45' : 'cursor-pointer'" :disabled="mediaPicker.draft.src === ''" x-text="$t( mediaPicker.kind === 'file' ? 'mediaUseFile' : 'mediaUseImage' )" @click="applyMediaPicker()"></button>
                 </div>
             </div>
@@ -863,7 +1138,7 @@
                     <template x-for="mediaFile in mediaBrowseResults" :key="mediaFile.file">
                         <button type="button" class="cursor-pointer overflow-hidden rounded-[9px] border-2 bg-well p-0 text-left font-sans" :class="mediaPicker !== null && mediaPicker.draft.src === mediaFile.url ? 'border-amber' : 'border-transparent'" @click="chooseBrowseMedia( mediaFile )">
                             <template x-if="mediaIsImage( mediaFile.file )">
-                                <img class="block h-[76px] w-full bg-plate object-cover" :src="mediaFile.url" alt="">
+                                <img class="block h-[76px] w-full bg-media-backdrop object-cover" :src="mediaFile.url" alt="">
                             </template>
                             <template x-if="!mediaIsImage( mediaFile.file )">
                                 <div class="flex h-[76px] w-full items-center justify-center bg-plate">
@@ -891,7 +1166,7 @@
                 </div>
                 <div class="flex items-center px-[22px] pb-[18px] pt-4">
                     <div class="flex-1"></div>
-                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-surface px-4 py-2 font-sans text-[12.5px] text-text2" x-text="restoreNameLine" @click="revertMetaName()"></button>
+                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-button px-4 py-2 font-sans text-[12.5px] text-text2" x-text="restoreNameLine" @click="revertMetaName()"></button>
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[9px] border-0 bg-amber px-[18px] py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="$t( 'discardCancel' )" @click="keepEditingMetaName()"></button>
                 </div>
             </div>
@@ -911,7 +1186,7 @@
                 </div>
                 <div class="flex items-center px-[22px] pb-[18px] pt-4">
                     <div class="flex-1"></div>
-                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-surface px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'discardCancel' )" @click="saveConfirmOpen = false"></button>
+                    <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-button px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'discardCancel' )" @click="saveConfirmOpen = false"></button>
                     <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[9px] border-0 bg-amber px-[18px] py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="$t( 'saveAnyway' )" @click="saveVersion( true )"></button>
                 </div>
                 <div class="border-t border-hairline bg-input px-[22px] pb-3.5 pt-[11px]">
@@ -957,7 +1232,16 @@
                     </button>
                 </div>
                 <template x-if="!navCollapsed.pages">
-                    <div class="flex flex-col gap-0.5">
+                    <div class="flex min-h-[96px] max-h-[44vh] flex-col gap-0.5 overflow-y-auto">
+                    <button
+                        type="button"
+                        class="flex h-[30px] w-full cursor-pointer items-center gap-[9px] rounded-[9px] border-0 px-2.5 text-left font-sans text-[13px] transition-colors duration-100"
+                        :class="workspace === 'pages' ? 'bg-surface font-semibold text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent font-normal text-text2'"
+                        @click="openPagesWorkspace()"
+                    >
+                        <svg class="flex-none" :class="workspace === 'pages' ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="12" height="11" rx="1.5" stroke="currentColor" stroke-width="1.4"></rect><path d="M2 6h12M6 6v7.5" stroke="currentColor" stroke-width="1.4"></path></svg>
+                        <span class="min-w-0 flex-1 truncate" x-text="$t( 'navAllPages' )"></span>
+                    </button>
                         <template x-for="row in pageTree" :key="row.page.id">
                             <button
                                 type="button"
@@ -966,7 +1250,15 @@
                                 :style="'padding-left: ' + ( 10 + row.depth * 14 ) + 'px'"
                                 @click="selectPage( row.page.id )"
                             >
-                                <svg class="flex-none" :class="workspace === 'page' && row.page.id === selectedPageId ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 1.5h5.5L13 5v9.5H4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path><path d="M9.5 1.5V5H13" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path></svg>
+<template x-if="row.page.slug === 'home'">
+                                    <svg class="flex-none" :class="workspace === 'page' && row.page.id === selectedPageId ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 7.5L8 2.5l5.5 5v6a1 1 0 0 1-1 1h-3v-4H6.5v4h-3a1 1 0 0 1-1-1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path></svg>
+                                </template>
+                                <template x-if="row.page.slug === '404'">
+                                    <svg class="flex-none" :class="workspace === 'page' && row.page.id === selectedPageId ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"></circle><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg>
+                                </template>
+                                <template x-if="row.page.slug !== 'home' && row.page.slug !== '404'">
+                                    <svg class="flex-none" :class="workspace === 'page' && row.page.id === selectedPageId ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M4 1.5h5.5L13 5v9.5H4z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path><path d="M9.5 1.5V5H13" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path></svg>
+                                </template>
                                 <span class="min-w-0 flex-1 truncate" x-text="row.page.title"></span>
                                 <span class="h-[5px] w-[5px] flex-none rounded-full bg-amber" x-show="pageIsDirty( row.page.id )"></span>
                                 <span x-show="row.page.draft" class="rounded-full bg-amber-wash px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-amber-text" x-text="$t( 'stateDraft' )"></span>
@@ -1035,36 +1327,52 @@
                 </template>
 
                 <div class="flex items-center px-2.5 pb-[7px] pt-4 text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint">
-                    <button type="button" class="flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-sans text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" :aria-label="$t( 'toggleSection' )" @click="navCollapsed.menus = !navCollapsed.menus">
-                        <span x-text="$t( 'navMenus' )"></span>
-                        <svg width="9" height="9" viewBox="0 0 16 16" fill="none" class="transition-transform" :class="navCollapsed.menus ? '-rotate-90' : 'rotate-0'"><path d="M3.5 6L8 10.5L12.5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                    </button>
-                    <span class="flex-1"></span>
-                    <button type="button" class="flex cursor-pointer border-0 bg-transparent p-0 text-shell-faint" :aria-label="$t( 'addMenu' )" @click="startNavCreate( 'menu' )">
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>
+                    <button type="button" class="flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 font-sans text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" :aria-label="$t( 'toggleSection' )" @click="navCollapsed.site = !navCollapsed.site">
+                        <span x-text="$t( 'navSite' )"></span>
+                        <svg width="9" height="9" viewBox="0 0 16 16" fill="none" class="transition-transform" :class="navCollapsed.site ? '-rotate-90' : 'rotate-0'"><path d="M3.5 6L8 10.5L12.5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                     </button>
                 </div>
-                <template x-if="!navCollapsed.menus">
+                <template x-if="!navCollapsed.site">
                 <div class="flex flex-col gap-0.5">
-                <template x-for="name in menuNames" :key="name">
                     <button
                         type="button"
-                        class="flex h-[30px] cursor-pointer items-center gap-[9px] rounded-[9px] border-0 px-2.5 text-left font-sans text-[13px] transition-colors duration-100"
-                        :class="workspace === 'menu' && menuName === name ? 'bg-surface font-semibold text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent font-normal text-text2'"
-                        @click="openMenu( name )"
+                        class="flex h-[30px] w-full cursor-pointer items-center gap-[9px] rounded-[9px] border-0 px-2.5 text-left font-sans text-[13px] transition-colors duration-100"
+                        :class="workspace === 'site' && siteView === 'partials' || ( workspace === 'settings' && surface !== null && surface !== 'notFound' ) ? 'bg-surface font-semibold text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent font-normal text-text2'"
+                        @click="openSiteWorkspace( 'partials' )"
                     >
-                        <svg class="flex-none" :class="workspace === 'menu' && menuName === name ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
-                        <span class="flex-1 truncate" x-text="name"></span>
+                        <svg class="flex-none" :class="workspace === 'site' && siteView === 'partials' || ( workspace === 'settings' && surface !== null && surface !== 'notFound' ) ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="4.5" width="12" height="7" rx="1.5" stroke="currentColor" stroke-width="1.4"></rect></svg>
+                        <span class="min-w-0 flex-1 truncate" x-text="$t( 'navPartials' )"></span>
                     </button>
-                </template>
+                    <button
+                        type="button"
+                        class="flex h-[30px] w-full cursor-pointer items-center gap-[9px] rounded-[9px] border-0 px-2.5 text-left font-sans text-[13px] transition-colors duration-100"
+                        :class="workspace === 'site' && siteView === 'menus' || workspace === 'menu' ? 'bg-surface font-semibold text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent font-normal text-text2'"
+                        @click="openSiteWorkspace( 'menus' )"
+                    >
+                        <svg class="flex-none" :class="workspace === 'site' && siteView === 'menus' || workspace === 'menu' ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
+                        <span class="min-w-0 flex-1 truncate" x-text="$t( 'navMenus' )"></span>
+                    </button>
+                    <button
+                        type="button"
+                        class="flex h-[30px] w-full cursor-pointer items-center gap-[9px] rounded-[9px] border-0 px-2.5 text-left font-sans text-[13px] transition-colors duration-100"
+                        :class="workspace === 'site' && siteView === 'templates' || workspace === 'template' ? 'bg-surface font-semibold text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent font-normal text-text2'"
+                        @click="openSiteWorkspace( 'templates' )"
+                    >
+                        <svg class="flex-none" :class="workspace === 'site' && siteView === 'templates' || workspace === 'template' ? 'text-amber' : 'text-shell-muted'" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.4"></rect><path d="M2 6h12M6 6v8" stroke="currentColor" stroke-width="1.4"></path></svg>
+                        <span class="min-w-0 flex-1 truncate" x-text="$t( 'viewTemplates' )"></span>
+                    </button>
                 </div>
                 </template>
             </div>
 
-            <div class="pt-2.5" :class="overflowing && 'border-t border-border-std'">
+            <div class="flex flex-col gap-0.5 pt-2.5" :class="overflowing && 'border-t border-border-std'">
                 <button type="button" class="flex h-[30px] w-full cursor-pointer items-center gap-[9px] rounded-[9px] border-0 px-2.5 text-left font-sans text-[12.5px]" :class="workspace === 'media' ? 'bg-surface font-semibold text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent text-text2'" @click="openMediaWorkspace()">
                     <svg class="flex-none text-shell-muted" width="14" height="14" viewBox="0 0 40 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="37" height="29" rx="4"></rect><circle cx="12" cy="11" r="3"></circle><path d="M6 26l9-9 6 6 5-5 8 8"></path></svg>
                     <span x-text="$t( 'navMedia' )"></span>
+                </button>
+                <button type="button" class="flex h-[30px] w-full cursor-pointer items-center gap-[9px] rounded-[9px] border-0 px-2.5 text-left font-sans text-[12.5px]" :class="workspace === 'theme' ? 'bg-surface font-semibold text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent font-normal text-text2'" @click="openTheme()">
+                    <svg class="flex-none text-shell-muted" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2a6 6 0 1 0 0 12h1.2a1.3 1.3 0 0 0 1-2.1 1.3 1.3 0 0 1 1-2.1H12.5A2.5 2.5 0 0 0 15 7.3 6 6 0 0 0 8 2z"></path><circle cx="5.5" cy="7" r="0.9" fill="currentColor"></circle><circle cx="8" cy="5" r="0.9" fill="currentColor"></circle><circle cx="10.8" cy="6.2" r="0.9" fill="currentColor"></circle></svg>
+                    <span x-text="$t( 'navTheme' )"></span>
                 </button>
                 <button type="button" class="flex h-[30px] w-full cursor-pointer items-center gap-[9px] rounded-[9px] border-0 px-2.5 text-left font-sans text-[12.5px]" :class="workspace === 'settings' ? 'bg-surface font-semibold text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent text-text2'" @click="openSettings()">
                     <svg class="flex-none text-shell-muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
@@ -1105,9 +1413,10 @@
                         <div class="text-[16px] font-bold" x-text="collectionDisplayLabel"></div>
                         <div class="text-[11.5px] text-shell-muted" x-text="collectionMeta"></div>
                         <div class="flex-1"></div>
-                        <div class="mr-1.5 flex gap-[2px] rounded-[9px] bg-control p-[3px]">
+                        <div class="mr-1.5 flex gap-[2px] rounded-[9px] bg-track p-[3px]">
                             <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-1 font-sans text-[11.5px] font-semibold transition-colors duration-100" :class="collectionView === 'entries' ? 'bg-surface text-ink' : 'bg-transparent text-shell-muted'" x-text="$t( 'viewEntries' )" @click="showEntriesView()"></button>
                             <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-1 font-sans text-[11.5px] font-semibold transition-colors duration-100" :class="collectionView === 'fields' ? 'bg-surface text-ink' : 'bg-transparent text-shell-muted'" x-text="$t( 'viewFields' )" @click="openFields()"></button>
+                            <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-1 font-sans text-[11.5px] font-semibold transition-colors duration-100" :class="collectionView === 'layouts' ? 'bg-surface text-ink' : 'bg-transparent text-shell-muted'" x-text="$t( 'viewLayouts' )" @click="showLayoutsView()"></button>
                         </div>
                         <button type="button" class="flex w-[118px] cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border-0 bg-amber py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-show="collectionView === 'entries'" @click="openCreate( 'entry' )">
                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
@@ -1117,12 +1426,72 @@
                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
                             <span x-text="$t( 'addField' )"></span>
                         </button>
+                        <button type="button" class="flex w-[128px] cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border-0 bg-amber py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-show="collectionView === 'layouts'" @click="startNavCreate( 'layout' )">
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+                            <span x-text="$t( 'addLayout' )"></span>
+                        </button>
                     </div>
 
-                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]" x-show="collectionView === 'entries'">
+                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]" x-show="collectionView === 'layouts'">
                         <table class="w-full border-collapse">
                             <thead>
                                 <tr class="border-b border-hairline">
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnLayout' )"></th>
+                                    <th class="w-[200px] px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnTemplate' )"></th>
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnPurpose' )"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="cursor-pointer" :class="collectionEditor?.index === false && 'text-muted'" @click="collectionEditor?.index === false ? toggleCollectionSetting( 'index' ) : openSurface( 'index' )">
+                                    <td class="px-[18px] py-3 text-[13px] font-semibold">
+                                        <span class="flex items-center gap-2">
+                                            <svg class="shrink-0 text-shell-muted" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 3h11M2.5 6.5h11M2.5 10h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
+                                            <span x-text="$t( 'layoutIndexPage' )"></span>
+                                        </span>
+                                    </td>
+                                    <td class="px-[18px] py-2" @click.stop>
+                                        <button type="button" class="h-[30px] cursor-pointer whitespace-nowrap rounded-[8px] border border-border-strong bg-button px-3 font-sans text-[12px] font-semibold text-text2" x-show="collectionEditor?.index === false" x-text="$t( 'createIndexLayout' )" @click="toggleCollectionSetting( 'index' )"></button>
+                                        <select x-show="collectionEditor?.index !== false" class="h-[30px] w-full cursor-pointer rounded-[8px] border border-border-std bg-surface px-2 font-sans text-[12px] text-ink" @change="setLayoutTemplate( 'index', $event.target.value )">
+                                            <template x-for="name in templateNames" :key="name">
+                                                <option :value="name" x-text="name" :selected="name === ( collectionEditor?.indexTemplate ?? 'default' )"></option>
+                                            </template>
+                                        </select>
+                                    </td>
+                                    <td class="px-[18px] py-3 text-[12.5px] text-text2" x-text="$t( collectionEditor?.index === false ? 'layoutIndexOffNote' : 'layoutIndexNote' )"></td>
+                                </tr>
+                                <template x-for="( layout, layoutIndex ) in layoutRows" :key="layout.name">
+                                <tr class="cursor-pointer border-t border-hairline" :class="layoutsRowName === layout.name ? 'bg-amber-wash' : ''" @click="selectLayoutRow( layout.name )">
+                                    <td class="px-[18px] py-3 text-[13px] font-semibold">
+                                        <span class="flex items-center gap-2">
+                                            <svg class="shrink-0 text-shell-muted" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.4"></rect><path d="M2 6h12M6 6v8" stroke="currentColor" stroke-width="1.4"></path></svg>
+                                            <span x-text="layout.name"></span>
+                                            <span x-show="layout.name === 'default'" class="rounded-full bg-control-soft px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-muted" x-text="$t( 'templateDefaultChip' )"></span>
+                                        </span>
+                                    </td>
+                                    <td class="px-[18px] py-2" @click.stop>
+                                        <select class="h-[30px] w-full cursor-pointer rounded-[8px] border border-border-std bg-surface px-2 font-sans text-[12px] text-ink" @change="setNamedLayoutTemplate( layout.name, $event.target.value )">
+                                            <template x-for="name in templateNames" :key="name">
+                                                <option :value="name" x-text="name" :selected="name === ( layout.template ?? 'default' )"></option>
+                                            </template>
+                                        </select>
+                                    </td>
+                                    <td class="px-[18px] py-3 text-[12.5px] text-text2">
+                                        <div class="flex items-center gap-1.5">
+                                            <span class="min-w-0 flex-1" x-text="layoutFollowersLine( layout )"></span>
+                                            <button type="button" class="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" :aria-label="$t( 'editLayoutWord' )" @click.stop="openLayoutCanvas( layout.name )"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M9.7 3.2l3.1 3.1L5.6 13.5l-3.4.3.3-3.4 7.2-7.2zM8.5 4.4l3.1 3.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+                                            <button type="button" x-show="layout.name !== 'default'" class="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control hover:text-danger" :aria-label="$t( 'deleteLayout' )" @click.stop="openRowDelete( 'layout', layout.name )"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2.5 4h11M5.5 4V2.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4M4 4l.7 9a1.2 1.2 0 0 0 1.2 1.1h4.2a1.2 1.2 0 0 0 1.2-1.1L12 4M6.6 6.8v4.8M9.4 6.8v4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div data-sort-card class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]" x-show="collectionView === 'entries'">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr data-sort-header class="border-b border-hairline">
                                     <template x-for="column in entryColumns" :key="column">
                                         <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="columnLabel( column )"></th>
                                     </template>
@@ -1130,14 +1499,14 @@
                                     <th class="w-[116px] px-[18px] pb-2.5 pt-2.5"></th>
                                 </tr>
                             </thead>
-                            <tbody x-sort="( item, position ) => sortRows( 'entry', $el )" x-sort:config="sortConfig">
+                            <tbody data-sort-list x-sort="( item, position ) => sortRows( 'entry', $el )" x-sort:config="sortConfig">
                                 <template x-for="( entry, entryIndex ) in collectionEditor?.entries ?? []" :key="entry.id + '-' + sortEpoch">
-                                    <tr class="cursor-pointer" :class="( entry.id === selectedEntryId ? 'bg-amber-wash ' : '' ) + ( entryIndex > 0 ? 'border-t border-hairline' : '' )" x-sort:item="entry.id" :data-sort-id="entry.id" @click="selectEntry( entry.id )">
+                                    <tr class="cursor-pointer" :class="( entry.id === selectedEntryId ? 'bg-highlight ' : '' ) + ( entryIndex > 0 ? 'border-t border-hairline' : '' )" x-sort:item="entry.id" :data-sort-id="entry.id" @click="selectEntry( entry.id )">
                                         <template x-for="( column, columnIndex ) in entryColumns" :key="column">
                                             <td class="px-[18px] py-3" :class="columnIndex === 0 ? ( entry.id === selectedEntryId ? 'text-[13px] font-semibold' : 'text-[13px]' ) : 'text-[12px] text-text2'">
                                                 <span class="flex items-center">
                                                     <template x-if="columnIndex === 0">
-                                                        <svg width="10" height="14" viewBox="0 0 10 14" class="mr-2.5 shrink-0 fill-shell-faint"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg>
+                                                        <svg data-sort-grip width="10" height="14" viewBox="0 0 10 14" class="mr-2.5 shrink-0 fill-shell-faint"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg>
                                                     </template>
                                                     <span x-text="cellText( entry, column )"></span>
                                                 </span>
@@ -1145,11 +1514,11 @@
                                         </template>
                                         <td class="px-[18px] py-3 text-right text-[12px]">
                                             <span x-show="entry.draft === true" class="rounded-full bg-amber-wash px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-text" x-text="$t( 'stateDraft' )"></span>
-                                            <span x-show="entry.draft !== true" :class="entry.hasOwnBlocks ? 'text-amber-text' : 'text-faint'" x-text="$t( entry.hasOwnBlocks ? 'stateCustomized' : 'stateTemplate' )"></span>
+                                            <span x-show="entry.draft !== true" :class="entry.hasOwnBlocks ? 'text-amber-text' : 'text-faint'" x-text="entry.hasOwnBlocks ? $t( 'stateCustomized' ) : ( entry.layout ?? 'default' )"></span>
                                         </td>
                                         <td class="px-[18px] py-3">
                                             <div class="flex items-center justify-end gap-1.5">
-                                                <button type="button" x-show="collectionEditor.index !== false" class="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" :aria-label="$t( 'previewEntryPage' )" @click.stop="previewEntryPage( entry.id )">
+                                                <button type="button" x-show="collectionEditor?.index !== false" class="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" :aria-label="$t( 'previewEntryPage' )" @click.stop="previewEntryPage( entry.id )">
                                                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H4A1.5 1.5 0 0 0 2.5 5v7A1.5 1.5 0 0 0 4 13.5h7a1.5 1.5 0 0 0 1.5-1.5V9.5M9.5 2.5h4v4M13.2 2.8L8 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                                                 </button>
                                                 <button type="button" class="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" :aria-label="$t( 'editEntryPage' )" @click.stop="openEntryPage( entry.id )">
@@ -1169,10 +1538,10 @@
                         </table>
                     </div>
 
-                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]" x-show="collectionView === 'fields'" x-sort="( item, position ) => sortRows( 'field', $el )" x-sort:config="sortConfig">
+                    <div data-sort-card data-sort-list class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]" x-show="collectionView === 'fields'" x-sort="( item, position ) => sortRows( 'field', $el )" x-sort:config="sortConfig">
                         <template x-for="( fieldRow, fieldIndex ) in fieldsDraft ?? []" :key="fieldRow.key + '-' + sortEpoch">
-                            <button type="button" class="flex w-full cursor-pointer items-center border-0 px-[18px] py-3 text-left font-sans" :class="( fieldRow.key === selectedFieldKey ? 'bg-amber-wash' : 'bg-transparent' ) + ( fieldIndex > 0 ? ' border-t border-hairline' : '' )" x-sort:item="fieldRow.key" :data-sort-id="fieldRow.key" @click="selectField( fieldRow.key )">
-                                <svg width="10" height="14" viewBox="0 0 10 14" class="shrink-0" :class="fieldRow.key === selectedFieldKey ? 'fill-amber-text' : 'fill-shell-faint'"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg>
+                            <button type="button" class="flex w-full cursor-pointer items-center border-0 px-[18px] py-3 text-left font-sans" :class="( fieldRow.key === selectedFieldKey ? 'bg-highlight' : 'bg-transparent' ) + ( fieldIndex > 0 ? ' border-t border-hairline' : '' )" x-sort:item="fieldRow.key" :data-sort-id="fieldRow.key" @click="selectField( fieldRow.key )">
+                                <svg data-sort-grip width="10" height="14" viewBox="0 0 10 14" class="shrink-0" :class="fieldRow.key === selectedFieldKey ? 'fill-amber-text' : 'fill-shell-faint'"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg>
                                 <span class="ml-2.5 text-[13px]" :class="fieldRow.key === selectedFieldKey && 'font-semibold'" x-text="fieldRow.label"></span>
                                 <span class="flex-1"></span>
                                 <span class="text-[12px]" :class="fieldRow.key === selectedFieldKey ? 'text-amber-text' : 'text-muted'" x-text="fieldSummary( fieldRow )"></span>
@@ -1219,20 +1588,71 @@
                         <div class="text-[16px] font-bold" x-text="taxonomyDisplayLabel"></div>
                         <div class="text-[11.5px] text-shell-muted" x-text="taxonomyMeta"></div>
                         <div class="flex-1"></div>
-                        <button type="button" class="flex w-[118px] cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border border-border-strong bg-surface py-2 font-sans text-[12.5px] font-semibold text-text2" @click="openCreate( 'term' )">
+                        <div class="mr-1.5 flex gap-[2px] rounded-[9px] bg-track p-[3px]">
+                            <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-1 font-sans text-[11.5px] font-semibold transition-colors duration-100" :class="taxonomyView === 'terms' ? 'bg-surface text-ink' : 'bg-transparent text-shell-muted'" x-text="$t( 'viewTerms' )" @click="showTermsView()"></button>
+                            <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-1 font-sans text-[11.5px] font-semibold transition-colors duration-100" :class="taxonomyView === 'layouts' ? 'bg-surface text-ink' : 'bg-transparent text-shell-muted'" x-text="$t( 'viewLayouts' )" @click="showTaxonomyLayoutsView()"></button>
+                        </div>
+                        <button type="button" x-show="taxonomyView === 'terms'" class="flex w-[118px] cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border border-border-strong bg-button py-2 font-sans text-[12.5px] font-semibold text-text2" @click="openCreate( 'term' )">
                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
                             <span x-text="$t( 'addTerm' )"></span>
                         </button>
                     </div>
 
-                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]">
-                        <div class="flex items-center border-b border-hairline px-[18px] py-2.5">
+                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]" x-show="taxonomyView === 'layouts'">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="border-b border-hairline">
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnLayout' )"></th>
+                                    <th class="w-[200px] px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnTemplate' )"></th>
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnPurpose' )"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="cursor-pointer" :class="taxonomyEditor?.index === false && 'text-muted'" @click="taxonomyEditor?.index === false ? toggleTaxonomySetting() : openSurface( 'index' )">
+                                    <td class="px-[18px] py-3 text-[13px] font-semibold">
+                                        <span class="flex items-center gap-2">
+                                            <svg class="shrink-0 text-shell-muted" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 3h11M2.5 6.5h11M2.5 10h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
+                                            <span x-text="$t( 'layoutIndexPage' )"></span>
+                                        </span>
+                                    </td>
+                                    <td class="px-[18px] py-2" @click.stop>
+                                        <button type="button" class="h-[30px] cursor-pointer whitespace-nowrap rounded-[8px] border border-border-strong bg-button px-3 font-sans text-[12px] font-semibold text-text2" x-show="taxonomyEditor?.index === false" x-text="$t( 'createIndexLayout' )" @click="toggleTaxonomySetting()"></button>
+                                        <select x-show="taxonomyEditor?.index !== false" class="h-[30px] w-full cursor-pointer rounded-[8px] border border-border-std bg-surface px-2 font-sans text-[12px] text-ink" @change="setLayoutTemplate( 'index', $event.target.value )">
+                                            <template x-for="name in templateNames" :key="name">
+                                                <option :value="name" x-text="name" :selected="name === ( taxonomyEditor?.indexTemplate ?? 'default' )"></option>
+                                            </template>
+                                        </select>
+                                    </td>
+                                    <td class="px-[18px] py-3 text-[12.5px] text-text2" x-text="$t( taxonomyEditor?.index === false ? 'layoutIndexOffNote' : 'layoutTermIndexNote' )"></td>
+                                </tr>
+                                <tr class="cursor-pointer border-t border-hairline" @click="openSurface( 'template' )">
+                                    <td class="px-[18px] py-3 text-[13px] font-semibold">
+                                        <span class="flex items-center gap-2">
+                                            <svg class="shrink-0 text-shell-muted" width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.4"></rect><path d="M2 6h12M6 6v8" stroke="currentColor" stroke-width="1.4"></path></svg>
+                                            <span x-text="$t( 'layoutTermTemplate' )"></span>
+                                        </span>
+                                    </td>
+                                    <td class="px-[18px] py-2" @click.stop>
+                                        <select class="h-[30px] w-full cursor-pointer rounded-[8px] border border-border-std bg-surface px-2 font-sans text-[12px] text-ink" @change="setLayoutTemplate( 'term', $event.target.value )">
+                                            <template x-for="name in templateNames" :key="name">
+                                                <option :value="name" x-text="name" :selected="name === ( taxonomyEditor?.termTemplate ?? 'default' )"></option>
+                                            </template>
+                                        </select>
+                                    </td>
+                                    <td class="px-[18px] py-3 text-[12.5px] text-text2" x-text="$t( 'layoutTermTemplateNote' )"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div data-sort-card class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]" x-show="taxonomyView === 'terms'">
+                        <div data-sort-header class="flex items-center border-b border-hairline px-[18px] py-2.5">
                             <div class="text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'termName' )"></div>
                         </div>
-                        <div x-sort="( item, position ) => sortRows( 'term', $el )" x-sort:config="sortConfig">
+                        <div data-sort-list x-sort="( item, position ) => sortRows( 'term', $el )" x-sort:config="sortConfig">
                         <template x-for="( row, termIndex ) in termRows" :key="row.term.id + '-' + sortEpoch">
-                            <button type="button" class="flex w-full cursor-pointer items-center border-0 py-3 pr-[18px] text-left font-sans" :style="{ paddingLeft: ( 18 + row.depth * 22 ) + 'px' }" :class="( row.term.id === selectedTermId ? 'bg-amber-wash' : 'bg-transparent' ) + ( termIndex > 0 ? ' border-t border-hairline' : '' )" x-sort:item="row.term.id" :data-sort-id="row.term.id" @click="selectTerm( row.term.id )">
-                                <svg width="10" height="14" viewBox="0 0 10 14" class="mr-2.5 shrink-0 fill-shell-faint"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg><svg x-show="row.depth > 0" width="10" height="10" viewBox="0 0 16 16" fill="none" class="mr-1.5 shrink-0"><path d="M4 2v7a3 3 0 0 0 3 3h5M9.5 8.5L13 12l-3.5 3.5" class="stroke-shell-faint" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                            <button type="button" class="flex w-full cursor-pointer items-center border-0 py-3 pr-[18px] text-left font-sans" :style="{ paddingLeft: ( 18 + row.depth * 22 ) + 'px' }" :class="( row.term.id === selectedTermId ? 'bg-highlight' : 'bg-transparent' ) + ( termIndex > 0 ? ' border-t border-hairline' : '' )" x-sort:item="row.term.id" :data-sort-id="row.term.id" @click="selectTerm( row.term.id )">
+                                <svg data-sort-grip width="10" height="14" viewBox="0 0 10 14" class="mr-2.5 shrink-0 fill-shell-faint"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg><svg x-show="row.depth > 0" width="10" height="10" viewBox="0 0 16 16" fill="none" class="mr-1.5 shrink-0"><path d="M4 2v7a3 3 0 0 0 3 3h5M9.5 8.5L13 12l-3.5 3.5" class="stroke-shell-faint" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                                 <span class="text-[13px]" :class="row.term.id === selectedTermId && 'font-semibold'" x-text="row.term.name === '' ? $t( 'kindTerm' ) : row.term.name"></span>
                                 <span class="flex-1"></span>
                                 <span x-show="taxonomyEditor?.index !== false" class="mr-1.5 flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" role="button" :aria-label="$t( 'previewEntryPage' )" @click.stop="previewTermPage( row.term.id )">
@@ -1271,7 +1691,7 @@
                         <div class="text-[11.5px] text-shell-muted" x-text="menuMeta"></div>
                         <div class="flex-1"></div>
                         <div class="relative" @click.outside="menuAddOpen = false">
-                            <button type="button" class="flex w-[118px] cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border border-border-strong bg-surface py-2 font-sans text-[12.5px] font-semibold text-text2" @click="menuAddOpen = !menuAddOpen">
+                            <button type="button" class="flex w-[118px] cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border border-border-strong bg-button py-2 font-sans text-[12.5px] font-semibold text-text2" @click="menuAddOpen = !menuAddOpen">
                                 <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
                                 <span x-text="$t( 'addMenuItem' )"></span>
                             </button>
@@ -1300,14 +1720,14 @@
                         </div>
                     </div>
 
-                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]">
-                        <div class="flex items-center border-b border-hairline px-[18px] py-2.5">
+                    <div data-sort-card class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]">
+                        <div data-sort-header class="flex items-center border-b border-hairline px-[18px] py-2.5">
                             <div class="text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'menuItemsLabel' )"></div>
                         </div>
-                        <div data-menu-tree x-sort="( item, position ) => sortMenuRows( item, $el )" x-sort:config="sortConfig">
+                        <div data-menu-tree data-sort-tree data-sort-list x-sort="( item, position ) => sortMenuRows( item, $el )" x-sort:config="sortConfig" @tree-drop="sortMenuRows( $event.detail, $el )">
                         <template x-for="( row, rowIndex ) in menuRows" :key="row.item.key + '-' + sortEpoch">
-                            <button type="button" class="flex w-full cursor-pointer items-center border-0 py-3 pr-[18px] text-left font-sans" :style="{ paddingLeft: ( 18 + row.depth * 22 ) + 'px' }" :class="( row.item.key === selectedMenuKey ? 'bg-amber-wash' : 'bg-transparent' ) + ( rowIndex > 0 ? ' border-t border-hairline' : '' )" x-sort:item="row.item.key" :data-sort-id="row.item.key" :data-depth="row.depth" @click="selectMenuRow( row.item.key )">
-                                <svg width="10" height="14" viewBox="0 0 10 14" class="mr-2.5 shrink-0 fill-shell-faint"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg><svg x-show="row.depth > 0" width="10" height="10" viewBox="0 0 16 16" fill="none" class="mr-1.5 shrink-0"><path d="M4 2v7a3 3 0 0 0 3 3h5M9.5 8.5L13 12l-3.5 3.5" class="stroke-shell-faint" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                            <button type="button" class="flex w-full cursor-pointer items-center border-0 py-3 pr-[18px] text-left font-sans" :style="{ paddingLeft: ( 18 + row.depth * 22 ) + 'px' }" :class="( row.item.key === selectedMenuKey ? 'bg-highlight' : 'bg-transparent' ) + ( rowIndex > 0 ? ' border-t border-hairline' : '' )" x-sort:item="row.item.key" :data-sort-id="row.item.key" :data-depth="row.depth" @click="selectMenuRow( row.item.key )">
+                                <svg data-sort-grip width="10" height="14" viewBox="0 0 10 14" class="mr-2.5 shrink-0 fill-shell-faint"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg><svg x-show="row.depth > 0" data-depth-mark width="10" height="10" viewBox="0 0 16 16" fill="none" class="mr-1.5 shrink-0"><path d="M4 2v7a3 3 0 0 0 3 3h5M9.5 8.5L13 12l-3.5 3.5" class="stroke-shell-faint" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                                 <span class="min-w-0 truncate text-[13px]" :class="row.item.key === selectedMenuKey && 'font-semibold'" x-text="menuItemTitle( row.item )"></span>
                                 <span class="ml-2.5 min-w-0 truncate text-[11.5px] text-faint" x-text="menuItemNote( row.item )"></span>
                                 <span x-show="( row.item.auto ?? '' ) !== ''" class="ml-2.5 flex-none rounded-full bg-control-soft px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-muted" x-text="$t( 'menuAutoChip' )"></span>
@@ -1329,7 +1749,7 @@
                 </div>
 
                 <div class="flex h-[42px] flex-none items-center gap-1.5 border-t border-hairline-cap bg-well px-5 text-[12.5px]">
-                    <span class="text-faint" x-text="$t( 'kindMenu' )"></span>
+                    <button type="button" class="cursor-pointer border-0 bg-transparent p-0 font-sans text-[12.5px] text-faint hover:text-text2" x-text="$t( 'navMenus' ).toLowerCase()" @click="openSiteWorkspace( 'menus' )"></button>
                     <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-faint" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                     <span :class="selectedMenuKey === null ? 'font-semibold' : 'text-shell-muted'" x-text="menuName"></span>
                     <template x-if="selectedMenuItem !== null">
@@ -1352,53 +1772,6 @@
                     </div>
                     <div class="max-w-[1150px] [column-gap:14px] [&>div]:mb-3.5 [&>div]:break-inside-avoid lg:columns-2">
                         <div class="rounded-xl bg-surface px-5 py-4 shadow-[var(--shadow-soft)]">
-                            <div class="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'identityLabel' )"></div>
-                            <div>
-                                <div class="mb-[5px]">
-                                    <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'siteNameLabel' )"></label>
-                                </div>
-                                <input type="text" class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-3 font-sans text-[12.5px] placeholder:text-faint" :placeholder="folderName" x-model="siteNameDraft" @input="markSiteNameDirty()">
-                                <p class="m-0 mt-1 text-[11px] leading-relaxed text-shell-faint" x-text="siteNameNoteLine"></p>
-                            </div>
-                            <div class="mt-3 flex items-center border-t border-hairline pt-3">
-                                <div class="min-w-0">
-                                    <div class="text-[13px] font-semibold" x-text="$t( 'siteIconLabel' )"></div>
-                                    <div class="mt-0.5 text-[11.5px] text-muted" x-text="$t( 'siteIconNote' )"></div>
-                                </div>
-                                <div class="flex-1"></div>
-                                <div class="mr-3 flex h-9 w-9 flex-none items-center justify-center overflow-hidden rounded-[8px] bg-plate">
-                                    <template x-if="siteIcon !== ''">
-                                        <img class="block h-full w-full object-cover" :src="siteIcon" alt="">
-                                    </template>
-                                    <template x-if="siteIcon === ''">
-                                        <svg width="16" height="13" viewBox="0 0 40 32" fill="none" class="opacity-70"><rect x="1" y="1" width="38" height="30" rx="3" class="stroke-glyph" stroke-width="2"></rect><circle cx="12" cy="11" r="3" class="stroke-glyph" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" class="stroke-glyph" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                    </template>
-                                </div>
-                                <label class="flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-surface px-3.5 py-[5px] font-sans text-[12px] font-semibold text-text2">
-                                    <span x-text="$t( 'uploadWord' )"></span>
-                                    <input type="file" class="hidden" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon" @change="uploadSiteIcon( $event )">
-                                </label>
-                                <button type="button" class="ml-2 flex-none cursor-pointer whitespace-nowrap rounded-lg border-0 bg-transparent p-0 font-sans text-[12px] text-muted" x-show="siteIcon !== ''" x-text="$t( 'removeWord' )" @click="removeSiteIcon()"></button>
-                            </div>
-                        </div>
-
-                        <div class="rounded-xl bg-surface px-5 py-4 shadow-[var(--shadow-soft)]">
-                            <div class="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'menusLabel' )"></div>
-                            <p class="m-0 mb-2.5 text-[11.5px] leading-relaxed text-muted" x-text="$t( 'menusMovedNote' )"></p>
-                            <div class="flex flex-col gap-1.5">
-                                <template x-for="name in menuNames" :key="name">
-                                    <button type="button" class="flex h-[38px] cursor-pointer items-center gap-[9px] rounded-[9px] border border-border-std bg-transparent px-3 text-left font-sans" @click="openMenu( name )">
-                                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h7" class="stroke-shell-muted" stroke-width="1.4" stroke-linecap="round"></path></svg>
-                                        <span class="text-[12.5px] font-semibold" x-text="name"></span>
-                                        <span class="flex-1"></span>
-                                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-muted" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                    </button>
-                                </template>
-                                <button type="button" class="cursor-pointer border-0 bg-transparent p-0 text-left font-sans text-[12px] font-semibold text-amber-deep" x-text="$t( 'addMenu' )" @click="startNavCreate( 'menu' )"></button>
-                            </div>
-                        </div>
-
-                        <div class="rounded-xl bg-surface px-5 py-4 shadow-[var(--shadow-soft)]">
                             <div class="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'publishingLabel' )"></div>
                             <div class="flex items-center py-1">
                                 <div class="min-w-0">
@@ -1410,7 +1783,7 @@
                                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M3 8.5l3.2 3.2L13 5" class="stroke-success" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                                     <span class="text-[11px] text-success" x-text="$t( 'connectedLabel' )"></span>
                                 </div>
-                                <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-surface px-3.5 py-[5px] font-sans text-[12px] font-semibold text-text2" x-text="$t( 'changeLabel' )" @click="openRemoteEdit()"></button>
+                                <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-button px-3.5 py-[5px] font-sans text-[12px] font-semibold text-text2" x-text="$t( 'changeLabel' )" @click="openRemoteEdit()"></button>
                             </div>
                             <template x-if="remoteEditOpen">
                                 <div class="mt-2 flex gap-2">
@@ -1436,6 +1809,190 @@
                             </div>
                         </div>
 
+                    </div>
+                </div>
+
+                <div class="flex h-[42px] flex-none items-center gap-1.5 border-t border-hairline-cap bg-well px-5 text-[12.5px]">
+                    <span class="font-semibold" x-text="$t( 'navSiteSettings' ).toLowerCase()"></span>
+                    <div class="flex-1"></div>
+                    <span class="text-[11.5px] text-faint" x-text="$t( 'settingsHint' )"></span>
+                </div>
+            </main>
+        </template>
+
+        <template x-if="error === null && issues.length === 0 && workspace === 'pages'">
+            <main class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-well shadow-[var(--shadow-card)]">
+                <div class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-6 pt-6">
+                    <div class="mb-3.5 flex items-center gap-2.5">
+                        <div class="text-[16px] font-bold" x-text="$t( 'navPages' )"></div>
+                        <div class="text-[11.5px] text-shell-muted" x-text="pagesMeta"></div>
+                        <div class="flex-1"></div>
+                                                <button type="button" class="flex w-[118px] cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border-0 bg-amber py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" @click="openCreate( 'page' )">
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+                            <span x-text="$t( 'addPage' )"></span>
+                        </button>
+                    </div>
+                    <template x-if="pagesView === 'pages'">
+                    <div data-sort-card class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]">
+                        <table class="w-full border-collapse">
+                            <thead data-sort-header>
+                                <tr class="border-b border-hairline">
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnTitle' )"></th>
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnAddress' )"></th>
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnTemplate' )"></th>
+                                    <th class="w-[96px] px-[18px] pb-2.5 pt-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnDraft' )"></th>
+                                    <th class="w-[128px] px-[18px] pb-2.5 pt-2.5"></th>
+                                </tr>
+                            </thead>
+                            <tbody data-sort-list data-sort-tree x-sort="( item, position ) => sortPageRows( item, $el )" x-sort:config="sortConfig" @tree-drop="sortPageRows( $event.detail, $el )">
+                                <template x-for="( row, rowIndex ) in pageTableRows" :key="row.page.id + '-' + sortEpoch">
+                                    <tr class="cursor-pointer" :class="( rowIndex > 0 ? 'border-t border-hairline ' : '' ) + ( pagesRowId === row.page.id ? 'bg-amber-wash' : '' )" x-sort:item="row.page.id" :data-sort-id="row.page.id" :data-depth="row.depth" :data-sort-pinned="pageIsReserved( row.page ) ? '1' : false" @click="selectPagesRow( row.page.id )">
+                                        <td class="px-[18px] py-3 text-[13px] font-semibold" :style="{ paddingLeft: ( 18 + row.depth * 22 ) + 'px' }">
+                                            <span class="flex items-center gap-2">
+                                                <svg x-show="!pageIsReserved( row.page )" data-sort-grip width="10" height="14" viewBox="0 0 10 14" class="shrink-0 fill-shell-faint"><circle cx="3" cy="3" r="1.2"></circle><circle cx="7" cy="3" r="1.2"></circle><circle cx="3" cy="7" r="1.2"></circle><circle cx="7" cy="7" r="1.2"></circle><circle cx="3" cy="11" r="1.2"></circle><circle cx="7" cy="11" r="1.2"></circle></svg>
+                                                <svg x-show="row.depth > 0" width="10" height="10" viewBox="0 0 16 16" fill="none" class="shrink-0"><path d="M4 2v7a3 3 0 0 0 3 3h5M9.5 8.5L13 12l-3.5 3.5" class="stroke-shell-faint" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                                <template x-if="row.page.slug === 'home'">
+                                                    <svg class="shrink-0 text-shell-muted" width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 7.5L8 2.5l5.5 5v6a1 1 0 0 1-1 1h-3v-4H6.5v4h-3a1 1 0 0 1-1-1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"></path></svg>
+                                                </template>
+                                                <template x-if="row.page.slug === '404'">
+                                                    <svg class="shrink-0 text-shell-muted" width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3"></circle><path d="M5.5 5.5l5 5M10.5 5.5l-5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg>
+                                                </template>
+                                                <span x-text="row.page.title"></span>
+                                                <span class="h-[5px] w-[5px] flex-none rounded-full bg-amber" x-show="pageIsDirty( row.page.id )"></span>
+                                            </span>
+                                        </td>
+                                        <td class="px-[18px] py-3 text-[12px] text-text2" x-text="row.address"></td>
+                                        <td class="px-[18px] py-3 text-[12px]" :class="row.template === 'custom' ? 'text-amber-text' : 'text-text2'" x-text="row.template === 'custom' ? $t( 'templateCustom' ) : row.template"></td>
+                                        <td class="px-[18px] py-3 text-right text-[12px]">
+                                            <span x-show="row.page.draft" class="rounded-full bg-amber-wash px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-amber-text" x-text="$t( 'stateDraft' )"></span>
+                                        </td>
+                                        <td class="px-[18px] py-2 text-right">
+                                            <div class="flex items-center justify-end gap-1.5">
+                                                <button type="button" class="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" :aria-label="$t( 'preview' )" @click.stop="previewPage( row.page.id )"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M6.5 3.5H4A1.5 1.5 0 0 0 2.5 5v7A1.5 1.5 0 0 0 4 13.5h7a1.5 1.5 0 0 0 1.5-1.5V9.5M9.5 2.5h4v4M13.2 2.8L8 8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+                                                <button type="button" class="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" :aria-label="$t( 'editPageWord' )" @click.stop="selectPage( row.page.id )"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M9.7 3.2l3.1 3.1L5.6 13.5l-3.4.3.3-3.4 7.2-7.2zM8.5 4.4l3.1 3.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+                                                <button type="button" x-show="!pageIsReserved( row.page )" class="flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control hover:text-danger" :aria-label="$t( 'deletePage' )" @click.stop="deletePageRow( row.page.id )"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2.5 4h11M5.5 4V2.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4M4 4l.7 9a1.2 1.2 0 0 0 1.2 1.1h4.2a1.2 1.2 0 0 0 1.2-1.1L12 4M6.6 6.8v4.8M9.4 6.8v4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    </template>
+                </div>
+                <div class="flex h-[42px] flex-none items-center gap-1.5 border-t border-hairline-cap bg-well px-5 text-[12.5px]">
+                    <span class="font-semibold" x-text="$t( 'navPages' ).toLowerCase()"></span>
+                                        <div class="flex-1"></div>
+                    <span class="text-[11.5px] text-faint" x-text="$t( 'pagesHint' )"></span>
+                </div>
+            </main>
+        </template>
+
+        <template x-if="error === null && issues.length === 0 && workspace === 'site'">
+            <main class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-well shadow-[var(--shadow-card)]">
+                <div class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-6 pt-6">
+                    <div class="mb-3.5 flex items-center gap-2.5">
+                        <div class="text-[16px] font-bold" x-text="$t( 'navSite' )"></div>
+                        <div class="text-[11.5px] text-shell-muted" x-text="siteView === 'templates' ? templatesMeta : $t( siteView === 'partials' ? 'partialsMeta' : 'menusMeta' )"></div>
+                        <div class="flex-1"></div>
+                        <div class="mr-1.5 flex gap-[2px] rounded-[9px] bg-track p-[3px]">
+                            <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-1 font-sans text-[11.5px] font-semibold transition-colors duration-100" :class="siteView === 'partials' ? 'bg-surface text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent text-text2'" x-text="$t( 'navPartials' )" @click="siteView = 'partials'"></button>
+                            <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-1 font-sans text-[11.5px] font-semibold transition-colors duration-100" :class="siteView === 'menus' ? 'bg-surface text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent text-text2'" x-text="$t( 'navMenus' )" @click="siteView = 'menus'"></button>
+                            <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-1 font-sans text-[11.5px] font-semibold transition-colors duration-100" :class="siteView === 'templates' ? 'bg-surface text-ink shadow-[var(--shadow-hairline)]' : 'bg-transparent text-text2'" x-text="$t( 'viewTemplates' )" @click="siteView = 'templates'"></button>
+                        </div>
+                        <button type="button" class="flex w-[138px] cursor-pointer items-center justify-center gap-[7px] whitespace-nowrap rounded-[9px] border-0 bg-amber py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" @click="startNavCreate( siteView === 'partials' ? 'partial' : ( siteView === 'menus' ? 'menu' : 'template' ) )">
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+                            <span x-text="$t( siteView === 'partials' ? 'addPartial' : ( siteView === 'menus' ? 'addMenu' : 'addTemplate' ) )"></span>
+                        </button>
+                    </div>
+                    <template x-if="siteView === 'templates'">
+                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="border-b border-hairline">
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnName' )"></th>
+                                    <th class="w-[140px] px-[18px] pb-2.5 pt-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnPages' )"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="( name, nameIndex ) in templateNames" :key="name">
+                                    <tr class="cursor-pointer" :class="nameIndex > 0 ? 'border-t border-hairline' : ''" @click="openTemplate( name )">
+                                        <td class="px-[18px] py-3 text-[13px] font-semibold">
+                                            <span class="flex items-center gap-2">
+                                                <span x-text="name"></span>
+                                                <span x-show="name === 'default'" class="rounded-full bg-control-soft px-1.5 py-px text-[9px] font-semibold uppercase tracking-[0.06em] text-muted" x-text="$t( 'templateDefaultChip' )"></span>
+                                            </span>
+                                        </td>
+                                        <td class="px-[18px] py-3 text-right text-[12px] text-text2" x-text="templatePagesCount( name )"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    </template>
+                    <template x-if="siteView === 'partials'">
+                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="border-b border-hairline">
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnName' )"></th>
+                                    <th class="w-[96px] px-[18px] pb-2.5 pt-2.5"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="( partialName, partialIndex ) in snapshot?.partials ?? []" :key="partialName">
+                                    <tr class="cursor-pointer" :class="partialIndex > 0 ? 'border-t border-hairline' : ''" @click="openPartial( partialName )">
+                                        <td class="px-[18px] py-3 text-[13px] font-semibold" x-text="partialName"></td>
+                                        <td class="px-[18px] py-3 text-right">
+                                            <span x-show="!partialIsReserved( partialName )" class="inline-flex h-[26px] w-[26px] cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control hover:text-danger" role="button" :aria-label="$t( 'deletePartial' )" @click.stop="openRowDelete( 'partial', partialName )">
+                                                <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2.5 4h11M5.5 4V2.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4M4 4l.7 9a1.2 1.2 0 0 0 1.2 1.1h4.2a1.2 1.2 0 0 0 1.2-1.1L12 4M6.6 6.8v4.8M9.4 6.8v4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <div class="px-[18px] py-5 text-[12.5px] text-muted" x-show="( snapshot?.partials ?? [] ).length === 0" x-text="$t( 'partialsEmpty' )"></div>
+                    </div>
+                    </template>
+                    <template x-if="siteView === 'menus'">
+                    <div class="overflow-hidden rounded-xl bg-surface shadow-[var(--shadow-soft)]">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="border-b border-hairline">
+                                    <th class="px-[18px] pb-2.5 pt-2.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnName' )"></th>
+                                    <th class="w-[140px] px-[18px] pb-2.5 pt-2.5 text-right text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'columnItems' )"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="( name, nameIndex ) in menuNames" :key="name">
+                                    <tr class="cursor-pointer" :class="nameIndex > 0 ? 'border-t border-hairline' : ''" @click="openMenu( name )">
+                                        <td class="px-[18px] py-3 text-[13px] font-semibold" x-text="name"></td>
+                                        <td class="px-[18px] py-3 text-right text-[12px] text-text2" x-text="menuItemCount( name )"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <div class="px-[18px] py-5 text-[12.5px] text-muted" x-show="menuNames.length === 0" x-text="$t( 'menusEmpty' )"></div>
+                    </div>
+                    </template>
+                </div>
+                <div class="flex h-[42px] flex-none items-center gap-1.5 border-t border-hairline-cap bg-well px-5 text-[12.5px]">
+                    <span class="font-semibold" x-text="$t( siteView === 'partials' ? 'navPartials' : ( siteView === 'menus' ? 'navMenus' : 'viewTemplates' ) ).toLowerCase()"></span>
+                    <div class="flex-1"></div>
+                    <span class="text-[11.5px] text-faint" x-text="$t( 'siteHint' )"></span>
+                </div>
+            </main>
+        </template>
+
+        <template x-if="error === null && issues.length === 0 && workspace === 'theme'">
+            <main class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-well shadow-[var(--shadow-card)]">
+                <div class="min-h-0 flex-1 overflow-y-auto px-[26px] pb-6 pt-6">
+                    <div class="mb-3.5 flex items-center gap-2.5">
+                        <div class="text-[16px] font-bold" x-text="$t( 'navTheme' )"></div>
+                        <div class="text-[11.5px] text-shell-muted" x-text="$t( 'themeMeta' )"></div>
+                    </div>
+                    <div class="max-w-[1150px] [column-gap:14px] [&>div]:mb-3.5 [&>div]:break-inside-avoid lg:columns-2">
                         <div class="rounded-xl bg-surface px-5 py-4 shadow-[var(--shadow-soft)]">
                             <div class="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'themeColors' )"></div>
                             <template x-for="colorName in Object.keys( themeDraft?.colors ?? {} )" :key="colorName">
@@ -1520,11 +2077,10 @@
                         </div>
                     </div>
                 </div>
-
                 <div class="flex h-[42px] flex-none items-center gap-1.5 border-t border-hairline-cap bg-well px-5 text-[12.5px]">
-                    <span class="font-semibold" x-text="$t( 'navSiteSettings' ).toLowerCase()"></span>
+                    <span class="font-semibold" x-text="$t( 'navTheme' ).toLowerCase()"></span>
                     <div class="flex-1"></div>
-                    <span class="text-[11.5px] text-faint" x-text="$t( 'settingsHint' )"></span>
+                    <span class="text-[11.5px] text-faint" x-text="$t( 'themeHint' )"></span>
                 </div>
             </main>
         </template>
@@ -1535,13 +2091,13 @@
                     <div class="mb-3.5 flex items-center gap-2.5">
                         <div class="text-[16px] font-bold" x-text="$t( 'navMedia' )"></div>
                         <div class="text-[12px] text-muted" x-text="mediaCountLine"></div>
-                        <div class="ml-1.5 flex gap-[2px] rounded-[9px] bg-control-soft p-[3px]">
+                        <div class="ml-1.5 flex gap-[2px] rounded-[9px] bg-track p-[3px]">
                             <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-[3px] font-sans text-[11.5px] font-semibold" :class="mediaView === 'library' ? 'bg-surface text-ink' : 'bg-transparent text-shell-muted'" x-text="$t( 'mediaViewLibrary' )" @click="setMediaView( 'library' )"></button>
                             <button type="button" class="cursor-pointer rounded-[7px] border-0 px-3 py-[3px] font-sans text-[11.5px] font-semibold" :class="mediaView === 'trash' ? 'bg-surface text-ink' : 'bg-transparent text-shell-muted'" x-text="$t( 'mediaViewTrash' )" @click="setMediaView( 'trash' )"></button>
                         </div>
                         <div class="flex-1"></div>
                         <input type="text" class="box-border h-[34px] w-52 rounded-[9px] border-0 bg-surface px-3 font-sans text-[12.5px] placeholder:text-faint" :placeholder="$t( 'mediaSearchPlaceholder' )" x-model="mediaQuery">
-                        <button type="button" x-show="mediaView === 'library' && unusedMediaCount > 0" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-surface px-3.5 py-[7px] font-sans text-[12px] font-semibold text-text2" x-text="$t( 'trashUnusedMedia' )" @click="trashUnusedMedia()"></button>
+                        <button type="button" x-show="mediaView === 'library' && unusedMediaCount > 0" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-button px-3.5 py-[7px] font-sans text-[12px] font-semibold text-text2" x-text="$t( 'trashUnusedMedia' )" @click="trashUnusedMedia()"></button>
                         <button type="button" x-show="mediaView === 'trash' && ( mediaTrash ?? [] ).length > 0" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border border-danger bg-transparent px-3.5 py-[7px] font-sans text-[12px] font-semibold text-danger" x-text="$t( 'emptyTrashWord' )" @click="openRowDelete( 'mediaForever', 'all' )"></button>
                         <label x-show="mediaView === 'library'" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border-0 bg-amber px-[18px] py-2 font-sans text-[12.5px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep">
                             <span x-text="$t( mediaUploading ? 'mediaUploading' : 'mediaUploadWord' )"></span>
@@ -1553,7 +2109,7 @@
                         <template x-for="mediaFile in filteredMedia" :key="mediaFile.file">
                             <button type="button" class="cursor-pointer overflow-hidden rounded-[10px] border-2 bg-surface p-0 text-left font-sans shadow-[var(--shadow-hairline)]" :class="selectedMediaFile === mediaFile.file ? 'border-amber' : 'border-transparent'" @click="selectMediaFile( mediaFile.file )">
                                 <template x-if="mediaIsImage( mediaFile.file )">
-                                    <img class="block h-[96px] w-full bg-plate object-cover" :src="mediaFile.url" alt="">
+                                    <img class="block h-[96px] w-full bg-media-backdrop object-cover" :src="mediaFile.url" alt="">
                                 </template>
                                 <template x-if="!mediaIsImage( mediaFile.file )">
                                     <div class="flex h-[96px] w-full items-center justify-center bg-plate">
@@ -1584,17 +2140,20 @@
 
         <template x-if="error === null && issues.length === 0 && canvasActive && !booting">
             <main class="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[18px] bg-well shadow-[var(--shadow-card)]">
-                <div class="flex min-h-0 flex-1 justify-center" :class="regionSurfaceActive ? 'overflow-y-auto px-8 pt-8' : ( viewport !== 'desktop' && 'items-center px-[22px] pb-3 pt-[22px]' )">
-                    <div class="relative max-w-full transition-all duration-200 ease-settle" :class="regionSurfaceActive && 'mb-8 flex-none self-start'" :style="previewStyle">
+                <div class="flex min-h-0 flex-1 justify-center" :class="insetCanvasActive ? 'overflow-y-auto px-8 pt-8' : ( viewport !== 'desktop' && 'items-center px-[22px] pb-3 pt-[22px]' )">
+                    <div class="relative max-w-full transition-all duration-200 ease-settle" :class="insetCanvasActive && 'mb-8 flex-none self-start'" :style="previewStyle">
                         <iframe
                             x-ref="canvas"
                             class="h-full w-full border-0 bg-surface transition-all duration-200"
-                            :class="viewport !== 'desktop' || regionSurfaceActive ? 'rounded-[10px] shadow-[var(--shadow-hover)]' : ''"
-                            :src="previewSrc"
+                            :class="viewport !== 'desktop' || insetCanvasActive ? 'rounded-[10px] shadow-[var(--shadow-hover)]' : ''"
+                            x-effect="syncCanvasSrc( $el )"
                             :title="$t( 'previewTitle' )"
                             @load="onCanvasLoad()"
                         ></iframe>
-                        <div class="pointer-events-none absolute inset-0">
+                        <!-- The overlay clips to the canvas frame (Mikey: a ring scrolled
+                             out of view spilled onto the breadcrumb bar); inside the page the
+                             ring is never clipped, EDITOR 2, because it lives here, not there. -->
+                        <div class="pointer-events-none absolute inset-0 overflow-hidden">
                             <template x-if="hoverLeaf !== null">
                                 <div class="absolute border border-amber/50" :style="hoverRingStyle"></div>
                             </template>
@@ -1605,18 +2164,18 @@
                                 <div class="absolute rounded bg-amber px-2 py-0.5 text-[10.5px] font-semibold text-on-amber" :style="chipStyle" x-text="selectionLabel"></div>
                             </template>
                             <template x-if="sectionHandle !== null">
-                                <button type="button" class="pointer-events-auto absolute cursor-pointer rounded-full border border-amber bg-surface px-2.5 py-0.5 text-[10px] font-semibold text-amber-text shadow-[var(--shadow-chip)]" :style="sectionHandleStyle" x-text="$t( 'blockSection' )" @mouseenter="pinHandle()" @mouseleave="unpinHandle()" @click="selectHandle()"></button>
+                                <button type="button" class="pointer-events-auto absolute cursor-pointer rounded-full border border-[#E8A13D] bg-white px-2.5 py-0.5 text-[10px] font-semibold text-[#8A5A14] shadow-[0_1px_4px_rgba(0,0,0,0.18)]" :style="sectionHandleStyle" x-text="sectionHandleWord" @mouseenter="pinHandle()" @mouseleave="unpinHandle()" @click="selectHandle()"></button>
                             </template>
                             <template x-if="seamInfo !== null && !pickerOpen">
                                 <div class="absolute flex items-center justify-center" :class="seamIsVertical ? 'flex-col' : 'flex-row'" :style="seamStyle">
-                                    <div class="rounded-[1px] bg-amber" :class="seamIsVertical ? 'w-[2px] flex-1' : 'h-[2px] flex-1'"></div>
-                                    <button type="button" class="pointer-events-auto absolute left-1/2 top-1/2 flex h-[26px] w-[26px] -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-amber bg-surface shadow-[var(--shadow-chip)]" :aria-label="$t( 'addBlockHere' )" @mouseenter="pinSeam()" @mouseleave="unpinSeam()" @click="openPicker( seamInfo.index, seamInfo.container )">
+                                    <div class="rounded-[1px] bg-[#E8A13D]" :class="seamIsVertical ? 'w-[2px] flex-1' : 'h-[2px] flex-1'"></div>
+                                    <button type="button" class="pointer-events-auto absolute left-1/2 top-1/2 flex h-[26px] w-[26px] -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-[1.5px] border-[#E8A13D] bg-white text-[#8A5A14] shadow-[0_1px_4px_rgba(0,0,0,0.18)]" :aria-label="$t( 'addBlockHere' )" @mouseenter="pinSeam()" @mouseleave="unpinSeam()" @click="openPicker( seamInfo.index, seamInfo.container )">
                                         <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" class="stroke-amber-deep" stroke-width="1.7" stroke-linecap="round"></path></svg>
                                     </button>
                                 </div>
                             </template>
                             <template x-if="canvasBlockCount === 0">
-                                <div class="absolute inset-x-0 flex justify-center" :class="regionSurfaceActive ? 'inset-y-0 items-center' : 'top-[120px]'">
+                                <div class="absolute inset-x-0 flex justify-center" :class="insetCanvasActive ? 'inset-y-0 items-center' : 'top-[120px]'">
                                     <button type="button" class="pointer-events-auto flex h-[62px] w-[420px] max-w-[80%] cursor-pointer items-center justify-center gap-[7px] rounded-lg border border-dashed border-border-strong bg-transparent font-sans text-faint" @click="openPicker( 0, '' )">
                                         <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" class="stroke-faint" stroke-width="1.5" stroke-linecap="round"></path></svg>
                                         <span class="text-[12px]" x-text="$t( 'addWord' )"></span>
@@ -1627,23 +2186,29 @@
                     </div>
                 </div>
                 <div class="flex h-[42px] flex-none items-center gap-1.5 bg-well px-5 text-[12.5px]" :class="viewport === 'desktop' && 'border-t border-hairline-cap'">
-                    <template x-if="surface !== null">
+                    <template x-if="surface !== null && workspace !== 'settings' && workspace !== 'template'">
                         <div class="flex items-center gap-1.5">
-                            <span class="text-faint" x-text="$t( workspace === 'settings' ? 'kindSite' : ( workspace === 'taxonomy' ? 'kindTaxonomy' : 'crumbCollection' ) )"></span>
+                            <span class="text-faint" x-text="$t( workspace === 'settings' ? 'kindSite' : ( workspace === 'template' ? 'kindTemplate' : ( workspace === 'taxonomy' ? 'kindTaxonomy' : 'crumbCollection' ) ) )"></span>
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-faint" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                        </div>
+                    </template>
+                    <template x-if="canvasHome !== null">
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" class="cursor-pointer border-0 bg-transparent p-0 font-sans text-[12.5px] text-faint hover:text-text2" x-text="canvasHome.label" @click="openCanvasHome()"></button>
                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-faint" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                         </div>
                     </template>
                     <button
                         type="button"
                         class="border-0 bg-transparent p-0 font-sans text-[12.5px]"
-                        :class="selectedBlock === null && surface === null ? 'font-semibold text-ink' : 'cursor-pointer font-normal text-text2'"
+                        :class="selectedBlock === null && ( surface === null || canvasHome !== null ) ? 'font-semibold text-ink' : 'cursor-pointer font-normal text-text2'"
                         x-text="canvasRootLabel"
-                        @click="surface === null ? clearSelection() : closeSurface()"
+                        @click="surface === null || canvasHome !== null ? clearSelection() : closeSurface()"
                     ></button>
                     <template x-if="surface !== null">
                         <div class="flex items-center gap-1.5">
                             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-faint" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                            <button type="button" x-show="workspace !== 'settings'" class="border-0 bg-transparent p-0 font-sans text-[12.5px]" :class="selectedBlock === null ? 'font-semibold text-ink' : 'cursor-pointer font-normal text-text2'" x-text="$t( surface === 'index' ? 'crumbIndex' : ( surface === 'entry' ? 'crumbLayout' : 'crumbTemplate' ) )" @click="clearSelection()"></button>
+                            <button type="button" x-show="workspace !== 'settings' && workspace !== 'template'" class="border-0 bg-transparent p-0 font-sans text-[12.5px]" :class="selectedBlock === null ? 'font-semibold text-ink' : 'cursor-pointer font-normal text-text2'" x-text="$t( surface === 'index' ? 'crumbIndex' : ( surface === 'entry' ? 'crumbLayout' : 'crumbTemplate' ) )" @click="clearSelection()"></button>
                         </div>
                     </template>
                     <template x-if="surface === 'template' && sampleEntry !== null">
@@ -1657,6 +2222,23 @@
                                 <div class="absolute bottom-full left-0 z-20 mb-1.5 max-h-56 w-56 overflow-y-auto rounded-xl bg-surface p-1.5 shadow-[var(--shadow-float)]">
                                     <template x-for="entry in collectionEditor?.entries ?? []" :key="entry.id">
                                         <button type="button" class="block w-full cursor-pointer truncate rounded-[7px] border-0 px-2.5 py-1.5 text-left font-sans text-[12px]" :class="entry.id === sampleEntry?.id ? 'bg-amber-wash font-semibold' : 'bg-transparent'" x-text="entry.values.title === '' || entry.values.title === undefined ? $t( 'kindEntry' ) : entry.values.title" @click="chooseSampleEntry( entry.id )"></button>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <template x-if="workspace === 'template'">
+                        <div class="relative flex items-center gap-1.5" @click.outside="samplePickerOpen = false">
+                            <span class="mx-0.5 text-[11.5px] text-faint" x-text="$t( 'withContentFrom' )"></span>
+                            <button type="button" class="flex cursor-pointer items-center gap-1.5 rounded-[8px] border-0 bg-surface px-2.5 py-1 font-sans text-[11.5px] font-semibold text-ink" @click="samplePickerOpen = !samplePickerOpen">
+                                <span x-text="samplePageLabel"></span>
+                                <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M3.5 6L8 10.5L12.5 6" class="stroke-shell-muted" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                            </button>
+                            <template x-if="samplePickerOpen">
+                                <div class="absolute bottom-full left-0 z-20 mb-1.5 max-h-56 w-56 overflow-y-auto rounded-xl bg-surface p-1.5 shadow-[var(--shadow-float)]">
+                                    <button type="button" class="block w-full cursor-pointer truncate rounded-[7px] border-0 px-2.5 py-1.5 text-left font-sans text-[12px]" :class="samplePage === null ? 'bg-amber-wash font-semibold' : 'hover:bg-well'" x-text="$t( 'sampleNone' )" @click="chooseSamplePage( null )"></button>
+                                    <template x-for="page in pages" :key="page.id">
+                                        <button type="button" class="block w-full cursor-pointer truncate rounded-[7px] border-0 px-2.5 py-1.5 text-left font-sans text-[12px]" :class="page.id === samplePage?.id ? 'bg-amber-wash font-semibold' : 'bg-transparent hover:bg-well'" x-text="page.title" @click="chooseSamplePage( page.id )"></button>
                                     </template>
                                 </div>
                             </template>
@@ -1697,9 +2279,9 @@
             </main>
         </template>
 
-        <aside class="flex w-[292px] flex-none flex-col gap-3 overflow-hidden rounded-[18px] bg-surface pb-2 pt-[14px]">
+        <aside x-show="![ 'site', 'theme' ].includes( workspace )" class="flex w-[292px] flex-none flex-col gap-3 overflow-hidden rounded-[18px] bg-surface pb-2 pt-[14px]">
             <div class="flex items-start gap-2.5 px-[18px]">
-                <template x-if="selectedBlock !== null || selectedEntryId !== null || selectedTermId !== null || surface !== null || selectedFieldKey !== null || selectedMenuKey !== null || selectedMediaFile !== null">
+                <template x-if="selectedBlock !== null || selectedEntryId !== null || selectedTermId !== null || surface !== null || selectedFieldKey !== null || selectedMenuKey !== null || selectedMediaFile !== null || ( workspace === 'page' && selectedPage !== undefined ) || ( workspace === 'pages' && pagesRowId !== null ) || layoutsRow !== null || workspace === 'menu'">
                     <button type="button" class="mt-0.5 flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" :aria-label="$t( 'backToPage' )" @click="inspectorBack()">
                         <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M13 8H3M7.2 3.8L3 8l4.2 4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                     </button>
@@ -1709,6 +2291,11 @@
                     <div class="mt-0.5 text-[11.5px] text-muted" x-text="inspectorKind"></div>
                 </div>
                 <div class="flex-1"></div>
+                <template x-if="workspace === 'pages' && pagesRow !== null">
+                    <button type="button" class="mt-0.5 flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control" :aria-label="$t( 'editPageWord' )" @click="selectPage( pagesRow.id )">
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M9.7 3.2l3.1 3.1L5.6 13.5l-3.4.3.3-3.4 7.2-7.2zM8.5 4.4l3.1 3.1" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                    </button>
+                </template>
                 <template x-if="inspectorTrashTarget !== ''">
                     <button type="button" class="mt-0.5 flex h-[26px] w-[26px] flex-none cursor-pointer items-center justify-center rounded-[7px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control hover:text-danger" :aria-label="confirmActionLabel" @click="inspectorTrash()">
                         <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M2.5 4h11M5.5 4V2.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4M4 4l.7 9a1.2 1.2 0 0 0 1.2 1.1h4.2a1.2 1.2 0 0 0 1.2-1.1L12 4M6.6 6.8v4.8M9.4 6.8v4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
@@ -1716,13 +2303,45 @@
                 </template>
             </div>
             <div class="border-t border-rule"></div>
-            <div class="mx-[18px] flex flex-none gap-[18px] border-b border-hairline" x-show="workspace !== 'settings' && workspace !== 'media'">
-                <button type="button" class="cursor-pointer border-0 bg-transparent p-0 pb-2 font-sans text-[12.5px]" :class="tab === 'content' ? '-mb-px border-b-2 border-amber font-semibold text-ink' : 'text-muted'" x-text="$t( 'tabContent' )" @click="tab = 'content'"></button>
-                <button type="button" class="cursor-pointer border-0 bg-transparent p-0 pb-2 font-sans text-[12.5px]" :class="tab === 'settings' ? '-mb-px border-b-2 border-amber font-semibold text-ink' : 'text-muted'" x-text="$t( 'tabSettings' )" @click="tab = 'settings'"></button>
-                <button type="button" x-show="usageTabAvailable" class="cursor-pointer border-0 bg-transparent p-0 pb-2 font-sans text-[12.5px]" :class="tab === 'usage' ? '-mb-px border-b-2 border-amber font-semibold text-ink' : 'text-muted'" x-text="$t( 'tabUsage' )" @click="tab = 'usage'"></button>
+            <div class="mx-[18px] flex flex-none gap-[18px] border-b border-hairline" x-show="workspace !== 'settings' && workspace !== 'media' && availableTabCount > 1">
+                <button type="button" x-show="contentTabAvailable" class="cursor-pointer border-0 bg-transparent p-0 pb-2 font-sans text-[12.5px]" :class="activeTab === 'content' ? '-mb-px border-b-2 border-amber font-semibold text-ink' : 'text-muted'" x-text="$t( 'tabContent' )" @click="tab = 'content'"></button>
+                <button type="button" x-show="settingsTabAvailable" class="cursor-pointer border-0 bg-transparent p-0 pb-2 font-sans text-[12.5px]" :class="activeTab === 'settings' ? '-mb-px border-b-2 border-amber font-semibold text-ink' : 'text-muted'" x-text="$t( 'tabSettings' )" @click="tab = 'settings'"></button>
+                <button type="button" x-show="usageTabAvailable" class="cursor-pointer border-0 bg-transparent p-0 pb-2 font-sans text-[12.5px]" :class="activeTab === 'usage' ? '-mb-px border-b-2 border-amber font-semibold text-ink' : 'text-muted'" x-text="$t( 'tabUsage' )" @click="tab = 'usage'"></button>
             </div>
 
-            <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-[18px] pb-3" x-show="tab === 'content'" x-ref="inspectorContent">
+            <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-[18px] pb-3" x-show="activeTab === 'content'" x-ref="inspectorContent">
+                <p class="m-0 text-[12px] leading-relaxed text-muted" x-show="!contentTabFilled" x-text="$t( 'tabEmptyPrompt' )"></p>
+                <template x-if="workspace === 'pages' && pagesRow === null">
+                    <div class="flex flex-col gap-3">
+                    <div>
+                        <div class="mb-[5px]">
+                            <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'siteNameLabel' )"></label>
+                        </div>
+                        <input type="text" class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-3 font-sans text-[12.5px] placeholder:text-faint" :placeholder="folderName" x-model="siteNameDraft" @input="markSiteNameDirty()">
+                        <p class="m-0 mt-1 text-[11px] leading-relaxed text-shell-faint" x-text="siteNameNoteLine"></p>
+                    </div>
+                    <div class="mt-3 flex flex-wrap items-center border-t border-hairline pt-3">
+                        <div class="mb-2.5 min-w-0 basis-full">
+                            <div class="text-[13px] font-semibold" x-text="$t( 'siteIconLabel' )"></div>
+                            <div class="mt-0.5 text-[11.5px] text-muted" x-text="$t( 'siteIconNote' )"></div>
+                        </div>
+                        <div class="mr-3 flex h-9 w-9 flex-none items-center justify-center overflow-hidden rounded-[8px] bg-plate">
+                            <template x-if="siteIcon !== ''">
+                                <img class="block h-full w-full bg-media-backdrop object-cover" :src="siteIcon" alt="">
+                            </template>
+                            <template x-if="siteIcon === ''">
+                                <svg width="16" height="13" viewBox="0 0 40 32" fill="none" class="opacity-70"><rect x="1" y="1" width="38" height="30" rx="3" class="stroke-glyph" stroke-width="2"></rect><circle cx="12" cy="11" r="3" class="stroke-glyph" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" class="stroke-glyph" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                            </template>
+                        </div>
+                        <label class="flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-button px-3.5 py-[5px] font-sans text-[12px] font-semibold text-text2">
+                            <span x-text="$t( 'uploadWord' )"></span>
+                            <input type="file" class="hidden" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/x-icon" @change="uploadSiteIcon( $event )">
+                        </label>
+                        <button type="button" class="ml-2 flex-none cursor-pointer whitespace-nowrap rounded-lg border-0 bg-transparent p-0 font-sans text-[12px] text-muted" x-show="siteIcon !== ''" x-text="$t( 'removeWord' )" @click="removeSiteIcon()"></button>
+                    </div>
+
+                    </div>
+                </template>
                 <template x-if="blockEditor !== null && canvasActive && blockEditor.kind !== 'partial'">
                     <div class="flex flex-col gap-4">
                         <template x-for="fieldKey in editorFieldKeys" :key="fieldKey">
@@ -1734,18 +2353,55 @@
                 <template x-if="blockEditor !== null && canvasActive && blockEditor.kind === 'partial'">
                     <div class="flex flex-col gap-3">
                         <p class="m-0 text-[12px] leading-relaxed text-text2" x-text="$t( 'partialBlockNote' )"></p>
-                        <button type="button" class="cursor-pointer self-start rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'editPartialWord' ) + ' ' + blockEditor.name" @click="openPartialFromBlock()"></button>
+                        <button type="button" class="cursor-pointer self-start rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'editPartialWord' ) + ' ' + blockEditor.name" @click="openPartialFromBlock()"></button>
+                    </div>
+                </template>
+
+                <template x-if="canvasActive && selectedBlock !== null && blockInfoAt( selectedBlock )?.kind === 'slot'">
+                    <div class="flex flex-col gap-3">
+                        <p class="m-0 text-[12px] leading-relaxed text-text2" x-text="$t( 'slotNote' )"></p>
+                        <div>
+                            <div class="mb-[5px] flex items-center">
+                                <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'slotSampleLabel' )"></label>
+                            </div>
+                            <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" @change="chooseSamplePage( $event.target.value === '' ? null : $event.target.value )">
+                                <option value="" x-text="$t( 'sampleNone' )" :selected="samplePage === null"></option>
+                                <template x-for="pageOption in pages" :key="pageOption.id">
+                                    <option :value="pageOption.id" x-text="pageOption.title" :selected="pageOption.id === samplePage?.id"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+                </template>
+
+                <template x-if="layoutsRow !== null">
+                    <div class="flex flex-col gap-4">
+                        <p class="m-0 text-[12px] leading-relaxed text-text2" x-text="$t( 'layoutRowNote' )"></p>
+                        <div>
+                            <div class="mb-[5px] flex items-center">
+                                <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'templateSelectLabel' )"></label>
+                            </div>
+                            <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" @change="setNamedLayoutTemplate( layoutsRow.name, $event.target.value )">
+                                <template x-for="name in templateNames" :key="name">
+                                    <option :value="name" x-text="name" :selected="name === ( layoutsRow.template ?? 'default' )"></option>
+                                </template>
+                            </select>
+                            <p class="m-0 mt-1.5 text-[11px] leading-relaxed text-muted" x-text="layoutFollowersLine( layoutsRow )"></p>
+                        </div>
+                        <div class="flex flex-col items-start gap-2">
+                            <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'editLayoutWord' )" @click="openLayoutCanvas( layoutsRow.name )"></button>
+                        </div>
                     </div>
                 </template>
 
                 <template x-if="workspace === 'media' && selectedMedia !== null">
                     <div class="flex flex-col gap-3.5">
-                        <div class="overflow-hidden rounded-[10px] bg-plate">
+                        <div class="overflow-hidden rounded-[10px] border border-border-std">
                             <template x-if="mediaIsImage( selectedMedia.file )">
-                                <img class="block max-h-56 w-full object-contain" :src="selectedMedia.url" alt="">
+                                <img class="block max-h-56 w-full bg-media-backdrop object-contain" :src="selectedMedia.url" alt="">
                             </template>
                             <template x-if="!mediaIsImage( selectedMedia.file )">
-                                <div class="flex h-24 w-full items-center justify-center">
+                                <div class="flex h-24 w-full items-center justify-center bg-plate">
                                     <svg width="28" height="28" viewBox="0 0 16 16" fill="none"><path d="M4 1.5h5.5L13 5v9.5H4z" class="stroke-glyph" stroke-width="1.3" stroke-linejoin="round"></path><path d="M9.5 1.5V5H13" class="stroke-glyph" stroke-width="1.3" stroke-linejoin="round"></path></svg>
                                 </div>
                             </template>
@@ -1781,12 +2437,12 @@
                                         <p class="m-0 mt-1.5 text-[11px] leading-relaxed text-muted" x-text="$t( 'mediaReferencedNote' )"></p>
                                     </div>
                                 </template>
-                                <button type="button" x-show="selectedMedia.references === 0" class="cursor-pointer self-start rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'moveToTrashWord' )" @click="trashMedia( selectedMedia.file )"></button>
+                                <button type="button" x-show="selectedMedia.references === 0" class="cursor-pointer self-start rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'moveToTrashWord' )" @click="trashMedia( selectedMedia.file )"></button>
                             </div>
                         </template>
                         <template x-if="mediaView === 'trash'">
                             <div class="flex items-center gap-2.5">
-                                <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'restoreWord' )" @click="restoreMedia( selectedMedia.file )"></button>
+                                <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'restoreWord' )" @click="restoreMedia( selectedMedia.file )"></button>
                                 <button type="button" class="cursor-pointer rounded-[8px] border border-danger bg-transparent px-3 py-1.5 font-sans text-xs font-semibold text-danger" x-text="$t( 'deleteForeverWord' )" @click="openRowDelete( 'mediaForever', selectedMedia.file )"></button>
                             </div>
                         </template>
@@ -1872,7 +2528,7 @@
                                     <div class="text-[12.5px] font-semibold" x-text="repeatEditor.componentTitle"></div>
                                     <div class="text-[10.5px] text-muted" x-text="( repeatEditor.repeat.component ?? '' ).split( '/' )[ 0 ]"></div>
                                 </div>
-                                <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[8px] border border-border-strong bg-surface px-2.5 py-1 font-sans text-[11.5px] font-semibold text-text2" x-text="$t( 'changeLabel' )" @click="openRepeatComponentSwap()"></button>
+                                <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[8px] border border-border-strong bg-button px-2.5 py-1 font-sans text-[11.5px] font-semibold text-text2" x-text="$t( 'changeLabel' )" @click="openRepeatComponentSwap()"></button>
                             </div>
                         </div>
 
@@ -1888,10 +2544,10 @@
                     </div>
                 </template>
 
-                <template x-if="surface !== null && blockEditor === null && repeatEditor === null">
+                <template x-if="surface !== null && blockEditor === null && repeatEditor === null && blockInfoAt( selectedBlock )?.kind !== 'slot'">
                     <div class="flex flex-col gap-3">
                         <p class="m-0 text-[12px] leading-relaxed text-muted" x-text="$t( 'selectBlockHint' )"></p>
-                        <p class="m-0 text-[11.5px] leading-relaxed text-muted" x-text="$t( workspace === 'settings' ? ( surface === 'notFound' ? 'notFoundNote' : 'regionNote' ) : ( surface === 'index' ? 'surfaceIndexNote' : ( workspace === 'taxonomy' ? 'surfaceTermTemplateNote' : 'surfaceTemplateNote' ) ) )"></p>
+                        <p class="m-0 text-[11.5px] leading-relaxed text-muted" x-text="$t( workspace === 'settings' ? ( surface === 'notFound' ? 'notFoundNote' : 'regionNote' ) : ( workspace === 'template' ? 'surfacePageTemplateNote' : ( surface === 'index' ? 'surfaceIndexNote' : ( workspace === 'taxonomy' ? 'surfaceTermTemplateNote' : 'surfaceTemplateNote' ) ) ) )"></p>
                     </div>
                 </template>
 
@@ -1900,7 +2556,7 @@
                         <div>
                             <div class="mb-[7px] text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'structureLabel' )"></div>
                             <div class="flex flex-col gap-1.5">
-                                <button type="button" class="flex h-[38px] cursor-pointer items-center gap-[9px] rounded-[9px] border border-border-std bg-transparent px-3 text-left font-sans" x-show="collectionEditor.index !== false" @click="openSurface( 'index' )">
+                                <button type="button" class="flex h-[38px] cursor-pointer items-center gap-[9px] rounded-[9px] border border-border-std bg-transparent px-3 text-left font-sans" x-show="collectionEditor?.index !== false" @click="openSurface( 'index' )">
                                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 3h11M2.5 6.5h11M2.5 10h6" class="stroke-shell-muted" stroke-width="1.4" stroke-linecap="round"></path></svg>
                                     <span class="text-[12.5px] font-semibold" x-text="$t( 'editIndexPage' )"></span>
                                     <span class="flex-1"></span>
@@ -2015,9 +2671,9 @@
                             <div class="mb-[5px] flex items-center">
                                 <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'termImage' )"></label>
                             </div>
-                            <button type="button" class="flex h-16 w-full cursor-pointer items-center justify-center overflow-hidden rounded-[9px] border-0 bg-plate p-0" @click="openMediaPicker( 'image', termEditor, 'image', () => markTermDirty() )">
+                            <button type="button" class="flex h-16 w-full cursor-pointer items-center justify-center overflow-hidden rounded-[9px] border border-border-std p-0" :class="typeof termEditor.image?.src === 'string' && termEditor.image.src !== '' ? 'bg-transparent' : 'bg-plate'" @click="openMediaPicker( 'image', termEditor, 'image', () => markTermDirty() )">
                                 <template x-if="typeof termEditor.image?.src === 'string' && termEditor.image.src !== ''">
-                                    <img class="block h-full w-full object-cover" :src="termEditor.image.src" alt="">
+                                    <img class="block h-full w-full bg-media-backdrop object-cover" :src="termEditor.image.src" alt="">
                                 </template>
                                 <template x-if="!( typeof termEditor.image?.src === 'string' && termEditor.image.src !== '' )">
                                     <svg width="26" height="21" viewBox="0 0 40 32" fill="none" class="opacity-70"><rect x="1" y="1" width="38" height="30" rx="3" class="stroke-glyph" stroke-width="2"></rect><circle cx="12" cy="11" r="3" class="stroke-glyph" stroke-width="2"></circle><path d="M6 26l9-9 6 6 5-5 8 8" class="stroke-glyph" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
@@ -2042,7 +2698,7 @@
                                 <div class="mb-[5px] flex items-center">
                                     <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'typePage' )"></label>
                                 </div>
-                                <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" x-model="selectedMenuItem.page" @change="markMenuEditorDirty()">
+                                <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px] disabled:cursor-not-allowed disabled:text-muted" :disabled="menuItemIsAuto( selectedMenuItem )" x-model="selectedMenuItem.page" @change="markMenuEditorDirty()">
                                     <template x-for="pageOption in pages" :key="pageOption.id">
                                         <option :value="pageOption.id" x-text="pageOption.title" :selected="pageOption.id === selectedMenuItem.page"></option>
                                     </template>
@@ -2054,7 +2710,7 @@
                                 <div class="mb-[5px] flex items-center">
                                     <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'typeCollection' )"></label>
                                 </div>
-                                <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" x-model="selectedMenuItem.collection" @change="markMenuEditorDirty()">
+                                <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px] disabled:cursor-not-allowed disabled:text-muted" :disabled="menuItemIsAuto( selectedMenuItem )" x-model="selectedMenuItem.collection" @change="markMenuEditorDirty()">
                                     <template x-for="collectionOption in menuAddCollections" :key="collectionOption.file">
                                         <option :value="collectionOption.file.replace( '.json', '' )" x-text="collectionOption.label" :selected="collectionOption.file === selectedMenuItem.collection + '.json'"></option>
                                     </template>
@@ -2066,7 +2722,7 @@
                                 <div class="mb-[5px] flex items-center">
                                     <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'typeTaxonomy' )"></label>
                                 </div>
-                                <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" x-model="selectedMenuItem.taxonomy" @change="markMenuEditorDirty()">
+                                <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px] disabled:cursor-not-allowed disabled:text-muted" :disabled="menuItemIsAuto( selectedMenuItem )" x-model="selectedMenuItem.taxonomy" @change="markMenuEditorDirty()">
                                     <template x-for="taxonomyOption in menuAddTaxonomies" :key="taxonomyOption.file">
                                         <option :value="taxonomyOption.file.replace( '.json', '' )" x-text="taxonomyOption.label" :selected="taxonomyOption.file === selectedMenuItem.taxonomy + '.json'"></option>
                                     </template>
@@ -2081,6 +2737,7 @@
                                 <input type="text" class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-3 font-sans text-[12.5px]" :placeholder="$t( 'menuUrlPlaceholder' )" x-model="selectedMenuItem.url" @input="markMenuEditorDirty()">
                             </div>
                         </template>
+                        <p class="m-0 text-[11px] leading-relaxed text-amber-text" x-show="menuItemIsAuto( selectedMenuItem )" x-text="$t( 'menuAutoLocked' )"></p>
                         <div class="text-[11px] text-shell-faint" x-text="menuItemNote( selectedMenuItem )"></div>
                         <p class="m-0 text-[11px] leading-relaxed text-muted" x-show="selectedMenuItem.items.length > 0" x-text="$t( 'menuFamilyNote' )"></p>
                     </div>
@@ -2090,45 +2747,26 @@
                     <p class="m-0 text-[12px] leading-relaxed text-text2" x-text="$t( 'menuInspectorNote' )"></p>
                 </template>
 
-                <template x-if="workspace === 'settings' && surface === null">
+                <template x-if="workspace === 'template' && surface !== null && selectedBlock === null">
                     <div class="flex flex-col gap-4">
                         <div>
-                            <div class="mb-[7px] text-[10px] font-semibold uppercase tracking-[0.12em] text-shell-faint" x-text="$t( 'structureLabel' )"></div>
-                            <div class="flex flex-col gap-1.5">
-                                <button type="button" class="flex h-[38px] cursor-pointer items-center gap-[9px] rounded-[9px] border border-border-std bg-transparent px-3 text-left font-sans" @click="openSurface( 'header' )">
-                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" class="stroke-shell-muted" stroke-width="1.4"></rect><path d="M2 6h12" class="stroke-shell-muted" stroke-width="1.4"></path></svg>
-                                    <span class="text-[12.5px] font-semibold" x-text="$t( 'editHeader' )"></span>
-                                    <span class="flex-1"></span>
-                                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-muted" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                </button>
-                                <button type="button" class="flex h-[38px] cursor-pointer items-center gap-[9px] rounded-[9px] border border-border-std bg-transparent px-3 text-left font-sans" @click="openSurface( 'footer' )">
-                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" class="stroke-shell-muted" stroke-width="1.4"></rect><path d="M2 10h12" class="stroke-shell-muted" stroke-width="1.4"></path></svg>
-                                    <span class="text-[12.5px] font-semibold" x-text="$t( 'editFooter' )"></span>
-                                    <span class="flex-1"></span>
-                                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-muted" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                </button>
-                                <button type="button" class="flex h-[38px] cursor-pointer items-center gap-[9px] rounded-[9px] border border-border-std bg-transparent px-3 text-left font-sans" @click="openSurface( 'notFound' )">
-                                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" class="stroke-shell-muted" stroke-width="1.4"></rect><path d="M5.5 6.5L10.5 11.5M10.5 6.5L5.5 11.5" class="stroke-shell-muted" stroke-width="1.4" stroke-linecap="round"></path></svg>
-                                    <span class="text-[12.5px] font-semibold" x-text="$t( 'editNotFound' )"></span>
-                                    <span class="flex-1"></span>
-                                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-muted" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                </button>
-                                <template x-for="partialName in snapshot?.partials ?? []" :key="partialName">
-                                    <div class="flex h-[38px] items-center gap-[9px] rounded-[9px] border border-border-std px-3">
-                                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="2" y="4.5" width="12" height="7" rx="1.5" class="stroke-shell-muted" stroke-width="1.4"></rect></svg>
-                                        <button type="button" class="min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent p-0 text-left font-sans text-[12.5px] font-semibold" x-text="partialName" @click="openSurface( partialName )"></button>
-                                        <button type="button" class="flex h-[22px] w-[22px] flex-none cursor-pointer items-center justify-center rounded-[6px] border-0 bg-control-soft text-text2 transition-colors duration-100 hover:bg-control hover:text-danger" :aria-label="$t( 'deletePartial' )" @click="openRowDelete( 'partial', partialName )">
-                                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M2.5 4h11M5.5 4V2.8a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1V4M4 4l.7 9a1.2 1.2 0 0 0 1.2 1.1h4.2a1.2 1.2 0 0 0 1.2-1.1L12 4M6.6 6.8v4.8M9.4 6.8v4.8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                        </button>
-                                        <button type="button" class="flex cursor-pointer border-0 bg-transparent p-0" :aria-label="$t( 'editWord' )" @click="openSurface( partialName )">
-                                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M6 3.5L10.5 8L6 12.5" class="stroke-shell-muted" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                        </button>
-                                    </div>
-                                </template>
-                                <button type="button" class="cursor-pointer self-start border-0 bg-transparent p-0 font-sans text-[12px] font-semibold text-amber-deep" x-text="$t( 'addPartial' )" @click="startNavCreate( 'partial' )"></button>
+                            <div class="mb-[5px]">
+                                <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'templateNameLabel' )"></label>
                             </div>
-                            <p class="m-0 mt-1.5 text-[10.5px] leading-relaxed text-muted" x-text="$t( 'regionNote' )"></p>
+                            <input type="text" class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-3 font-sans text-[12.5px]" :class="surface === 'default' && 'text-muted'" :value="surface" :disabled="surface === 'default'" @change="renameTemplate( $event.target.value )">
+                            <p class="m-0 mt-1.5 text-[11px] leading-relaxed text-muted" x-text="surface === 'default' ? $t( 'templateDefaultNote' ) : templatePagesLine"></p>
                         </div>
+                        <div class="rounded-lg border border-border-std px-3.5 py-3 text-[11.5px] leading-relaxed text-text2" x-text="$t( 'templateCanvasNote' )"></div>
+                        <template x-if="surface !== 'default'">
+                            <div class="border-t border-hairline pt-4">
+                                <button type="button" class="cursor-pointer rounded-[8px] border border-danger bg-transparent px-3 py-1.5 font-sans text-xs font-semibold text-danger" x-text="$t( 'deleteTemplate' )" @click="openRowDelete( 'template', surface )"></button>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+
+                <template x-if="workspace === 'settings' && surface === null">
+                    <div class="flex flex-col gap-4">
                         <div>
                             <div class="mb-[5px] flex items-center">
                                 <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'declaredUseLabel' )"></label>
@@ -2152,7 +2790,7 @@
                 </template>
             </div>
 
-            <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-3" x-show="tab === 'usage'">
+            <div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-[18px] pb-3" x-show="activeTab === 'usage'">
                 <p class="m-0 mb-2.5 text-[11.5px] leading-relaxed text-muted" x-text="$t( 'usageNote' )"></p>
                 <div class="flex flex-col gap-1">
                     <template x-for="row in usageRows ?? []" :key="row.kind + ':' + ( row.id ?? row.area ?? row.file ?? '' )">
@@ -2165,7 +2803,8 @@
                 </div>
             </div>
 
-            <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-[18px] pb-3" x-show="tab === 'settings'">
+            <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-[18px] pb-3" x-show="activeTab === 'settings'">
+                <p class="m-0 text-[12px] leading-relaxed text-muted" x-show="!settingsTabFilled" x-text="$t( 'tabEmptyPrompt' )"></p>
                 <template x-if="canvasActive && selectedBlock !== null && blockEditor !== null && ( blockEditor.anchors ?? [] ).length > 0">
                     <div>
                         <div class="mb-[5px] flex items-center">
@@ -2175,7 +2814,7 @@
                         <p class="m-0 mt-1 text-[11px] leading-relaxed text-muted" x-text="$t( 'morphLinkNote' )"></p>
                     </div>
                 </template>
-                <template x-if="canvasActive && selectedBlock !== null">
+                <template x-if="canvasActive && selectedBlock !== null && blockInfoAt( selectedBlock )?.kind !== 'slot'">
                     <div class="mt-2">
                         <button type="button" class="cursor-pointer rounded-[8px] border border-danger bg-transparent px-3 py-1.5 font-sans text-xs font-semibold text-danger" x-text="$t( 'removeBlock' )" @click="confirmTarget = 'block'"></button>
                     </div>
@@ -2260,17 +2899,17 @@
                             <input type="text" class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-3 font-sans text-[12.5px]" x-model="collectionEditor.label" x-ref="metaNameInput" @input="markMetaDirty()" @focusout="metaNameBlurred()">
                             <p class="m-0 mt-1 text-[11px] leading-relaxed text-amber-text" x-show="metaNameMissing" x-text="$t( 'requiredNag' )"></p>
                             <div class="mt-1 text-[11px] text-shell-faint" x-text="workspaceFile"></div>
-                            <button type="button" class="mt-2 cursor-pointer rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-[11.5px] font-semibold text-text2" x-show="renameOfferFile !== ''" x-text="tFillRenameOffer" @click="renameConfirmOpen = true"></button>
+                            <button type="button" class="mt-2 cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-[11.5px] font-semibold text-text2" x-show="renameOfferFile !== ''" x-text="tFillRenameOffer" @click="renameConfirmOpen = true"></button>
                         </div>
                         <div class="flex items-center">
                             <span class="text-[12px] font-semibold" x-text="$t( 'publicIndex' )"></span>
-                            <span class="ml-2 text-[11px] text-shell-faint" x-show="collectionEditor.index !== false" x-text="collectionAddress"></span>
+                            <span class="ml-2 text-[11px] text-shell-faint" x-show="collectionEditor?.index !== false" x-text="collectionAddress"></span>
                             <span class="flex-1"></span>
                             <button type="button" class="relative h-[18px] w-[30px] cursor-pointer rounded-full border-0 p-0" :class="collectionEditor.index !== false ? 'bg-amber' : 'bg-rule'" role="switch" :aria-checked="collectionEditor.index !== false" @click="toggleCollectionSetting( 'index' )">
                                 <span class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-surface shadow transition-all" :class="collectionEditor.index !== false ? 'left-[14px]' : 'left-[2px]'"></span>
                             </button>
                         </div>
-                        <div class="flex items-center" x-show="collectionEditor.index !== false">
+                        <div class="flex items-center" x-show="collectionEditor?.index !== false">
                             <span class="flex flex-col">
                                 <span class="text-[12px] font-semibold" x-text="$t( 'pageSizeLabel' )"></span>
                                 <span class="mt-0.5 text-[10.5px] leading-relaxed text-muted" x-text="$t( 'pageSizeNote' )"></span>
@@ -2320,15 +2959,21 @@
                         <div>
                             <div class="mb-[5px] text-[12px] font-semibold" x-text="$t( 'layoutSectionLabel' )"></div>
                             <p class="m-0 mb-2 text-[10.5px] leading-relaxed text-muted" x-text="$t( entryEditor.hasOwnBlocks ? 'layoutStateCustomized' : 'layoutStateTemplate' )"></p>
+                            <select class="mb-2.5 box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" @change="chooseEntryLayout( entryEditor.id, $event.target.value )">
+                                <template x-for="layout in layoutRows" :key="layout.name">
+                                    <option :value="layout.name" x-text="layout.name" :selected="!entryEditor.hasOwnBlocks && ( entryEditor.layout ?? 'default' ) === layout.name"></option>
+                                </template>
+                                <option value="__own" x-text="$t( 'layoutOwnOption' )" :selected="entryEditor.hasOwnBlocks"></option>
+                            </select>
                             <template x-if="!entryEditor.hasOwnBlocks">
                                 <div>
-                                    <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'customizeLayout' )" @click="divergeEntry( entryEditor.id )"></button>
+                                    <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'customizeLayout' )" @click="divergeEntry( entryEditor.id )"></button>
                                     <p class="m-0 mt-1.5 text-[10.5px] leading-relaxed text-muted" x-text="$t( 'customizeLayoutNote' )"></p>
                                 </div>
                             </template>
                             <template x-if="entryEditor.hasOwnBlocks">
                                 <div class="flex flex-col items-start gap-2">
-                                    <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'editLayoutWord' )" @click="openEntryLayout( entryEditor.id )"></button>
+                                    <button type="button" class="cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-xs font-semibold text-text2" x-text="$t( 'editLayoutWord' )" @click="openEntryLayout( entryEditor.id )"></button>
                                     <button type="button" class="cursor-pointer rounded-[8px] border border-danger bg-transparent px-3 py-1.5 font-sans text-xs font-semibold text-danger" x-text="$t( 'adoptTemplate' )" @click="openRowDelete( 'entryLayout', entryEditor.id )"></button>
                                 </div>
                             </template>
@@ -2339,7 +2984,21 @@
                     </div>
                 </template>
 
-                <template x-if="workspace === 'page' && selectedBlock === null && selectedPage !== undefined">
+                <template x-if="canvasEntry !== null && selectedBlock === null">
+                    <div>
+                        <div class="mb-[5px] text-[12px] font-semibold" x-text="$t( 'layoutSectionLabel' )"></div>
+                        <p class="m-0 mb-2 text-[10.5px] leading-relaxed text-muted" x-text="$t( canvasEntry.hasOwnBlocks ? 'layoutStateCustomized' : 'layoutStateTemplate' )"></p>
+                        <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" @change="chooseEntryLayout( canvasEntry.id, $event.target.value )">
+                            <template x-for="layout in layoutRows" :key="layout.name">
+                                <option :value="layout.name" x-text="layout.name" :selected="!canvasEntry.hasOwnBlocks && ( canvasEntry.layout ?? 'default' ) === layout.name"></option>
+                            </template>
+                            <option value="__own" x-text="$t( 'layoutOwnOption' )" :selected="canvasEntry.hasOwnBlocks"></option>
+                        </select>
+                        <p class="m-0 mt-1.5 text-[10.5px] leading-relaxed text-muted" x-text="$t( 'layoutCanvasNote' )"></p>
+                    </div>
+                </template>
+
+                <template x-if="( workspace === 'page' || ( workspace === 'pages' && pagesRow !== null ) ) && selectedBlock === null && selectedPage !== undefined">
                     <div class="flex flex-col gap-4">
                         <div>
                             <div class="mb-[5px] flex items-center">
@@ -2348,9 +3007,9 @@
                             <input type="text" class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-3 font-sans text-[12.5px]" x-model="pageTitleDraft" x-ref="metaNameInput" @input="markPageTitleDirty()" @focusout="metaNameBlurred()">
                             <p class="m-0 mt-1 text-[11px] leading-relaxed text-amber-text" x-show="metaNameMissing" x-text="$t( 'requiredNag' )"></p>
                             <div class="mt-1 text-[11px] text-shell-faint" x-text="pageAddressWith( selectedPage.slug )"></div>
-                            <button type="button" class="mt-2 cursor-pointer rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-[11.5px] font-semibold text-text2" x-show="pageAddressOffer !== ''" x-text="addressOfferLine" @click="addressConfirmOpen = true"></button>
+                            <button type="button" class="mt-2 cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-[11.5px] font-semibold text-text2" x-show="pageAddressOffer !== ''" x-text="addressOfferLine" @click="addressConfirmOpen = true"></button>
                         </div>
-                        <template x-if="selectedPage.slug !== 'home'">
+                        <template x-if="!pageIsReserved( selectedPage )">
                             <div>
                                 <div class="mb-[5px]">
                                     <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'nestUnder' )"></label>
@@ -2364,7 +3023,28 @@
                                 <div class="mt-1 text-[11px] text-shell-faint" x-text="nestAddressLine"></div>
                             </div>
                         </template>
-                        <div class="flex items-center">
+                        <div>
+                            <div class="mb-[5px]">
+                                <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'templateSelectLabel' )"></label>
+                            </div>
+                            <select class="box-border h-[34px] w-full cursor-pointer rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" :value="selectedPage.template === 'custom' ? '' : selectedPage.template" @change="setPageTemplate( $event.target.value )">
+                                <template x-if="selectedPage.template === 'custom'">
+                                    <option value="" x-text="$t( 'templateCustom' )" selected></option>
+                                </template>
+                                <template x-for="name in templateNames" :key="name">
+                                    <option :value="name" x-text="name" :selected="selectedPage.template === name"></option>
+                                </template>
+                            </select>
+                            <p class="m-0 mt-1 text-[11px] leading-relaxed text-muted" x-text="selectedPage.template === 'custom' ? $t( 'templateCustomNote' ) : $t( 'templateSelectNote' )"></p>
+                            <div class="mt-2 flex items-center gap-2">
+                                <button type="button" x-show="selectedPage.template !== 'custom'" class="cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-[11.5px] font-semibold text-text2" x-text="$t( 'detachTemplate' )" @click="detachPageTemplate()"></button>
+                                <button type="button" x-show="selectedPage.template !== 'custom'" class="cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-[11.5px] font-semibold text-text2" x-text="$t( 'editTemplateWord' )" @click="openTemplate( selectedPage.template )"></button>
+                            </div>
+                        </div>
+                        <template x-if="selectedPage.slug === '404'">
+                            <p class="m-0 rounded-lg border border-border-std px-3.5 py-3 text-[11.5px] leading-relaxed text-text2" x-text="$t( 'notFoundPageNote' )"></p>
+                        </template>
+                        <div class="flex items-center" x-show="!pageIsReserved( selectedPage )">
                             <span class="flex flex-col">
                                 <span class="text-[12px] font-semibold" x-text="$t( 'draftLabel' )"></span>
                                 <span class="mt-0.5 text-[10.5px] leading-relaxed text-muted" x-text="$t( 'draftNote' )"></span>
@@ -2374,9 +3054,9 @@
                                 <span class="absolute top-[2px] h-[14px] w-[14px] rounded-full bg-surface shadow transition-all" :class="selectedPage.draft === true ? 'left-[14px]' : 'left-[2px]'"></span>
                             </button>
                         </div>
-                        <template x-if="selectedPage.slug !== 'home'">
+                        <template x-if="!pageIsReserved( selectedPage )">
                             <div class="border-t border-hairline pt-4">
-                                <button type="button" class="rounded-[8px] border border-danger bg-transparent px-3 py-1.5 font-sans text-xs font-semibold text-danger" :class="pageHasNested ? 'cursor-default opacity-45' : 'cursor-pointer'" :disabled="pageHasNested" x-text="$t( 'deletePage' )" @click="confirmTarget = 'page'"></button>
+                                <button type="button" class="cursor-pointer rounded-[8px] border border-danger bg-transparent px-3 py-1.5 font-sans text-xs font-semibold text-danger" x-text="$t( 'deletePage' )" @click="confirmTarget = 'page'"></button>
                                 <p class="m-0 mt-2 text-[10.5px] leading-relaxed text-muted" x-show="pageHasNested" x-text="$t( 'pageNestedNote' )"></p>
                             </div>
                         </template>
@@ -2397,7 +3077,7 @@
                             <div class="mb-[5px] flex items-center">
                                 <label class="text-[11.5px] font-semibold leading-[15px] text-text2" x-text="$t( 'menuTypeLabel' )"></label>
                             </div>
-                            <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px]" @change="setMenuItemKind( $event.target.value )">
+                            <select class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-2.5 font-sans text-[12.5px] disabled:cursor-not-allowed disabled:text-muted" :disabled="menuItemIsAuto( selectedMenuItem )" @change="setMenuItemKind( $event.target.value )">
                                 <template x-for="option in menuKindOptions" :key="option.kind">
                                     <option :value="option.kind" x-text="option.label" :selected="option.kind === menuItemKind( selectedMenuItem )"></option>
                                 </template>
@@ -2446,7 +3126,7 @@
                             <input type="text" class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-3 font-sans text-[12.5px]" x-model="taxonomyEditor.label" x-ref="metaNameInput" @input="markMetaDirty()" @focusout="metaNameBlurred()">
                             <p class="m-0 mt-1 text-[11px] leading-relaxed text-amber-text" x-show="metaNameMissing" x-text="$t( 'requiredNag' )"></p>
                             <div class="mt-1 text-[11px] text-shell-faint" x-text="workspaceFile"></div>
-                            <button type="button" class="mt-2 cursor-pointer rounded-[8px] border border-border-strong bg-surface px-3 py-1.5 font-sans text-[11.5px] font-semibold text-text2" x-show="renameOfferFile !== ''" x-text="tFillRenameOffer" @click="renameConfirmOpen = true"></button>
+                            <button type="button" class="mt-2 cursor-pointer rounded-[8px] border border-border-strong bg-button px-3 py-1.5 font-sans text-[11.5px] font-semibold text-text2" x-show="renameOfferFile !== ''" x-text="tFillRenameOffer" @click="renameConfirmOpen = true"></button>
                         </div>
                         <div class="flex items-center">
                             <span class="text-[12px] font-semibold" x-text="$t( 'publicTermPages' )"></span>
@@ -2542,10 +3222,10 @@
             </template>
 
             <template x-if="navCreate !== null">
-                <div class="fixed inset-0 z-50 flex items-center justify-center bg-veil" @click.self="navCreate = null">
-                    <div class="box-border w-[460px] rounded-xl bg-surface px-7 py-[26px] shadow-[var(--shadow-modal)]" @keydown.escape.stop="navCreate = null">
-                        <div class="text-[17px] font-semibold" x-text="$t( navCreate === 'collection' ? 'createCollectionTitle' : ( navCreate === 'menu' ? 'createMenuTitle' : ( navCreate === 'partial' ? 'createPartialTitle' : 'createTaxonomyTitle' ) ) )"></div>
-                        <div class="mt-[3px] text-[12px] text-muted" x-text="$t( navCreate === 'collection' ? 'createCollectionSub' : ( navCreate === 'menu' ? 'createMenuSub' : ( navCreate === 'partial' ? 'createPartialSub' : 'createTaxonomySub' ) ) )"></div>
+                <div class="fixed inset-0 z-50 flex items-center justify-center bg-veil" @click.self="closeNavCreate()">
+                    <div class="box-border w-[460px] rounded-xl bg-surface px-7 py-[26px] shadow-[var(--shadow-modal)]" @keydown.escape.stop="closeNavCreate()">
+                        <div class="text-[17px] font-semibold" x-text="$t( navCreate === 'collection' ? 'createCollectionTitle' : ( navCreate === 'menu' ? 'createMenuTitle' : ( navCreate === 'partial' ? 'createPartialTitle' : ( navCreate === 'template' ? 'createTemplateTitle' : ( navCreate === 'layout' ? 'createLayoutTitle' : 'createTaxonomyTitle' ) ) ) ) )"></div>
+                        <div class="mt-[3px] text-[12px] text-muted" x-text="$t( navCreate === 'collection' ? 'createCollectionSub' : ( navCreate === 'menu' ? 'createMenuSub' : ( navCreate === 'partial' ? 'createPartialSub' : ( navCreate === 'template' ? 'createTemplateSub' : ( navCreate === 'layout' ? 'createLayoutSub' : 'createTaxonomySub' ) ) ) ) )"></div>
 
                         <div class="mt-5">
                             <div class="mb-[5px]">
@@ -2554,15 +3234,17 @@
                             <input
                                 type="text"
                                 class="box-border h-[34px] w-full rounded-[9px] border-0 bg-well px-3 font-sans text-[13px]"
-                                :placeholder="$t( navCreate === 'collection' ? 'newCollectionName' : ( navCreate === 'menu' ? 'newMenuName' : ( navCreate === 'partial' ? 'newPartialName' : 'newTaxonomyName' ) ) )"
+                                :placeholder="$t( navCreate === 'collection' ? 'newCollectionName' : ( navCreate === 'menu' ? 'newMenuName' : ( navCreate === 'partial' ? 'newPartialName' : ( navCreate === 'template' ? 'newTemplateName' : ( navCreate === 'layout' ? 'newLayoutName' : 'newTaxonomyName' ) ) ) ) )"
                                 x-model="navCreateLabel"
+                                @input="navCreateError = ''"
                                 @keydown.enter="submitNavCreate()"
                                 x-init="$el.focus()"
                             >
                             <div class="mt-[5px] text-[11px] text-faint" x-text="navCreateSavedAs"></div>
+                            <div class="mt-[5px] text-[11px] text-danger" x-show="navCreateError !== ''" x-text="navCreateError"></div>
                         </div>
 
-                        <div class="mt-[18px] rounded-lg border border-border-std px-3.5 py-[13px]" x-show="navCreate !== 'menu' && navCreate !== 'partial'">
+                        <div class="mt-[18px] rounded-lg border border-border-std px-3.5 py-[13px]" x-show="navCreate !== 'menu' && navCreate !== 'partial' && navCreate !== 'template'">
                             <div class="flex items-center">
                                 <span class="text-[13px] font-semibold" x-text="$t( 'createPublicIndex' )"></span>
                                 <span class="flex-1"></span>
@@ -2589,8 +3271,8 @@
                         <div class="mt-[22px] flex items-center">
                             <div class="mr-3 min-w-0 text-[11px] text-faint" x-show="navCreate === 'collection'" x-text="$t( 'createFieldsNext' )"></div>
                             <div class="flex-1"></div>
-                            <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-surface px-4 py-2 font-sans text-[13px] text-text2" x-text="$t( 'cancel' )" @click="navCreate = null"></button>
-                            <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border-0 bg-amber px-[18px] py-2 font-sans text-[13px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="$t( navCreate === 'collection' ? 'createConfirm' : ( navCreate === 'menu' ? 'createConfirmMenu' : ( navCreate === 'partial' ? 'createConfirmPartial' : 'createConfirmTaxonomy' ) ) )" @click="submitNavCreate()"></button>
+                            <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-lg border border-border-strong bg-button px-4 py-2 font-sans text-[13px] text-text2" x-text="$t( 'cancel' )" @click="closeNavCreate()"></button>
+                            <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-lg border-0 bg-amber px-[18px] py-2 font-sans text-[13px] font-semibold text-on-amber transition-colors duration-100 hover:bg-amber-deep" x-text="$t( navCreate === 'collection' ? 'createConfirm' : ( navCreate === 'menu' ? 'createConfirmMenu' : ( navCreate === 'partial' ? 'createConfirmPartial' : ( navCreate === 'template' ? 'createConfirmTemplate' : ( navCreate === 'layout' ? 'createConfirmLayout' : 'createConfirmTaxonomy' ) ) ) ) )" @click="submitNavCreate()"></button>
                         </div>
                     </div>
                 </div>
@@ -2605,7 +3287,7 @@
                         </div>
                         <div class="flex items-center px-[22px] pb-[18px] pt-4">
                             <div class="flex-1"></div>
-                            <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-surface px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'cancel' )" @click="cancelConfirm()"></button>
+                            <button type="button" class="mr-2.5 flex-none cursor-pointer whitespace-nowrap rounded-[9px] border border-border-strong bg-button px-4 py-2 font-sans text-[12.5px] text-text2" x-text="$t( 'cancel' )" @click="cancelConfirm()"></button>
                             <button type="button" class="flex-none cursor-pointer whitespace-nowrap rounded-[9px] border-0 bg-danger px-[18px] py-2 font-sans text-[12.5px] font-semibold text-surface" x-text="confirmActionLabel" @click="runConfirmedDelete()"></button>
                         </div>
                         <div class="border-t border-hairline bg-input px-[22px] pb-3.5 pt-[11px]">

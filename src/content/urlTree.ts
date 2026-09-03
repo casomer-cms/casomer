@@ -167,7 +167,7 @@ export function materializeMenu (
     {
         for ( const page of pages )
         {
-            if ( page.parent !== undefined || referencedPages.has( page.id ) || pageIsDraft( page, index ) ) { continue; }
+            if ( page.parent !== undefined || page.slug === '404' || referencedPages.has( page.id ) || pageIsDraft( page, index ) ) { continue; }
 
             items.push( { page: page.id, auto: 'topLevelPages' } );
             referencedPages.add( page.id );

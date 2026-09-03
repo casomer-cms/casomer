@@ -5,14 +5,262 @@
 
 import { t } from './strings.js';
 
+// Tree rows (menu items, terms) indent by depth: an inset, then one
+// unit per level. One formula serves the Alpine rows and the drag
+// helpers below, which read depth off the DOM rather than reaching
+// into Alpine scope.
+const TREE_INSET = 18;
+const TREE_INDENT = 22;
+
+// The drop slot's outline starts this far in at the top level (the
+// row's grip sits just inside it) and steps in with the depth.
+const TREE_SLOT_INSET = 10;
+
+// The list card's corner radius (rounded-xl): the rows at the slot's
+// edges wear it, and the pane color bleeds this far under them.
+const TREE_EDGE_RADIUS = 12;
+
+// Island classes with no churn: only touched when they change,
+// since every pointer move runs the preview. Scoped to the card, as
+// the header can be an island edge too.
+function setIsland ( card, members, islandClass )
+{
+    for ( const stale of card.querySelectorAll( `.${islandClass}` ) )
+    {
+        if ( !members.has( stale ) ) { stale.classList.remove( islandClass ); }
+    }
+
+    for ( const member of members )
+    {
+        if ( !member.classList.contains( islandClass ) ) { member.classList.add( islandClass ); }
+    }
+}
+
+function treeRowIndent ( depth )
+{
+    return `${TREE_INSET + depth * TREE_INDENT}px`;
+}
+
+// ---- Sortable lists in flight (UI.md section 1) ----
+// Every [data-sort-list] - fields, terms, entries, the menu tree -
+// shares the drag-time treatment below: the slot as an absence, the
+// islands, the echo, the card's shadow fading. [data-sort-card] is
+// the list's card and [data-sort-header] the card's header, when it
+// has one. Only the menu tree ([data-menu-tree]) is hierarchical: its
+// rows carry data-depth, so only there a family collapses, the slot
+// previews a landing depth, and a sideways pull nests.
+let pointerX = 0;
+
+function listOf ( el )
+{
+    return el.closest( '[data-sort-list]' );
+}
+
+function cardOf ( list )
+{
+    return list.closest( '[data-sort-card]' );
+}
+
+// Neighbours are rows only: the echo, or an x-for template, is not.
+function rowOrNull ( el )
+{
+    return el !== null && el.dataset?.sortId !== undefined ? el : null;
+}
+
+function slotSlot ()
+{
+    return document.querySelector( '[data-sort-list] .sort-drop-slot' );
+}
+
+// The slot's preview. For the menu tree (rows with data-depth) it
+// picks the landing depth (sortMenuRows applies the same rule to the
+// data): the pointer's horizontal pull since the grab picks a level,
+// one per indent unit, clamped to what the slot allows - no
+// shallower than the row beneath (that row keeps its parent), no
+// deeper than one under the row above (its last child, or first
+// child when the row beneath is its child). Pulled left the unit
+// sits at the top level; pulled right it nests under the item above.
+// The pick rides on the row as data-drop-depth for the drop handler.
+// For every list it then sets the islands: the list splits at the
+// gap, every island's bottom row (the row above the gap, or the card
+// header when the slot sits first, and the last row of the list)
+// wears the card's bottom edge, the row below the gap wears a top
+// edge, and the pane color bleeds one radius under each neighbour of
+// the gap, which is what shows in their rounded corners.
+function previewSlot ( slot )
+{
+    let above = slot.previousElementSibling;
+    let below = slot.nextElementSibling;
+
+    while ( above !== null && above.classList.contains( 'sort-family-hidden' ) ) { above = above.previousElementSibling; }
+    while ( below !== null && below.classList.contains( 'sort-family-hidden' ) ) { below = below.nextElementSibling; }
+
+    above = rowOrNull( above );
+    below = rowOrNull( below );
+
+    if ( slot.dataset.depth !== undefined )
+    {
+        const min = below === null ? 0 : Number( below.dataset.depth );
+        const max = above === null ? 0 : Number( above.dataset.depth ) + 1;
+        const pulled = Math.round( ( pointerX - Number( slot.dataset.startX ?? pointerX ) ) / TREE_INDENT );
+        const depth = Math.min( max, Math.max( min, Number( slot.dataset.depth ) + pulled ) );
+        const mark = slot.querySelector( '[data-depth-mark]' );
+
+        slot.dataset.dropDepth = String( depth );
+        slot.style.paddingLeft = treeRowIndent( depth );
+        slot.style.setProperty( '--slot-inset', `${TREE_SLOT_INSET + depth * TREE_INDENT}px` );
+
+        if ( mark !== null ) { mark.style.display = depth > 0 ? '' : 'none'; }
+    }
+
+    const list = listOf( slot );
+    const card = cardOf( list );
+    const header = card.querySelector( '[data-sort-header]' );
+    const visible = [ ...list.querySelectorAll( '[data-sort-id]' ) ].filter( ( row ) => row !== slot && !row.classList.contains( 'sort-family-hidden' ) );
+    const last = visible.at( -1 ) ?? null;
+    const bottoms = new Set( [ above ?? header, ...below === null ? [] : [ last ] ].filter( ( el ) => el !== null ) );
+    const tops = new Set( below === null ? [] : [ below ] );
+
+    setIsland( card, bottoms, 'sort-island-bottom' );
+    setIsland( card, tops, 'sort-island-top' );
+    slot.style.setProperty( '--bleed-top', above === null ? '0' : `${-TREE_EDGE_RADIUS}px` );
+    slot.style.setProperty( '--bleed-bottom', below === null ? '0' : `${-TREE_EDGE_RADIUS}px` );
+}
+
+// Where the slot last sat, relative to its list (scroll-proof), and
+// the echo it leaves behind when it jumps: the slot does not animate
+// (see the stylesheet), so its old spot would show card surface a
+// beat before the incoming row slides in - the echo keeps that spot
+// pane-colored under the rows for the length of Sortable's slide.
+let lastSlotTop = null;
+let settleTimer = null;
+const SLOT_ECHO_MS = 260;
+
+function slotTopIn ( list, slot )
+{
+    return slot.getBoundingClientRect().top - list.getBoundingClientRect().top;
+}
+
+function echoSlotMove ( slot )
+{
+    const list = listOf( slot );
+    const top = slotTopIn( list, slot );
+
+    if ( lastSlotTop !== null && Math.abs( top - lastSlotTop ) > 1 )
+    {
+        const echo = document.createElement( 'div' );
+
+        echo.className = 'sort-slot-echo';
+        echo.style.top = `${lastSlotTop}px`;
+        echo.style.height = `${slot.getBoundingClientRect().height}px`;
+        list.append( echo );
+        setTimeout( () => echo.remove(), SLOT_ECHO_MS );
+
+        // The outline hides for the slide and fades back after.
+        slot.classList.add( 'sort-slot-settling' );
+        clearTimeout( settleTimer );
+        settleTimer = setTimeout( () => slot.classList.remove( 'sort-slot-settling' ), SLOT_ECHO_MS );
+    }
+
+    lastSlotTop = top;
+}
+
+// The slot's row, back to its resting state after the drag: its own
+// indent (tree rows), its own height, no outline inset, no islands,
+// no echoes. A drop that changed nothing keeps this row on screen,
+// so the reset is not optional.
+function resetSlot ( row )
+{
+    if ( row.dataset.depth !== undefined )
+    {
+        const depth = Number( row.dataset.depth );
+        const mark = row.querySelector( '[data-depth-mark]' );
+
+        row.style.paddingLeft = treeRowIndent( depth );
+        row.style.removeProperty( '--slot-inset' );
+
+        if ( mark !== null ) { mark.style.display = depth > 0 ? '' : 'none'; }
+    }
+
+    row.style.height = '';
+    row.style.removeProperty( '--bleed-top' );
+    row.style.removeProperty( '--bleed-bottom' );
+
+    const list = listOf( row );
+
+    if ( list !== null )
+    {
+        // A list outside a card (none today; every sortable wraps in
+        // [data-sort-card]) still resets cleanly.
+        if ( cardOf( list ) !== null )
+        {
+            setIsland( cardOf( list ), new Set(), 'sort-island-bottom' );
+            setIsland( cardOf( list ), new Set(), 'sort-island-top' );
+        }
+
+        for ( const echo of list.querySelectorAll( '.sort-slot-echo' ) ) { echo.remove(); }
+    }
+
+    clearTimeout( settleTimer );
+    row.classList.remove( 'sort-slot-settling' );
+    lastSlotTop = null;
+}
+
+// A row's family: the following rows with greater depth. Read from
+// the DOM in row order, so it holds before the drag starts moving
+// anything. Rows without data-depth (the flat lists) have none.
+function familyOf ( row )
+{
+    const depth = Number( row.dataset.depth );
+    const family = [];
+    let next = row.nextElementSibling;
+
+    while ( next !== null && Number( next.dataset?.depth ?? 'NaN' ) > depth )
+    {
+        family.push( next );
+        next = next.nextElementSibling;
+    }
+
+    return family;
+}
+
 // The drag clone is a copy of a live Alpine row: its x-text and
 // x-sort attributes have no valid scope on <body>, so Alpine firing
 // on it blanks the text and its errors disrupt Sortable's
 // positioning (the yw-webapp gotcha). The observer catches the clone
 // the moment it appears, rebuilds its content from the still-rendered
 // source row, and strips every directive so Alpine leaves it alone.
+// A menu family rides in the clone whole - the parent row over its
+// collapsed descendants, every row at the indent it had in the list
+// (Mikey: the grab point must stay under the cursor, so a nested
+// family's grip lines up where it was grabbed) - so the thing on the
+// cursor is the thing that moves.
 if ( typeof MutationObserver !== 'undefined' )
 {
+    // The pointer's x drives the slot's depth preview; the capture
+    // listener sees the grab before Sortable marks the row chosen.
+    document.addEventListener( 'pointerdown', ( event ) => { pointerX = event.clientX; }, true );
+
+    // A press on a sortable row starts a native text selection before
+    // Sortable engages, and the selection then smears across the page
+    // as the pointer travels (Mikey). The press's default goes, unless
+    // it lands on something that takes focus or edits.
+    document.addEventListener( 'mousedown', ( event ) =>
+    {
+        const row = event.target?.closest?.( '[x-sort\\:item]' );
+        const editable = event.target?.closest?.( 'input, textarea, select, [contenteditable]' );
+
+        if ( event.button === 0 && row !== null && row !== undefined && editable === null ) { event.preventDefault(); }
+    } );
+    document.addEventListener( 'pointermove', ( event ) =>
+    {
+        pointerX = event.clientX;
+
+        const slot = slotSlot();
+
+        if ( slot !== null ) { previewSlot( slot ); }
+    }, { passive: true } );
+
     new MutationObserver( ( mutations ) =>
     {
         for ( const mutation of mutations )
@@ -21,9 +269,68 @@ if ( typeof MutationObserver !== 'undefined' )
             {
                 if ( node.nodeType !== 1 || !node.classList?.contains( 'sort-drag-clone' ) ) { continue; }
 
+                // The family comes from the rows' depths, not the
+                // hidden class: Sortable appends the clone in the same
+                // task that marks the slot, and this observer runs
+                // before the class observer has collapsed anything.
                 const source = document.querySelector( '.sortable-chosen' );
+                const family = source !== null && listOf( source ) !== null ? familyOf( source ) : [];
 
-                if ( source !== null ) { node.innerHTML = source.innerHTML; }
+                if ( source !== null && source.tagName === 'TR' )
+                {
+                    const table = document.createElement( 'table' );
+                    const body = document.createElement( 'tbody' );
+                    const columns = document.createElement( 'colgroup' );
+
+                    table.className = 'sort-clone-table';
+
+                    for ( const cell of source.children )
+                    {
+                        const column = document.createElement( 'col' );
+
+                        column.style.width = cell.getBoundingClientRect().width + 'px';
+                        columns.append( column );
+                    }
+
+                    for ( const [ index, row ] of [ source, ...family ].entries() )
+                    {
+                        const copy = document.createElement( 'tr' );
+
+                        copy.className = row.className;
+                        copy.classList.remove( 'sort-family-hidden', 'sortable-chosen', 'sort-drop-slot' );
+
+                        if ( index === 0 ) { copy.classList.remove( 'border-t' ); }
+
+                        copy.innerHTML = row.innerHTML;
+                        body.append( copy );
+                    }
+
+                    table.append( columns, body );
+                    node.classList.add( 'sort-family-clone' );
+                    node.innerHTML = '';
+                    node.append( table );
+                }
+                else if ( source !== null && family.length === 0 ) { node.innerHTML = source.innerHTML; }
+
+                if ( source !== null && source.tagName !== 'TR' && family.length > 0 )
+                {
+                    node.classList.add( 'sort-family-clone' );
+                    node.innerHTML = '';
+
+                    for ( const [ index, row ] of [ source, ...family ].entries() )
+                    {
+                        const copy = document.createElement( 'div' );
+
+                        copy.className = row.className;
+                        copy.classList.remove( 'sort-family-hidden', 'sortable-chosen', 'sort-drop-slot' );
+
+                        if ( index === 0 ) { copy.classList.remove( 'border-t' ); }
+
+                        copy.style.paddingLeft = treeRowIndent( Number( row.dataset.depth ) );
+                        copy.innerHTML = row.innerHTML;
+                        node.append( copy );
+                    }
+                }
 
                 for ( const el of [ node, ...node.querySelectorAll( '*' ) ] )
                 {
@@ -37,44 +344,86 @@ if ( typeof MutationObserver !== 'undefined' )
                 }
             }
         }
+
+        // Sortable moves the slot row through the list (a childList
+        // mutation each time); the preview follows it, and the echo
+        // covers the spot it left.
+        const slot = slotSlot();
+
+        if ( slot !== null )
+        {
+            echoSlotMove( slot );
+            previewSlot( slot );
+        }
     } ).observe( document.documentElement, { childList: true, subtree: true } );
 
-    // A menu family drags as ONE group (Mikey): the moment Sortable
-    // marks a menu row chosen, its descendants - the following rows
-    // with greater depth - collapse out of the list and travel with
-    // the drop; they reappear when the choice releases. Depth comes
-    // from the rows' own data attributes, so this needs no reach into
-    // Alpine scope, and no Sortable config handlers are overridden
-    // (the sort plugin owns onStart/onEnd).
+    // The drag starts when Sortable marks the row as the slot - on
+    // the first pointer move, not on the press. Then the slot takes
+    // its height (a menu family's descendants, the following rows
+    // with greater depth, collapse out of the list and the slot takes
+    // the family's summed height, so the list does not jump and the
+    // gap is the size of what fills it; they reappear when the choice
+    // releases) and the preview runs. Nothing happens on the press
+    // itself: a still press once collapsed the family and left a tall
+    // centered row on screen until the first move (Mikey's
+    // half-second jar). Depth comes from the rows' own data
+    // attributes, so this needs no reach into Alpine scope, and no
+    // Sortable config handlers are overridden (the sort plugin owns
+    // onStart/onEnd).
     new MutationObserver( ( mutations ) =>
     {
         for ( const mutation of mutations )
         {
             const row = mutation.target;
 
-            if ( row.nodeType !== 1 || row.closest?.( '[data-menu-tree]' ) === null ) { continue; }
+            if ( row.nodeType !== 1 || row.dataset?.sortId === undefined || listOf( row ) === null ) { continue; }
 
             const had = ( mutation.oldValue ?? '' ).includes( 'sortable-chosen' );
             const has = row.classList.contains( 'sortable-chosen' );
 
-            if ( !had && has && row.dataset.depth !== undefined )
+            if ( !had && has )
             {
-                const depth = Number( row.dataset.depth );
-                let next = row.nextElementSibling;
-
-                while ( next !== null && Number( next.dataset?.depth ?? 'NaN' ) > depth )
-                {
-                    next.classList.add( 'sort-family-hidden' );
-                    next = next.nextElementSibling;
-                }
+                // A selection the press started (or one left over)
+                // would smear across the rows as the pointer travels.
+                window.getSelection()?.removeAllRanges();
+                row.dataset.startX = String( pointerX );
+                delete row.dataset.dropDepth;
+                delete row.dataset.dropped;
             }
 
             if ( had && !has )
             {
-                for ( const hidden of row.closest( '[data-menu-tree]' )?.querySelectorAll( '.sort-family-hidden' ) ?? [] )
+                for ( const hidden of listOf( row ).querySelectorAll( '.sort-family-hidden' ) )
                 {
                     hidden.classList.remove( 'sort-family-hidden' );
                 }
+
+                resetSlot( row );
+
+                // A tree row released in its own slot fires no sort
+                // event (Sortable sees no index change), so a
+                // sideways pull there - a depth change alone - lands
+                // through the tree's own drop event instead. Rows the
+                // sort event already handled are marked dropped.
+                if ( row.closest( '[data-sort-tree]' ) !== null && row.dataset.dropped === undefined && row.dataset.dropDepth !== undefined && row.dataset.dropDepth !== row.dataset.depth )
+                {
+                    row.closest( '[data-sort-tree]' ).dispatchEvent( new CustomEvent( 'tree-drop', { detail: row.dataset.sortId } ) );
+                }
+            }
+
+            if ( !( mutation.oldValue ?? '' ).includes( 'sort-drop-slot' ) && row.classList.contains( 'sort-drop-slot' ) )
+            {
+                let height = row.getBoundingClientRect().height;
+
+                for ( const next of familyOf( row ) )
+                {
+                    height += next.getBoundingClientRect().height;
+                    next.classList.add( 'sort-family-hidden' );
+                }
+
+                row.style.height = `${height}px`;
+                lastSlotTop = slotTopIn( listOf( row ), row );
+                previewSlot( row );
             }
         }
     } ).observe( document.documentElement, { subtree: true, attributes: true, attributeFilter: [ 'class' ], attributeOldValue: true } );
@@ -320,6 +669,7 @@ document.addEventListener( 'alpine:init', () =>
         navCreate: null,
         navCreateLabel: '',
         navCreateIndex: true,
+        navCreateError: '',
         navCreateHierarchical: false,
         createKind: null,
         createLabel: '',
@@ -331,6 +681,7 @@ document.addEventListener( 'alpine:init', () =>
         metaSaveTimer: null,
         surface: null,
         collectionView: 'entries',
+        taxonomyView: 'terms',
         selectedFieldKey: null,
         fieldsDraft: null,
         fieldsSaveTimer: null,
@@ -380,11 +731,38 @@ document.addEventListener( 'alpine:init', () =>
         selectedMenuKey: null,
         menuAddOpen: false,
         menuKeySeq: 0,
+
+        // The page lighting a template canvas's slot (SCHEMA 12.6).
+        samplePageId: null,
         canvasFitHeight: 200,
         focusFreshPath: null,
         pageTitleDraft: '',
         addressConfirmOpen: false,
-        navCollapsed: { pages: false, collections: false, taxonomies: false, menus: false },
+        navCollapsed: { pages: false, collections: false, taxonomies: false, site: false },
+
+        // The Pages workspace's view (pages or templates) and the Site
+        // workspace's (partials or menus).
+        pagesView: 'pages',
+        userMenuOpen: false,
+
+        // A create modal closing with something typed asks first
+        // (Mikey): which modal is waiting on the answer.
+        discardPrompt: null,
+
+        // Named entry layouts (Mikey, 2026-09-02): the layout the shared
+        // canvas edits, and the Layouts view's selected row.
+        layoutName: 'default',
+        layoutsRowName: null,
+
+        // The inline edit in progress on the canvas (EDITOR 3): the
+        // block, the field, and for markdown the source range the
+        // element owns, kept current as keystrokes land.
+        inlineEdit: null,
+
+        // The pages table's selected row (Mikey): rows select into the
+        // sidebar; edit opens the canvas.
+        pagesRowId: null,
+        siteView: 'partials',
         outlineOpen: false,
         outlineItems: [],
         remoteEditOpen: false,
@@ -467,7 +845,7 @@ document.addEventListener( 'alpine:init', () =>
                     // report sizes too - only the partial frame listens,
                     // or a page's height would leak into the next region
                     // visit as a stale tall frame.
-                    if ( this.regionSurfaceActive && typeof event.data.height === 'number' )
+                    if ( this.insetCanvasActive && typeof event.data.height === 'number' )
                     {
                         this.canvasFitHeight = Math.max( 96, Math.ceil( event.data.height ) );
                     }
@@ -475,9 +853,43 @@ document.addEventListener( 'alpine:init', () =>
                     return;
                 }
 
+                if ( event.data.kind === 'inline-start' )
+                {
+                    this.inlineStart( event.data );
+                    return;
+                }
+
+                if ( event.data.kind === 'inline-input' )
+                {
+                    this.inlineInput( event.data );
+                    return;
+                }
+
+                if ( event.data.kind === 'inline-split' )
+                {
+                    void this.inlineSplit( event.data );
+                    return;
+                }
+
+                if ( event.data.kind === 'inline-end' )
+                {
+                    this.inlineEnd();
+                    return;
+                }
+
+                // A click on chrome or layout from a page canvas (EDITOR 2):
+                // open what owns it.
+                if ( event.data.kind === 'jump' )
+                {
+                    if ( typeof event.data.partial === 'string' && ( this.snapshot?.partials ?? [] ).includes( event.data.partial ) ) { this.openPartial( event.data.partial ); }
+                    else if ( typeof event.data.template === 'string' && this.templateNames.includes( event.data.template ) ) { this.openTemplate( event.data.template ); }
+
+                    return;
+                }
+
                 if ( event.data.kind === 'remove-request' )
                 {
-                    if ( this.selectedBlock !== null && this.confirmTarget === null ) { this.confirmTarget = 'block'; }
+                    if ( this.selectedBlock !== null && this.confirmTarget === null && this.blockInfoAt( this.selectedBlock )?.kind !== 'slot' ) { this.confirmTarget = 'block'; }
 
                     return;
                 }
@@ -507,7 +919,11 @@ document.addEventListener( 'alpine:init', () =>
         {
             if ( message.kind === 'select' )
             {
-                const changed = message.path !== this.blockEditor?.path;
+                // A repeat block lives in repeatEditor, not blockEditor:
+                // comparing against the block editor alone made every
+                // scroll re-report a "new" selection and refetch the
+                // repeat, flickering its inspector (Mikey).
+                const changed = message.path !== ( this.blockEditor?.path ?? this.repeatEditor?.path );
 
                 if ( this.focusFreshPath !== null && message.path !== this.focusFreshPath ) { this.focusFreshPath = null; }
 
@@ -521,6 +937,10 @@ document.addEventListener( 'alpine:init', () =>
                 // genuinely new selection refetches.
                 if ( changed ) { void this.loadBlock( message.path ); }
             }
+
+            // A selection change on the canvas ends any inline edit that
+            // was not on the new selection.
+            if ( message.kind === 'deselect' || ( message.kind === 'select' && this.inlineEdit !== null && this.inlineEdit.path !== message.path ) ) { this.inlineEdit = null; }
 
             if ( message.kind === 'deselect' ) { this.applyDeselect(); }
             if ( message.kind === 'undo' || message.kind === 'redo' ) { void this.stepJournal( message.kind ); }
@@ -616,13 +1036,36 @@ document.addEventListener( 'alpine:init', () =>
             this.sendToCanvas( { kind: 'select-path', path: handle.path } );
         },
 
+        // An editor remembers the target it was loaded for (blockTarget
+        // spread in): the same keys go back out on every write, so a
+        // template surface, an entry layout, or a region never falls
+        // through to pages.json with no page (edits vanished silently
+        // on the template canvas until this).
+        targetOfEditor ( editor )
+        {
+            // The loaded block carries its own "template" (the component's
+            // template source), which would shadow a template surface's
+            // name in the spread - so the target rides its own key.
+            const source = editor.editorTarget ?? editor;
+            const target = {};
+
+            for ( const key of [ 'pageId', 'doc', 'surface', 'entry', 'region', 'template' ] )
+            {
+                if ( source[ key ] !== undefined && source[ key ] !== null ) { target[ key ] = source[ key ]; }
+            }
+
+            return target;
+        },
+
         // The target half of every block request: the page, or the
         // collection surface, whichever canvas is up.
         get blockTarget ()
         {
             if ( this.surface === null ) { return { pageId: this.selectedPageId }; }
+            if ( this.workspace === 'template' ) { return { template: this.surface }; }
             if ( this.workspace === 'settings' ) { return { region: this.surface }; }
             if ( this.surface === 'entry' ) { return { doc: this.stem, surface: 'entry', entry: this.sampleEntryId }; }
+            if ( this.surface === 'template' && this.workspace === 'collection' ) { return { doc: this.stem, surface: 'template', layout: this.layoutName }; }
 
             return { doc: this.stem, surface: this.surface };
         },
@@ -652,11 +1095,13 @@ document.addEventListener( 'alpine:init', () =>
 
             const query = this.surface === null
                 ? new URLSearchParams( { page: this.selectedPageId, path } )
-                : ( this.workspace === 'settings'
-                        ? new URLSearchParams( { region: this.surface, path } )
-                        : ( this.surface === 'entry'
-                                ? new URLSearchParams( { doc: this.stem, surface: 'entry', entry: this.sampleEntryId ?? '', path } )
-                                : new URLSearchParams( { doc: this.stem, surface: this.surface, path } ) ) );
+                : ( this.workspace === 'template'
+                        ? new URLSearchParams( { template: this.surface, part: this.partOfPath( path ), path } )
+                        : this.workspace === 'settings'
+                            ? new URLSearchParams( { region: this.surface, path } )
+                            : ( this.surface === 'entry'
+                                    ? new URLSearchParams( { doc: this.stem, surface: 'entry', entry: this.sampleEntryId ?? '', path } )
+                                    : new URLSearchParams( { doc: this.stem, surface: this.surface, path, ...( this.surface === 'template' && this.workspace === 'collection' ? { layout: this.layoutName } : {} ) } ) ) );
             const response = await fetch( `/api/block?${query.toString()}` );
 
             // A newer load superseded this one while it was in flight.
@@ -673,7 +1118,7 @@ document.addEventListener( 'alpine:init', () =>
                 // The wiring editors write straight into props; the
                 // record must exist before a row stamps.
                 repeat.props = repeat.props ?? {};
-                this.repeatEditor = { path, ...this.blockTarget, ...loaded, repeat };
+                this.repeatEditor = { path, editorTarget: this.blockTarget, ...this.blockTarget, ...loaded, repeat };
                 return;
             }
 
@@ -684,7 +1129,7 @@ document.addEventListener( 'alpine:init', () =>
                 if ( props[ key ] === undefined ) { props[ key ] = emptyValueFor( field ); }
             }
 
-            this.blockEditor = { path, ...this.blockTarget, ...loaded, props };
+            this.blockEditor = { path, editorTarget: this.blockTarget, ...this.blockTarget, ...loaded, props };
 
             // Focus lands in the first field only for a NEWLY ADDED
             // block (Mikey's rule): selecting an existing component
@@ -702,6 +1147,11 @@ document.addEventListener( 'alpine:init', () =>
         // partials have no standalone visitor page.
         get previewPopUrl ()
         {
+            if ( this.workspace === 'pages' && this.pagesRow !== null )
+            {
+                return this.pagesRow.slug === '404' ? '/preview/--not-found--/' : `/preview${this.pageAddressOf( this.pagesRow.id )}`;
+            }
+
             if ( this.workspace === 'page' && this.surface === null && this.selectedPage !== undefined )
             {
                 const segments = this.pagePathOf( this.selectedPage.id );
@@ -714,6 +1164,20 @@ document.addEventListener( 'alpine:init', () =>
                 // Any address no page can own serves the authored
                 // 404, status and all.
                 return this.surface === 'notFound' ? '/preview/--not-found--/' : null;
+            }
+
+            if ( this.workspace === 'page' && this.selectedPage?.slug === '404' )
+            {
+                return '/preview/--not-found--/';
+            }
+
+            if ( this.workspace === 'template' && this.samplePage !== null )
+            {
+                if ( this.samplePage.slug === '404' ) { return '/preview/--not-found--/'; }
+
+                const segments = this.pagePathOf( this.samplePage.id );
+
+                return `/preview/${segments.join( '/' )}${segments.length > 0 ? '/' : ''}`;
             }
 
             if ( this.workspace === 'collection' && this.surface !== null )
@@ -941,6 +1405,116 @@ document.addEventListener( 'alpine:init', () =>
             this.saveTimer = setTimeout( () => void this.saveBlock(), 400 );
         },
 
+        // Inline text editing (EDITOR 3): the canvas asks which field a
+        // double-clicked text belongs to. A mapped paragraph or heading
+        // names a markdown field by its source range; other text is a
+        // text field matched by value. Keystrokes write the field
+        // through the block editor - the morph loop stays out while
+        // the caret is live (the DOM already shows the edit) and the
+        // debounced save lands as always.
+        inlineStart ( message )
+        {
+            const editor = this.blockEditor;
+            const reply = ( ok, key = null, mode = null ) => this.sendToCanvas( { kind: 'inline-edit', ok, key, mode, path: message.path } );
+
+            if ( editor === null || editor.path !== message.path )
+            {
+                reply( false );
+                return;
+            }
+
+            const fields = Object.entries( editor.fields ?? {} );
+            const loose = ( value ) => String( value ?? '' ).replace( /[^\p{L}\p{N}]/gu, '' );
+
+            if ( message.mode === 'markdown' && typeof message.range === 'string' )
+            {
+                const [ start, end ] = message.range.split( '-' ).map( Number );
+                const candidates = fields.filter( ( [ key, field ] ) => field.type === 'markdown' && typeof editor.props[ key ] === 'string' && editor.props[ key ].length >= end );
+                const match = candidates.find( ( [ key ] ) => loose( editor.props[ key ].slice( start, end ) ) === loose( message.text ) ) ?? candidates[ 0 ];
+
+                if ( match === undefined )
+                {
+                    reply( false );
+                    return;
+                }
+
+                this.inlineEdit = { path: message.path, key: match[ 0 ], mode: 'markdown', start, end };
+                reply( true, match[ 0 ], 'markdown' );
+                return;
+            }
+
+            const text = String( message.text ?? '' ).trim();
+            const match = fields.find( ( [ key, field ] ) => [ 'text', 'textarea' ].includes( field.type ) && typeof editor.props[ key ] === 'string' && editor.props[ key ].trim() === text && text !== '' );
+
+            if ( match === undefined )
+            {
+                reply( false );
+                return;
+            }
+
+            this.inlineEdit = { path: message.path, key: match[ 0 ], mode: 'text', start: 0, end: 0 };
+            reply( true, match[ 0 ], 'text' );
+        },
+
+        inlineInput ( message )
+        {
+            const editor = this.blockEditor;
+            const edit = this.inlineEdit;
+
+            if ( editor === null || edit === null || editor.path !== message.path ) { return; }
+
+            if ( edit.mode === 'text' )
+            {
+                editor.props[ edit.key ] = String( message.text ?? '' );
+            }
+            else
+            {
+                const value = String( editor.props[ edit.key ] ?? '' );
+                const markdown = String( message.markdown ?? '' );
+
+                editor.props[ edit.key ] = value.slice( 0, edit.start ) + markdown + value.slice( edit.end );
+                edit.end = edit.start + markdown.length;
+            }
+
+            this.dirty += 1;
+            clearTimeout( this.saveTimer );
+            this.saveTimer = setTimeout( () => void this.saveBlock(), 400 );
+        },
+
+        // Enter in a markdown field: the paragraph splits at the caret
+        // into two (the Notion and Docs convention), the block
+        // re-renders, and the caret lands at the start of the second.
+        async inlineSplit ( message )
+        {
+            const editor = this.blockEditor;
+            const edit = this.inlineEdit;
+
+            if ( editor === null || edit === null || editor.path !== message.path || edit.mode !== 'markdown' ) { return; }
+
+            const value = String( editor.props[ edit.key ] ?? '' );
+            const before = String( message.before ?? '' ).replace( /\s+$/, '' );
+            const after = String( message.after ?? '' ).replace( /^\s+/, '' );
+
+            editor.props[ edit.key ] = value.slice( 0, edit.start ) + before + '\n\n' + after + value.slice( edit.end );
+
+            const start = edit.start + before.length + 2;
+
+            this.inlineEdit = { ...edit, start, end: start + after.length };
+            this.dirty += 1;
+            clearTimeout( this.saveTimer );
+            this.saveTimer = setTimeout( () => void this.saveBlock(), 400 );
+            await this.renderAndMorph();
+            this.sendToCanvas( { kind: 'inline-focus', path: edit.path, range: `${start}-${start + after.length}` } );
+        },
+
+        inlineEnd ()
+        {
+            if ( this.inlineEdit === null ) { return; }
+
+            this.inlineEdit = null;
+            void this.renderAndMorph();
+        },
+
         async renderAndMorph ()
         {
             const editor = this.blockEditor;
@@ -986,11 +1560,7 @@ document.addEventListener( 'alpine:init', () =>
 
             // Region blocks address by region name - without it the
             // write resolves no target and edits silently vanish.
-            const target = editor.region !== undefined
-                ? { region: editor.region }
-                : ( editor.doc === undefined
-                        ? { pageId: editor.pageId }
-                        : { doc: editor.doc, surface: editor.surface } );
+            const target = this.targetOfEditor( editor );
 
             this.suppressReloadUntil = Date.now() + 1500;
             await fetch( '/api/block', {
@@ -1002,6 +1572,14 @@ document.addEventListener( 'alpine:init', () =>
                     props: JSON.parse( JSON.stringify( editor.props ) ),
                 } ),
             } );
+
+            // The morph loop is the instant view; the server render is
+            // the truth. A refetch after the save catches what the
+            // client renderer cannot show - list items, for one (Mikey:
+            // repeater edits reached the canvas only on reload). Not
+            // under a live caret: the refresh would replace the element
+            // being typed in.
+            if ( this.inlineEdit === null ) { this.sendToCanvas( { kind: 'refresh' } ); }
         },
 
         clearSelection ()
@@ -1175,11 +1753,7 @@ document.addEventListener( 'alpine:init', () =>
             if ( editor === null ) { return; }
 
             // Region repeats address by region name, like saveBlock.
-            const target = editor.region !== undefined
-                ? { region: editor.region }
-                : ( editor.doc === undefined
-                        ? { pageId: editor.pageId }
-                        : { doc: editor.doc, surface: editor.surface } );
+            const target = this.targetOfEditor( editor );
 
             this.suppressReloadUntil = Date.now() + 1500;
             await fetch( '/api/block', {
@@ -1477,7 +2051,8 @@ document.addEventListener( 'alpine:init', () =>
         {
             const path = this.selectedBlock;
 
-            if ( path === null ) { return; }
+            // The content slot is the template's fixture (SCHEMA 12.6).
+            if ( path === null || this.blockInfoAt( path )?.kind === 'slot' ) { return; }
 
             await fetch( '/api/block', {
                 method: 'DELETE',
@@ -1509,6 +2084,11 @@ document.addEventListener( 'alpine:init', () =>
                 this.snapshot = loaded;
                 this.error = null;
 
+                // The site name shows on the pages table's sidebar from
+                // the first load (Mikey's report), not only after Site
+                // settings opens; a name mid-edit keeps its keystrokes.
+                if ( this.siteNameTouched !== true ) { this.siteNameDraft = loaded.config?.name ?? ''; }
+
                 if ( !loaded.pages.some( ( page ) => page.id === this.selectedPageId ) )
                 {
                     this.selectedPageId = loaded.pages[ 0 ]?.id ?? null;
@@ -1526,6 +2106,11 @@ document.addEventListener( 'alpine:init', () =>
         // state and deliberately not routed.
         get routeHash ()
         {
+            if ( this.workspace === 'pages' ) { return '#/pages'; }
+            if ( this.workspace === 'site' ) { return `#/site/${this.siteView}`; }
+            if ( this.workspace === 'theme' ) { return '#/theme'; }
+            if ( this.workspace === 'template' && this.surface !== null ) { return `#/template/${this.surface}`; }
+
             if ( this.workspace === 'settings' )
             {
                 // The settings surfaces (404, regions, partials) are
@@ -1539,15 +2124,19 @@ document.addEventListener( 'alpine:init', () =>
             if ( this.workspace === 'collection' && this.workspaceFile !== null )
             {
                 if ( this.surface === 'entry' && this.sampleEntryId !== null ) { return `#/collection/${this.stem}/entry/${this.sampleEntryId}`; }
+                if ( this.surface === 'template' ) { return `#/collection/${this.stem}/template/${this.layoutName}`; }
                 if ( this.surface !== null ) { return `#/collection/${this.stem}/${this.surface}`; }
                 if ( this.collectionView === 'fields' ) { return `#/collection/${this.stem}/fields`; }
+                if ( this.collectionView === 'layouts' ) { return `#/collection/${this.stem}/layouts`; }
 
                 return `#/collection/${this.stem}`;
             }
 
             if ( this.workspace === 'taxonomy' && this.workspaceFile !== null )
             {
-                return this.surface === null ? `#/taxonomy/${this.stem}` : `#/taxonomy/${this.stem}/${this.surface}`;
+                if ( this.surface !== null ) { return `#/taxonomy/${this.stem}/${this.surface}`; }
+
+                return this.taxonomyView === 'layouts' ? `#/taxonomy/${this.stem}/layouts` : `#/taxonomy/${this.stem}`;
             }
 
             if ( this.workspace === 'menu' && this.menuName !== null ) { return `#/menu/${this.menuName}`; }
@@ -1577,10 +2166,44 @@ document.addEventListener( 'alpine:init', () =>
                 return;
             }
 
+            if ( parts[ 0 ] === 'pages' )
+            {
+                // Templates moved under Site (Mikey); the old address
+                // still lands.
+                if ( parts[ 1 ] === 'templates' ) { this.openSiteWorkspace( 'templates' ); }
+                else { this.openPagesWorkspace( 'pages' ); }
+
+                return;
+            }
+
+            if ( parts[ 0 ] === 'site' )
+            {
+                this.openSiteWorkspace( [ 'menus', 'templates' ].includes( parts[ 1 ] ) ? parts[ 1 ] : 'partials' );
+                return;
+            }
+
+            if ( parts[ 0 ] === 'theme' )
+            {
+                this.openTheme();
+                return;
+            }
+
+            if ( parts[ 0 ] === 'template' && this.templateNames.includes( parts[ 1 ] ) )
+            {
+                this.openTemplate( parts[ 1 ] );
+                return;
+            }
+
             if ( parts[ 0 ] === 'page' && this.pages.some( ( page ) => page.id === parts[ 1 ] ) )
             {
+                // Back from the pages table lands here: the workspace
+                // must follow, or the route hash disagrees with the
+                // URL and every Back re-pushes it (Mikey: "the back
+                // button gets stuck").
+                this.enterWorkspace( 'page' );
                 this.selectedPageId = parts[ 1 ];
                 this.syncPageTitleDraft();
+                this.applyDeselect();
                 return;
             }
 
@@ -1590,6 +2213,8 @@ document.addEventListener( 'alpine:init', () =>
                 await this.loadCollection();
 
                 if ( parts[ 2 ] === 'fields' ) { this.openFields(); }
+                if ( parts[ 2 ] === 'layouts' ) { this.showLayoutsView(); }
+                if ( parts[ 2 ] === 'template' && parts[ 3 ] !== undefined ) { this.layoutName = parts[ 3 ]; }
                 if ( parts[ 2 ] === 'index' || parts[ 2 ] === 'template' ) { this.openSurface( parts[ 2 ] ); }
                 if ( parts[ 2 ] === 'entry' && parts[ 3 ] !== undefined ) { this.openEntryLayout( parts[ 3 ] ); }
 
@@ -1601,6 +2226,7 @@ document.addEventListener( 'alpine:init', () =>
                 this.openTaxonomy( `${parts[ 1 ]}.json` );
 
                 if ( parts[ 2 ] === 'index' || parts[ 2 ] === 'template' ) { this.openSurface( parts[ 2 ] ); }
+                if ( parts[ 2 ] === 'layouts' ) { this.showTaxonomyLayoutsView(); }
             }
 
             if ( parts[ 0 ] === 'menu' && this.menuNames.includes( parts[ 1 ] ) )
@@ -1640,9 +2266,11 @@ document.addEventListener( 'alpine:init', () =>
             this.confirmTarget = null;
             this.surface = null;
             this.collectionView = 'entries';
+            this.taxonomyView = 'terms';
             this.selectedFieldKey = null;
             this.fieldsDraft = null;
             this.sampleEntryId = null;
+            this.samplePageId = null;
             this.samplePickerOpen = false;
             this.menuName = null;
             this.menuEditor = null;
@@ -1675,9 +2303,10 @@ document.addEventListener( 'alpine:init', () =>
             // A fresh partial starts small and grows to its content
             // once the region canvas reports in - never inheriting
             // whatever height the last surface left behind.
-            if ( this.workspace === 'settings' ) { this.canvasFitHeight = 200; }
+            if ( this.workspace === 'settings' || this.workspace === 'template' ) { this.canvasFitHeight = 200; }
 
             this.collectionView = 'entries';
+            this.taxonomyView = 'terms';
             this.selectedEntryId = null;
             this.selectedFieldKey = null;
             this.confirmTarget = null;
@@ -1742,6 +2371,9 @@ document.addEventListener( 'alpine:init', () =>
         {
             if ( !this.confirmEntryLeave( () => this.openEntryPage( id ) ) ) { return; }
 
+            const entry = ( this.collectionEditor?.entries ?? [] ).find( ( candidate ) => candidate.id === id );
+
+            this.layoutName = entry?.layout ?? 'default';
             this.openSurface( 'template' );
             this.sampleEntryId = id;
         },
@@ -1860,13 +2492,21 @@ document.addEventListener( 'alpine:init', () =>
             this.contentVersion += 1;
         },
 
+        // A template canvas addresses its parts by the path's first
+        // name: header[i], blocks[i], footer[i] (SCHEMA 12.6).
+        partOfPath ( path )
+        {
+            return /^(header|footer)/.exec( String( path ?? '' ) )?.[ 1 ] ?? 'blocks';
+        },
+
         get surfaceBlocks ()
         {
+            if ( this.workspace === 'template' ) { return this.snapshot?.templates?.[ this.surface ]?.blocks ?? []; }
             if ( this.workspace === 'settings' ) { return this.snapshot?.regionBlocks?.[ this.surface ] ?? []; }
 
             const editor = this.workspace === 'taxonomy' ? this.taxonomyEditor : this.collectionEditor;
 
-            if ( this.surface === 'template' ) { return editor?.templateBlocks ?? []; }
+            if ( this.surface === 'template' ) { return this.workspace === 'collection' ? ( editor?.layouts?.[ this.layoutName ]?.blocks ?? editor?.templateBlocks ?? [] ) : ( editor?.templateBlocks ?? [] ); }
             if ( this.surface === 'index' ) { return editor?.indexBlocks ?? []; }
             if ( this.surface === 'entry' ) { return editor?.entryLayouts?.[ this.sampleEntryId ] ?? []; }
 
@@ -1875,6 +2515,7 @@ document.addEventListener( 'alpine:init', () =>
 
         get surfaceLabel ()
         {
+            if ( this.workspace === 'template' ) { return this.surface ?? ''; }
             if ( this.surface === 'header' ) { return t( 'surfaceHeader' ); }
             if ( this.surface === 'footer' ) { return t( 'surfaceFooter' ); }
             if ( this.surface === 'notFound' ) { return t( 'surfaceNotFound' ); }
@@ -3007,10 +3648,65 @@ document.addEventListener( 'alpine:init', () =>
             this.markFieldsDirty();
         },
 
+        // Header and footer are every site's partials (SCHEMA 12.5):
+        // they empty, never delete.
+        partialIsReserved ( name )
+        {
+            return name === 'header' || name === 'footer';
+        },
+
+        // A layout's page template (SCHEMA 12.6, Mikey): the index page
+        // and the entry or term template each render through one;
+        // "default" clears the choice.
+        async setLayoutTemplate ( layout, name )
+        {
+            const taxonomy = this.workspace === 'taxonomy';
+            const key = layout === 'index' ? 'indexTemplate' : ( taxonomy ? 'termTemplate' : 'entryTemplate' );
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( taxonomy ? '/api/taxonomy' : '/api/collection', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { [ key ]: name === 'default' ? null : name } } ),
+            } );
+
+            if ( taxonomy ) { await this.loadTaxonomy(); }
+            else { await this.loadCollection(); }
+
+            this.contentVersion += 1;
+        },
+
         showEntriesView ()
         {
             this.collectionView = 'entries';
             this.selectedFieldKey = null;
+        },
+
+        // Layouts (Mikey): the canvases a collection or taxonomy renders
+        // through - its index page and its entry or term template -
+        // as a third view beside the rows and the fields, each row
+        // opening the same surface the inspector's Structure card
+        // opens.
+        showLayoutsView ()
+        {
+            if ( !this.confirmEntryLeave( () => this.showLayoutsView() ) ) { return; }
+
+            this.collectionView = 'layouts';
+            this.layoutsRowName = null;
+            this.selectedEntryId = null;
+            this.selectedFieldKey = null;
+            this.confirmTarget = null;
+        },
+
+        showTermsView ()
+        {
+            this.taxonomyView = 'terms';
+        },
+
+        showTaxonomyLayoutsView ()
+        {
+            this.taxonomyView = 'layouts';
+            this.selectedTermId = null;
         },
 
         toggleFieldFlag ( flag )
@@ -3508,7 +4204,41 @@ document.addEventListener( 'alpine:init', () =>
                 fallbackOnBody: true,
                 fallbackClass: 'sort-drag-clone',
                 ghostClass: 'sort-drop-slot',
+
+                // This replaces the sort plugin's own filter (config
+                // spreads after its options), so its rules are restated:
+                // nothing under x-sort:ignore or a pinned row drags, nor outside
+                // an x-sort:item row. One addition (Mikey): a list of ONE
+                // row does not drag - there is nothing to reorder - and
+                // the stylesheet hides its grip for the same case.
+                onMove: ( event ) =>
+                {
+                    const related = event.related;
+
+                    if ( related === null || related === undefined || !related.hasAttribute( 'data-sort-pinned' ) ) { return true; }
+
+                    const rows = [ ...event.to.querySelectorAll( ':scope > [data-sort-id]' ) ];
+
+                    if ( related === rows[ 0 ] ) { return event.willInsertAfter === true; }
+                    if ( related === rows[ rows.length - 1 ] ) { return event.willInsertAfter !== true; }
+
+                    return true;
+                },
+
+                filter: ( event, target, sortable ) =>
+                {
+                    if ( event.target.closest( '[x-sort\\:ignore], [data-sort-pinned]' ) !== null ) { return true; }
+
+                    if ( sortable.el.querySelectorAll( '[x-sort\\:item]' ).length < 2 ) { return true; }
+
+                    return event.target.closest( '[x-sort\\:item]' ) === null;
+                },
             };
+        },
+
+        rowIndent ( depth )
+        {
+            return treeRowIndent( depth );
         },
 
         sortedIdsIn ( container )
@@ -3596,6 +4326,561 @@ document.addEventListener( 'alpine:init', () =>
                     ...( typeof term.image?.src === 'string' && term.image.src !== '' ? { image: term.image } : {} ),
                 } ),
             } );
+            void this.refresh();
+        },
+
+        // The Pages workspace (EDITOR 5): the tree as a table - title,
+        // address, template, draft - with the tree kept in the rail.
+        openPagesWorkspace ( view = null )
+        {
+            if ( !this.confirmEntryLeave( () => this.openPagesWorkspace( view ) ) ) { return; }
+
+            this.enterWorkspace( 'pages' );
+            this.pagesRowId = null;
+
+            if ( view !== null ) { this.pagesView = view; }
+        },
+
+        get templatesMeta ()
+        {
+            return tCount( 'templatesMeta', this.templateNames.length );
+        },
+
+        // The Site workspace (Mikey): partials, menus, and templates as
+        // tables, no specific one in the rail. Templates live here
+        // because they wrap everything - pages, collection indices
+        // and entries, taxonomy indices and terms.
+        openSiteWorkspace ( view = null )
+        {
+            if ( !this.confirmEntryLeave( () => this.openSiteWorkspace( view ) ) ) { return; }
+
+            this.enterWorkspace( 'site' );
+
+            if ( view !== null ) { this.siteView = view; }
+        },
+
+        menuItemCount ( name )
+        {
+            return ( this.snapshot?.config?.menus?.[ name ]?.items ?? [] ).length;
+        },
+
+        pageHasChildren ( id )
+        {
+            return this.pages.some( ( page ) => page.parent === id );
+        },
+
+        // The user chip's menu (Mikey): who is editing, the site-level
+        // rooms, and which Studio this is. Identity, not accounts.
+        get userName ()
+        {
+            return this.snapshot?.user?.name || t( 'userLocal' );
+        },
+
+        get userEmail ()
+        {
+            return this.snapshot?.user?.email || t( 'userNoEmail' );
+        },
+
+        userMenuGo ( where )
+        {
+            this.userMenuOpen = false;
+
+            if ( where === 'settings' ) { this.openSettings(); }
+            else if ( where === 'theme' ) { this.openTheme(); }
+            else { this.openMediaWorkspace(); }
+        },
+
+        get studioVersionLine ()
+        {
+            const version = this.snapshot?.studioVersion ?? '';
+
+            return version === '' ? 'Casomer Studio' : `Casomer Studio ${version}`;
+        },
+
+        // The entry behind a layout canvas: the rogue entry on its own
+        // canvas, or the sample entry the shared layout renders with.
+        get canvasEntry ()
+        {
+            if ( this.workspace !== 'collection' || this.sampleEntryId === null ) { return null; }
+            if ( this.surface !== 'entry' && this.surface !== 'template' ) { return null; }
+
+            return ( this.collectionEditor?.entries ?? [] ).find( ( entry ) => entry.id === this.sampleEntryId ) ?? null;
+        },
+
+        get layoutRows ()
+        {
+            const layouts = this.collectionEditor?.layouts ?? {};
+            const names = Object.keys( layouts ).sort( ( a, b ) => ( a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare( b ) ) );
+
+            return names.map( ( name ) => ( { name, ...layouts[ name ] } ) );
+        },
+
+        get layoutsRow ()
+        {
+            return this.workspace === 'collection' && this.collectionView === 'layouts' ? ( this.layoutRows.find( ( layout ) => layout.name === this.layoutsRowName ) ?? null ) : null;
+        },
+
+        layoutFollowersLine ( layout )
+        {
+            return tCount( 'layoutFollowers', layout.entries ?? 0 );
+        },
+
+        selectLayoutRow ( name )
+        {
+            this.layoutsRowName = name;
+            this.tab = 'content';
+        },
+
+        openLayoutCanvas ( name )
+        {
+            if ( !this.confirmEntryLeave( () => this.openLayoutCanvas( name ) ) ) { return; }
+
+            this.layoutName = name;
+            this.openSurface( 'template' );
+        },
+
+        async setNamedLayoutTemplate ( name, template )
+        {
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/collection', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { layoutTemplates: { [ name ]: template === 'default' ? null : template } } } ),
+            } );
+            await this.loadCollection();
+            this.contentVersion += 1;
+        },
+
+        // An entry chooses a layout, or goes rogue ("__own"): choosing a
+        // name adopts first when the entry had its own blocks.
+        async chooseEntryLayout ( id, value )
+        {
+            const file = this.workspaceFile;
+
+            if ( file === null ) { return; }
+
+            if ( value === '__own' )
+            {
+                await this.divergeEntry( id );
+                return;
+            }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const entry = ( this.collectionEditor?.entries ?? [] ).find( ( candidate ) => candidate.id === id );
+
+            if ( entry?.hasOwnBlocks === true )
+            {
+                await fetch( '/api/entry-layout', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file, id, action: 'adopt' } ),
+                } );
+            }
+
+            await fetch( '/api/entry', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file, id, layout: value } ),
+            } );
+            await this.loadCollection();
+
+            if ( this.surface === 'entry' || this.surface === 'template' )
+            {
+                this.layoutName = value;
+                this.openSurface( 'template' );
+                this.sampleEntryId = id;
+            }
+
+            this.contentVersion += 1;
+        },
+
+        get createModalDirty ()
+        {
+            return Object.values( this.createValues ?? {} ).some( ( value ) => value !== '' && value !== null && value !== undefined && value !== false );
+        },
+
+        closeCreate ()
+        {
+            if ( this.createModalDirty ) { this.discardPrompt = 'create'; }
+            else { this.createKind = null; }
+        },
+
+        closeNavCreate ()
+        {
+            if ( String( this.navCreateLabel ?? '' ).trim() !== '' ) { this.discardPrompt = 'navCreate'; }
+            else { this.navCreate = null; }
+        },
+
+        keepEditing ()
+        {
+            this.discardPrompt = null;
+        },
+
+        confirmDiscard ()
+        {
+            if ( this.discardPrompt === 'create' ) { this.createKind = null; }
+            if ( this.discardPrompt === 'navCreate' ) { this.navCreate = null; }
+
+            this.discardPrompt = null;
+        },
+
+        get pagesRow ()
+        {
+            return this.workspace === 'pages' ? ( this.pages.find( ( page ) => page.id === this.pagesRowId ) ?? null ) : null;
+        },
+
+        // A row selects into the sidebar: the page's settings, with
+        // edit and trash up top. The canvas page follows so the
+        // settings pane's own wiring (title, slug, template, draft,
+        // delete) works unchanged.
+        selectPagesRow ( id )
+        {
+            this.pagesRowId = id;
+            this.selectedPageId = id;
+            this.syncPageTitleDraft();
+            this.tab = 'settings';
+        },
+
+        previewPage ( id )
+        {
+            const page = this.pages.find( ( candidate ) => candidate.id === id );
+
+            if ( page === undefined ) { return; }
+
+            window.open( page.slug === '404' ? '/preview/--not-found--/' : `/preview${this.pageAddressOf( id )}`, '_blank' );
+        },
+
+        deletePageRow ( id )
+        {
+            this.selectPagesRow( id );
+            this.confirmTarget = 'page';
+        },
+
+        get availableTabCount ()
+        {
+            return [ this.contentTabAvailable, this.settingsTabAvailable, this.usageTabAvailable ].filter( Boolean ).length;
+        },
+
+        get pageTableRows ()
+        {
+            const rows = [];
+            const visited = new Set();
+            const childrenOf = ( parentId ) => this.pages.filter( ( page ) => page.parent === parentId );
+            const walk = ( page, depth ) =>
+            {
+                if ( visited.has( page.id ) ) { return; }
+
+                visited.add( page.id );
+                rows.push( { page, depth, address: this.pageAddressOf( page.id ), template: page.template ?? 'default' } );
+
+                for ( const child of childrenOf( page.id ) ) { walk( child, depth + 1 ); }
+            };
+
+            for ( const page of this.pinnedPageOrder )
+            {
+                const orphaned = page.parent !== undefined && !this.pages.some( ( candidate ) => candidate.id === page.parent );
+
+                if ( page.parent === undefined || orphaned ) { walk( page, 0 ); }
+            }
+
+            return rows;
+        },
+
+        // Home first, the 404 last, everything else in page order.
+        get pinnedPageOrder ()
+        {
+            const home = this.pages.filter( ( page ) => page.slug === 'home' );
+            const notFound = this.pages.filter( ( page ) => page.slug === '404' );
+            const rest = this.pages.filter( ( page ) => page.slug !== 'home' && page.slug !== '404' );
+
+            return [ ...home, ...rest, ...notFound ];
+        },
+
+        // The pages table's drag (Mikey): the same tree rules as the menu
+        // - a family travels whole, the slot bounds the landing depth,
+        // a sideways pull picks within it - with Home pinned first and
+        // the 404 last, neither draggable nor a parent. The new order
+        // and parents write in one call; the rows rebuild from the
+        // snapshot.
+        async sortPageRows ( key, element )
+        {
+            const moved = this.pages.find( ( page ) => page.id === key );
+
+            if ( moved === undefined || this.pageIsReserved( moved ) )
+            {
+                this.sortEpoch += 1;
+                return;
+            }
+
+            const descendants = new Set();
+            const collect = ( id ) =>
+            {
+                for ( const page of this.pages )
+                {
+                    if ( page.parent === id && !descendants.has( page.id ) )
+                    {
+                        descendants.add( page.id );
+                        collect( page.id );
+                    }
+                }
+            };
+
+            collect( key );
+
+            const domRows = [ ...element.querySelectorAll( '[data-sort-id]' ) ].filter( ( row ) => row.dataset.sortId === key || !descendants.has( row.dataset.sortId ) );
+            const self = domRows.find( ( row ) => row.dataset.sortId === key );
+            let at = domRows.indexOf( self );
+            const isSlug = ( row, slug ) => this.pages.find( ( page ) => page.id === row?.dataset.sortId )?.slug === slug;
+
+            // Never above Home, never below the 404 (the move guard
+            // keeps the slot off those ends; this is the belt).
+            if ( at === 0 && isSlug( domRows[ 1 ], 'home' ) )
+            {
+                domRows.splice( at, 1 );
+                domRows.splice( 1, 0, self );
+                at = 1;
+            }
+
+            if ( at === domRows.length - 1 && isSlug( domRows[ at - 1 ], '404' ) )
+            {
+                domRows.splice( at, 1 );
+                domRows.splice( at - 1, 0, self );
+                at -= 1;
+            }
+
+            const above = domRows[ at - 1 ] ?? null;
+            const below = domRows[ at + 1 ] ?? null;
+            const min = below === null || isSlug( below, '404' ) ? 0 : Number( below.dataset.depth );
+            const max = above === null || isSlug( above, 'home' ) ? 0 : Number( above.dataset.depth ) + 1;
+            const requested = self.dataset.dropDepth === undefined ? min : Number( self.dataset.dropDepth );
+            const depth = Math.min( max, Math.max( min, requested ) );
+
+            self.dataset.dropped = '1';
+
+            // The flat tree in DOM order, depths from the rows, the
+            // moved family re-inserted at its landing depth.
+            const family = this.pageTableRows.filter( ( row ) => row.page.id === key || descendants.has( row.page.id ) );
+            const rootDepth = family[ 0 ]?.depth ?? 0;
+            const flat = [];
+
+            for ( const row of domRows )
+            {
+                if ( row === self )
+                {
+                    for ( const member of family ) { flat.push( { id: member.page.id, depth: member.depth - rootDepth + depth } ); }
+                    continue;
+                }
+
+                flat.push( { id: row.dataset.sortId, depth: Number( row.dataset.depth ) } );
+            }
+
+            // Depths become parents: the nearest earlier row one level up.
+            const order = [];
+            const stack = [];
+
+            for ( const entry of flat )
+            {
+                while ( stack.length > entry.depth ) { stack.pop(); }
+
+                const parent = entry.depth > 0 ? stack[ entry.depth - 1 ] : undefined;
+
+                order.push( { id: entry.id, ...( parent === undefined ? {} : { parent } ) } );
+                stack[ entry.depth ] = entry.id;
+                stack.length = entry.depth + 1;
+            }
+
+            // The table and the rail tree take the new order at once
+            // (Mikey: a second's wait for the round trip read as lag);
+            // the write lands behind it and the refresh confirms.
+            if ( this.snapshot !== null )
+            {
+                const byId = new Map( this.pages.map( ( page ) => [ page.id, page ] ) );
+
+                this.snapshot.pages = order.map( ( entry ) =>
+                {
+                    const { parent: _dropped, ...page } = byId.get( entry.id );
+
+                    return entry.parent === undefined ? page : { ...page, parent: entry.parent };
+                } );
+            }
+
+            this.sortEpoch += 1;
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/pages-order', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { pages: order } ),
+            } );
+            this.contentVersion += 1;
+            void this.refresh();
+        },
+
+        pageAddressOf ( id )
+        {
+            const segments = this.pagePathOf( id );
+
+            if ( this.pages.find( ( page ) => page.id === id )?.slug === '404' ) { return '/404.html'; }
+
+            return segments.length === 0 ? '/' : `/${segments.join( '/' )}/`;
+        },
+
+        get pagesMeta ()
+        {
+            return tCount( 'pagesMeta', this.pages.length );
+        },
+
+        // The Theme workspace (Mikey: settings should hold less
+        // look-and-feel): the token cards, on their own.
+        openTheme ()
+        {
+            if ( !this.confirmEntryLeave( () => this.openTheme() ) ) { return; }
+
+            this.enterWorkspace( 'theme' );
+            this.syncSettingsDrafts();
+        },
+
+        // Page templates (SCHEMA 12.6): the STRUCTURE group's rows open
+        // a template on its own canvas, lit by a sample page.
+        get templateNames ()
+        {
+            return Object.keys( this.snapshot?.templates ?? {} );
+        },
+
+        templatePagesCount ( name )
+        {
+            return this.snapshot?.templates?.[ name ]?.pages ?? 0;
+        },
+
+        get templatePagesLine ()
+        {
+            return tCount( 'templatePagesLine', this.templatePagesCount( this.surface ?? '' ) );
+        },
+
+        openTemplate ( name )
+        {
+            if ( !this.confirmEntryLeave( () => this.openTemplate( name ) ) ) { return; }
+
+            if ( this.workspace !== 'template' ) { this.enterWorkspace( 'template' ); }
+
+            this.openSurface( name );
+        },
+
+        openPartial ( name )
+        {
+            this.openSettings();
+            this.openSurface( name );
+        },
+
+        // The 404 is a reserved page (SCHEMA 13.6): the old surface
+        // opener lands on it.
+        openNotFoundSurface ()
+        {
+            const page = this.notFoundPage;
+
+            if ( page !== undefined ) { this.selectPage( page.id ); }
+        },
+
+        get notFoundPage ()
+        {
+            return this.pages.find( ( page ) => page.slug === '404' );
+        },
+
+        // Home and the 404 are reserved: pinned first and last, never
+        // nested, never draft, never deleted, never dragged.
+        pageIsReserved ( page )
+        {
+            return page !== undefined && page !== null && ( page.slug === 'home' || page.slug === '404' );
+        },
+
+        // The template canvas previews with a page's content only
+        // when one is chosen (Mikey: default None; the slot is then an
+        // empty, stamped space).
+        get samplePage ()
+        {
+            return this.pages.find( ( page ) => page.id === this.samplePageId ) ?? null;
+        },
+
+        get samplePageLabel ()
+        {
+            return this.samplePage?.title || t( 'sampleNone' );
+        },
+
+        chooseSamplePage ( id )
+        {
+            this.samplePageId = id;
+            this.samplePickerOpen = false;
+            this.contentVersion += 1;
+        },
+
+        openSamplePage ()
+        {
+            const page = this.samplePage;
+
+            this.samplePickerOpen = false;
+
+            if ( page !== null ) { this.selectPage( page.id ); }
+        },
+
+        async renameTemplate ( raw )
+        {
+            const from = this.surface;
+            const to = String( raw ?? '' ).trim();
+
+            if ( from === null || from === 'default' || to === '' ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const response = await fetch( '/api/template-rename', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { from, to } ),
+            } );
+
+            if ( !response.ok ) { return; }
+
+            const renamed = await response.json();
+
+            await this.refresh();
+            this.surface = renamed.renamed;
+        },
+
+        // The page's Layout card: a name adopts (a custom page confirms
+        // first - its own copy goes), default clears, detach copies.
+        async setPageTemplate ( value )
+        {
+            const page = this.selectedPage;
+
+            if ( page === undefined || value === '' ) { return; }
+
+            if ( page.template === 'custom' )
+            {
+                this.confirmRowId = value;
+                this.confirmTarget = 'pageTemplate';
+                return;
+            }
+
+            await this.patchPageTemplate( { template: value } );
+        },
+
+        async detachPageTemplate ()
+        {
+            await this.patchPageTemplate( { detach: true } );
+        },
+
+        async patchPageTemplate ( patch )
+        {
+            const id = this.selectedPageId;
+
+            if ( id === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/page', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { id, patch } ),
+            } );
+            this.contentVersion += 1;
             void this.refresh();
         },
 
@@ -4054,6 +5339,16 @@ document.addEventListener( 'alpine:init', () =>
         // pre-nesting spelling - a bare item array - reads as items.
         syncMenuEditor ()
         {
+            // A resync mid-drag would rebuild the rows under Sortable's
+            // feet (the file watcher fires on every save); it waits
+            // for the release instead.
+            if ( typeof document !== 'undefined' && document.querySelector( '.sort-drag-clone' ) !== null )
+            {
+                clearTimeout( this.menuSyncTimer );
+                this.menuSyncTimer = setTimeout( () => this.syncMenuEditor(), 300 );
+                return;
+            }
+
             const record = this.snapshot?.config?.menus?.[ this.menuName ];
 
             if ( record === undefined )
@@ -4467,11 +5762,19 @@ document.addEventListener( 'alpine:init', () =>
             this.markMenuEditorDirty();
         },
 
-        // Drag semantics: the dragged row lands after the nearest row
-        // above it that is outside its own family. An open parent
-        // there means the drop becomes its first child (that is where
-        // it sits visually); anything else means a following sibling
-        // at that row's depth. The family travels with its parent.
+        // Drag semantics (Mikey): a family is ONE unit - it travels
+        // with its parent, a level deeper or shallower with it, and
+        // no drop can split one (its rows are collapsed while the
+        // drag is on). The slot's vertical position bounds the
+        // landing depth and the pointer's horizontal pull picks
+        // within those bounds (previewSlot writes the pick on the
+        // row as data-drop-depth): beneath a childless top-level row
+        // the unit stays top-level unless pulled right, between a
+        // parent and its first child it can only nest first, beneath
+        // a whole family it sits top-level pulled left or as a child
+        // pulled right. The unit lands before the row beneath when
+        // that row is at the landing depth, else last in the list of
+        // the row above's ancestor-or-self one level up.
         sortMenuRows ( key, element )
         {
             const found = this.menuFind( key );
@@ -4487,36 +5790,45 @@ document.addEventListener( 'alpine:init', () =>
 
             collect( found.item );
 
-            const domKeys = [ ...element.querySelectorAll( '[data-sort-id]' ) ].map( ( row ) => row.dataset.sortId );
-            const at = domKeys.indexOf( key );
-            let aboveKey = null;
+            const rows = [ ...element.querySelectorAll( '[data-sort-id]' ) ].filter( ( row ) => row.dataset.sortId === key || !family.has( row.dataset.sortId ) );
+            const at = rows.findIndex( ( row ) => row.dataset.sortId === key );
+            const self = rows[ at ];
+            const above = rows[ at - 1 ] ?? null;
+            const below = rows[ at + 1 ] ?? null;
+            const min = below === null ? 0 : Number( below.dataset.depth );
+            const max = above === null ? 0 : Number( above.dataset.depth ) + 1;
+            const requested = self.dataset.dropDepth === undefined ? min : Number( self.dataset.dropDepth );
+            const depth = Math.min( max, Math.max( min, requested ) );
 
-            for ( let position = at - 1; position >= 0; position -= 1 )
-            {
-                if ( !family.has( domKeys[ position ] ) )
-                {
-                    aboveKey = domKeys[ position ];
-                    break;
-                }
-            }
-
+            self.dataset.dropped = '1';
             found.list.splice( found.index, 1 );
 
-            if ( aboveKey === null )
-            {
-                this.menuEditor.items.unshift( found.item );
-            }
-            else
-            {
-                const above = this.menuFind( aboveKey );
+            let list = this.menuEditor.items;
 
-                if ( above === null ) { this.menuEditor.items.push( found.item ); }
-                else if ( above.item.items.length > 0 ) { above.item.items.unshift( found.item ); }
-                else { above.list.splice( above.index + 1, 0, found.item ); }
+            if ( depth > 0 )
+            {
+                let node = this.menuFind( above.dataset.sortId );
+
+                for ( let level = Number( above.dataset.depth ); level > depth - 1; level -= 1 ) { node = this.menuFind( node.parent.key ); }
+
+                list = node.item.items;
             }
+
+            const belowItem = below !== null && Number( below.dataset.depth ) === depth ? this.menuFind( below.dataset.sortId )?.item : undefined;
+            const position = belowItem === undefined ? -1 : list.indexOf( belowItem );
+
+            if ( position === -1 ) { list.push( found.item ); }
+            else { list.splice( position, 0, found.item ); }
 
             this.sortEpoch += 1;
             this.markMenuEditorDirty();
+        },
+
+        // An auto row is the rule's (Mikey, 2026-09-02): its target and
+        // type are read-only; relabel and delete stay.
+        menuItemIsAuto ( item )
+        {
+            return ( item?.auto ?? '' ) !== '';
         },
 
         menuRuleLabel ( rule )
@@ -4648,6 +5960,7 @@ document.addEventListener( 'alpine:init', () =>
 
             if ( this.snapshot !== null ) { this.snapshot.projectName = draft === '' ? this.folderName : draft; }
 
+            this.siteNameTouched = true;
             clearTimeout( this.siteNameTimer );
             this.siteNameTimer = setTimeout( () => void this.saveSiteName( this.siteNameDraft ), 500 );
         },
@@ -4660,6 +5973,7 @@ document.addEventListener( 'alpine:init', () =>
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify( { name: typeof name === 'string' ? name : '' } ),
             } );
+            this.siteNameTouched = false;
             void this.refresh();
         },
 
@@ -4880,6 +6194,7 @@ document.addEventListener( 'alpine:init', () =>
         startNavCreate ( kind )
         {
             this.navCreate = kind;
+            this.navCreateError = '';
             this.navCreateLabel = '';
             this.navCreateIndex = true;
             this.navCreateHierarchical = false;
@@ -4902,6 +6217,8 @@ document.addEventListener( 'alpine:init', () =>
         {
             if ( this.navCreate === 'menu' ) { return tFill( 'createSavedAsMenu', { name: this.navCreateStem } ); }
             if ( this.navCreate === 'partial' ) { return tFill( 'createSavedAsPartial', { name: this.navCreateStem } ); }
+            if ( this.navCreate === 'layout' ) { return tFill( 'createSavedAsLayout', { name: this.navCreateStem } ); }
+            if ( this.navCreate === 'template' ) { return tFill( 'createSavedAsTemplate', { name: this.navCreateStem } ); }
 
             return tFill( 'createSavedAs', { file: `${this.navCreateStem}.json` } );
         },
@@ -4924,8 +6241,52 @@ document.addEventListener( 'alpine:init', () =>
 
             this.suppressReloadUntil = Date.now() + 1500;
 
+            // A page template (SCHEMA 12.6) starts as a copy of the
+            // default and opens on its canvas.
+            if ( kind === 'template' )
+            {
+                const response = await fetch( '/api/template', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { name: label, from: 'default' } ),
+                } );
+
+                if ( !response.ok ) { return; }
+
+                const created = await response.json();
+
+                await this.refresh();
+                this.openTemplate( created.name );
+                return;
+            }
+
             // A partial lives in site.json too; the server derives
             // and dedupes the token name.
+            if ( kind === 'layout' )
+            {
+                const response = await fetch( '/api/layout', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, name: label } ),
+                } );
+
+                if ( !response.ok )
+                {
+                    const failure = await response.json().catch( () => ( {} ) );
+
+                    this.navCreateError = String( failure.error ?? t( 'createFailed' ) );
+                    return;
+                }
+
+                const created = await response.json();
+
+                this.navCreate = null;
+                await this.loadCollection();
+                this.showLayoutsView();
+                this.selectLayoutRow( created.name );
+                return;
+            }
+
             if ( kind === 'partial' )
             {
                 const response = await fetch( '/api/partial', {
@@ -4983,7 +6344,15 @@ document.addEventListener( 'alpine:init', () =>
                 } ),
             } );
 
-            if ( !response.ok ) { return; }
+            if ( !response.ok )
+            {
+                // A taken name (one namespace across collections and
+                // taxonomies, Mikey): the modal says so and stays open.
+                const failure = await response.json().catch( () => ( {} ) );
+
+                this.navCreateError = String( failure.error ?? t( 'createFailed' ) );
+                return;
+            }
 
             const created = await response.json();
 
@@ -5048,6 +6417,9 @@ document.addEventListener( 'alpine:init', () =>
             if ( this.confirmTarget === 'taxonomy' ) { return this.taxonomyDisplayLabel; }
             if ( this.confirmTarget === 'menu' ) { return this.menuName ?? ''; }
             if ( this.confirmTarget === 'partial' ) { return String( this.confirmRowId ?? '' ); }
+            if ( this.confirmTarget === 'layout' ) { return String( this.confirmRowId ?? '' ); }
+            if ( this.confirmTarget === 'template' ) { return String( this.confirmRowId ?? '' ); }
+            if ( this.confirmTarget === 'pageTemplate' ) { return String( this.selectedPage?.title ?? '' ) || t( 'kindPage' ); }
             if ( this.confirmTarget === 'mediaForever' )
             {
                 if ( this.confirmRowId === 'all' ) { return tFill( 'trashAllWord', { count: ( this.mediaTrash ?? [] ).length } ); }
@@ -5097,6 +6469,8 @@ document.addEventListener( 'alpine:init', () =>
                 entryLayout: t( 'adoptTemplateQuestion' ),
                 mediaForever: t( 'deleteMediaForeverQuestion' ),
                 partial: t( 'deletePartialQuestion' ),
+                template: t( 'deleteTemplateQuestion' ),
+                pageTemplate: t( 'returnPageQuestion' ),
             };
 
             return questions[ this.confirmTarget ] ?? '';
@@ -5172,8 +6546,53 @@ document.addEventListener( 'alpine:init', () =>
                 return;
             }
 
+            // Deleting a template moves its pages to the default;
+            // returning a custom page to a template replaces its copy.
+            if ( target === 'template' )
+            {
+                await fetch( '/api/template', {
+                    method: 'DELETE',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { name: rowId } ),
+                } );
+
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                await this.refresh();
+
+                if ( this.workspace === 'template' && this.surface === rowId ) { this.openSiteWorkspace( 'templates' ); }
+
+                return;
+            }
+
+            if ( target === 'pageTemplate' )
+            {
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                await this.patchPageTemplate( { template: rowId } );
+                return;
+            }
+
             // Deleting a partial: pages inserting it report an issue
             // until re-pointed - offered, never silent (the confirm).
+            if ( target === 'layout' )
+            {
+                await fetch( '/api/layout', {
+                    method: 'DELETE',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, name: rowId } ),
+                } );
+
+                if ( this.layoutsRowName === rowId ) { this.layoutsRowName = null; }
+                if ( this.layoutName === rowId ) { this.layoutName = 'default'; }
+
+                this.confirmTarget = null;
+                this.confirmRowId = null;
+                await this.loadCollection();
+                void this.refresh();
+                return;
+            }
+
             if ( target === 'partial' )
             {
                 await fetch( '/api/partial', {
@@ -5319,6 +6738,7 @@ document.addEventListener( 'alpine:init', () =>
                     body: JSON.stringify( { id: this.selectedPageId } ),
                 } );
                 this.selectedPageId = this.pages.find( ( page ) => page.slug === 'home' )?.id ?? null;
+                this.pagesRowId = null;
                 this.syncPageTitleDraft();
                 this.applyDeselect();
             }
@@ -5345,6 +6765,8 @@ document.addEventListener( 'alpine:init', () =>
         // matching their Settings rule.
         get inspectorTrashTarget ()
         {
+            if ( this.layoutsRow !== null ) { return this.layoutsRow.name === 'default' ? '' : 'layout'; }
+            if ( this.workspace === 'pages' ) { return this.pagesRow !== null && !this.pageIsReserved( this.pagesRow ) ? 'page' : ''; }
             if ( this.canvasActive && this.selectedBlock !== null ) { return 'block'; }
             if ( this.workspace === 'collection' && this.entryEditor !== null ) { return 'entry'; }
             if ( this.workspace === 'taxonomy' && this.termEditor !== null ) { return 'term'; }
@@ -5355,7 +6777,7 @@ document.addEventListener( 'alpine:init', () =>
             if ( this.workspace === 'taxonomy' && this.taxonomyEditor !== null ) { return 'taxonomy'; }
 
             if ( this.workspace === 'page' && this.selectedBlock === null
-                && this.selectedPage !== undefined && this.selectedPage.slug !== 'home' && !this.pageHasNested )
+                && this.selectedPage !== undefined && !this.pageIsReserved( this.selectedPage ) )
             {
                 return 'page';
             }
@@ -5388,10 +6810,25 @@ document.addEventListener( 'alpine:init', () =>
         {
             if ( !this.confirmEntryLeave( () => this.inspectorBack() ) ) { return; }
 
+            // The pages table: back drops the row; the site card returns.
+            if ( this.workspace === 'pages' )
+            {
+                this.pagesRowId = null;
+                return;
+            }
+
+            if ( this.layoutsRow !== null )
+            {
+                this.layoutsRowName = null;
+                return;
+            }
+
             // A selected block ascends ONE level - to its section,
             // not to the document root (Mikey's report); the bridge
             // deselects when there is nothing above.
             if ( this.selectedBlock !== null ) { this.sendToCanvas( { kind: 'ascend' } ); }
+            else if ( this.workspace === 'template' && this.surface !== null ) { this.openSiteWorkspace( 'templates' ); }
+            else if ( this.workspace === 'settings' && this.surface !== null && this.surface !== 'notFound' && this.surface !== 'header' && this.surface !== 'footer' ) { this.openSiteWorkspace( 'partials' ); }
             else if ( this.surface !== null ) { this.closeSurface(); }
             else if ( this.selectedFieldKey !== null ) { this.selectedFieldKey = null; }
             else if ( this.selectedEntryId !== null ) { this.selectedEntryId = null; }
@@ -5405,6 +6842,8 @@ document.addEventListener( 'alpine:init', () =>
                 this.tab = 'settings';
             }
             else if ( this.selectedMediaFile !== null ) { this.selectedMediaFile = null; }
+            else if ( this.workspace === 'menu' ) { this.openSiteWorkspace( 'menus' ); }
+            else if ( this.workspace === 'page' ) { this.openPagesWorkspace( 'pages' ); }
             else { this.clearSelection(); }
 
             this.confirmTarget = null;
@@ -5505,11 +6944,7 @@ document.addEventListener( 'alpine:init', () =>
             if ( editor === null ) { return; }
 
             const slug = raw.toLowerCase().replace( /[^a-z0-9-]+/g, '-' ).replace( /^[^a-z]+/, '' ).replace( /-+$/, '' );
-            const target = editor.region !== undefined
-                ? { region: editor.region }
-                : ( editor.doc === undefined
-                        ? { pageId: editor.pageId }
-                        : { doc: editor.doc, surface: editor.surface } );
+            const target = this.targetOfEditor( editor );
 
             editor.morph = slug;
             this.suppressReloadUntil = Date.now() + 1500;
@@ -5587,7 +7022,7 @@ document.addEventListener( 'alpine:init', () =>
                 for ( const child of childrenOf( page.id ) ) { walk( child, depth + 1 ); }
             };
 
-            for ( const page of this.pages )
+            for ( const page of this.pinnedPageOrder )
             {
                 const orphaned = page.parent !== undefined && !this.pages.some( ( candidate ) => candidate.id === page.parent );
 
@@ -5647,7 +7082,7 @@ document.addEventListener( 'alpine:init', () =>
                 }
             }
 
-            return this.pages.filter( ( page ) => page.slug !== 'home' && !excluded.has( page.id ) );
+            return this.pages.filter( ( page ) => !this.pageIsReserved( page ) && !excluded.has( page.id ) );
         },
 
         get nestAddressLine ()
@@ -5689,10 +7124,10 @@ document.addEventListener( 'alpine:init', () =>
             void this.refresh();
         },
 
-        // Mount options for a collection: any page but home.
+        // Mount options for a collection: any page but the reserved two.
         get collectionMountOptions ()
         {
-            return this.pages.filter( ( page ) => page.slug !== 'home' );
+            return this.pages.filter( ( page ) => !this.pageIsReserved( page ) );
         },
 
         // Pagination (SCHEMA 13.5): entries per index page; empty
@@ -5748,10 +7183,33 @@ document.addEventListener( 'alpine:init', () =>
             return this.pages.find( ( page ) => page.id === this.selectedPageId );
         },
 
+        // The canvas navigates by REPLACING its location, never by a
+        // src change: an iframe's src change adds an entry to the
+        // window's joint history, and Back then spends a click undoing
+        // a canvas load with nothing visible happening (Mikey: "the
+        // back button gets stuck"). Runs as an effect, so it follows
+        // previewSrc.
+        syncCanvasSrc ( frame )
+        {
+            const target = new URL( this.previewSrc, window.location.href ).href;
+
+            if ( frame.dataset.src === target ) { return; }
+
+            frame.dataset.src = target;
+            frame.contentWindow?.location.replace( target );
+        },
+
         get previewSrc ()
         {
             if ( this.surface !== null )
             {
+                if ( this.workspace === 'template' )
+                {
+                    const sample = this.samplePage === null ? '' : `&page=${this.samplePage.id}`;
+
+                    return `/preview-page-template/${this.surface}?v=${this.contentVersion}${sample}`;
+                }
+
                 if ( this.workspace === 'settings' )
                 {
                     return this.surface === 'notFound'
@@ -5768,8 +7226,13 @@ document.addEventListener( 'alpine:init', () =>
                 const sample = this.surface === 'template' && this.sampleEntryId !== null
                     ? `&${isTaxonomy ? 'term' : 'entry'}=${this.sampleEntryId}`
                     : '';
+                const layout = this.surface === 'template' && !isTaxonomy ? `&layout=${this.layoutName}` : '';
 
-                return `/preview-${isTaxonomy ? 'tax-' : ''}${this.surface}/${this.stem}?v=${this.contentVersion}${sample}`;
+                const surfaceName = this.surface === 'template'
+                    ? ( isTaxonomy ? 'term-template' : 'entry-template' )
+                    : ( isTaxonomy ? 'term-index' : 'index' );
+
+                return `/preview-${surfaceName}/${this.stem}?v=${this.contentVersion}${sample}${layout}`;
             }
 
             return `/canvas/${this.selectedPage?.slug ?? ''}?v=${this.contentVersion}`;
@@ -5778,11 +7241,33 @@ document.addEventListener( 'alpine:init', () =>
         // Breadcrumbs speak labels, never file stems (SCHEMA 13.2:
         // plumbing stays out of sight); a page's crumb is its slug,
         // the public spelling of a public page.
+        // The crumb's first step (Mikey): the table this canvas came
+        // from, clickable - pages, partials, or templates.
+        get canvasHome ()
+        {
+            if ( this.surface === null && this.workspace === 'page' ) { return { label: t( 'navPages' ).toLowerCase(), view: [ 'pages', 'pages' ] }; }
+            if ( this.workspace === 'settings' && this.surface !== null ) { return { label: t( 'navPartials' ).toLowerCase(), view: [ 'site', 'partials' ] }; }
+            if ( this.workspace === 'template' && this.surface !== null ) { return { label: t( 'viewTemplates' ).toLowerCase(), view: [ 'site', 'templates' ] }; }
+
+            return null;
+        },
+
+        openCanvasHome ()
+        {
+            const home = this.canvasHome;
+
+            if ( home === null ) { return; }
+
+            if ( home.view[ 0 ] === 'pages' ) { this.openPagesWorkspace( 'pages' ); }
+            else { this.openSiteWorkspace( home.view[ 1 ] ); }
+        },
+
         get canvasRootLabel ()
         {
             if ( this.surface !== null )
             {
                 if ( this.workspace === 'settings' ) { return this.surfaceLabel.toLowerCase(); }
+                if ( this.workspace === 'template' ) { return this.surface; }
 
                 return this.workspace === 'taxonomy' ? this.taxonomyDisplayLabel : this.collectionDisplayLabel;
             }
@@ -5939,9 +7424,20 @@ document.addEventListener( 'alpine:init', () =>
                 entries.push( { key: `partial:${name}`, label: name, kind: t( 'kindPartial' ), open: () => this.openSurface( name ) } );
             }
 
+            for ( const name of this.templateNames )
+            {
+                entries.push( { key: `template:${name}`, label: name, kind: t( 'kindTemplate' ), open: () => this.openTemplate( name ) } );
+            }
+
+            entries.push( { key: 'pages', label: t( 'navAllPages' ), kind: '', open: () => this.openPagesWorkspace( 'pages' ) } );
+            entries.push( { key: 'pages:templates', label: t( 'navTemplates' ), kind: '', open: () => this.openSiteWorkspace( 'templates' ) } );
+            entries.push( { key: 'site:partials', label: t( 'navPartials' ), kind: '', open: () => this.openSiteWorkspace( 'partials' ) } );
+            entries.push( { key: 'site:menus', label: t( 'navMenus' ), kind: '', open: () => this.openSiteWorkspace( 'menus' ) } );
+            entries.push( { key: 'theme', label: t( 'navTheme' ), kind: '', open: () => this.openTheme() } );
+
             entries.push( { key: 'surface:header', label: t( 'editHeader' ), kind: '', open: () => this.openSurface( 'header' ) } );
             entries.push( { key: 'surface:footer', label: t( 'editFooter' ), kind: '', open: () => this.openSurface( 'footer' ) } );
-            entries.push( { key: 'surface:notFound', label: t( 'editNotFound' ), kind: '', open: () => this.openSurface( 'notFound' ) } );
+            entries.push( { key: 'surface:notFound', label: t( 'navNotFound' ), kind: t( 'kindPage' ), open: () => this.openNotFoundSurface() } );
             entries.push( { key: 'media', label: t( 'navMedia' ), kind: '', open: () => this.openMediaWorkspace() } );
             entries.push( { key: 'settings', label: t( 'navSiteSettings' ), kind: '', open: () => this.openSettings() } );
             entries.push( ...( this.palette?.entryRows ?? [] ) );
@@ -6051,6 +7547,72 @@ document.addEventListener( 'alpine:init', () =>
             chosen.open();
         },
 
+        // Partials and templates both sit inset in the frame (Mikey),
+        // as tall as their canvas reports.
+        // The inspector's tabs show only when they hold something
+        // (Mikey), except on a canvas, where a tab that a selection
+        // would fill stays and prompts for one. These mirror the
+        // panes' own conditions.
+        get contentTabFilled ()
+        {
+            if ( this.canvasActive && ( this.blockEditor !== null || this.repeatEditor !== null ) ) { return true; }
+            if ( this.canvasActive && this.selectedBlock !== null && this.blockInfoAt( this.selectedBlock )?.kind === 'slot' ) { return true; }
+            if ( this.workspace === 'media' ) { return true; }
+            if ( this.workspace === 'pages' && this.pagesRow === null ) { return true; }
+            if ( this.surface !== null && this.blockEditor === null && this.repeatEditor === null ) { return true; }
+            if ( this.workspace === 'collection' && this.surface === null && this.collectionView === 'entries' && this.collectionEditor !== null ) { return true; }
+            if ( this.layoutsRow !== null ) { return true; }
+            if ( this.workspace === 'collection' && this.surface === null && this.collectionView === 'fields' && this.fieldEditor !== null ) { return true; }
+            if ( this.workspace === 'taxonomy' && this.surface === null && ( this.termEditor !== null || ( this.taxonomyEditor !== null && this.taxonomyEditor.index !== false ) ) ) { return true; }
+            if ( this.workspace === 'menu' && this.menuEditor !== null ) { return true; }
+            if ( this.workspace === 'template' && this.surface !== null && this.selectedBlock === null ) { return true; }
+
+            return this.workspace === 'settings' && this.surface === null;
+        },
+
+        get settingsTabFilled ()
+        {
+            if ( this.canvasActive && this.selectedBlock !== null && this.blockInfoAt( this.selectedBlock )?.kind !== 'slot' ) { return true; }
+            if ( this.workspace === 'collection' && this.surface === null && this.collectionView === 'fields' && this.fieldEditor !== null ) { return true; }
+            if ( this.workspace === 'collection' && this.surface === null && this.collectionEditor !== null && this.entryEditor === null && this.fieldEditor === null ) { return true; }
+            if ( this.workspace === 'collection' && this.collectionView === 'entries' && this.entryEditor !== null ) { return true; }
+            if ( ( this.workspace === 'page' || ( this.workspace === 'pages' && this.pagesRow !== null ) ) && this.selectedBlock === null && this.selectedPage !== undefined ) { return true; }
+            if ( this.canvasEntry !== null && this.selectedBlock === null ) { return true; }
+            if ( this.workspace === 'taxonomy' && ( this.termEditor !== null || this.taxonomyEditor !== null ) ) { return true; }
+
+            return this.workspace === 'menu' && this.menuEditor !== null;
+        },
+
+        get contentTabAvailable ()
+        {
+            return this.contentTabFilled || this.canvasActive;
+        },
+
+        get settingsTabAvailable ()
+        {
+            return this.settingsTabFilled || this.canvasActive;
+        },
+
+        // The tab in force: the chosen one when it has content, else
+        // the first that does.
+        get activeTab ()
+        {
+            const available = {
+                content: this.contentTabAvailable,
+                settings: this.settingsTabAvailable,
+                usage: this.usageTabAvailable,
+            };
+
+            if ( available[ this.tab ] === true ) { return this.tab; }
+
+            return Object.keys( available ).find( ( name ) => available[ name ] === true ) ?? this.tab;
+        },
+
+        get insetCanvasActive ()
+        {
+            return this.regionSurfaceActive || this.workspace === 'template';
+        },
+
         get previewStyle ()
         {
             // A region partial's wrapper hugs its content: as tall as
@@ -6058,7 +7620,7 @@ document.addEventListener( 'alpine:init', () =>
             // viewport toggle - the tablet and phone widths apply to a
             // partial exactly as to a page; desktop fills the frame
             // between equal margins (the container's padding).
-            if ( this.regionSurfaceActive )
+            if ( this.insetCanvasActive )
             {
                 const widths = { desktop: '100%', tablet: '768px', phone: '390px' };
 
@@ -6162,7 +7724,7 @@ document.addEventListener( 'alpine:init', () =>
 
             for ( const entry of this.hoverChain )
             {
-                if ( this.blockInfoAt( entry.path )?.kind === 'section' && entry.path !== this.selectedBlock )
+                if ( [ 'section', 'slot' ].includes( this.blockInfoAt( entry.path )?.kind ) && entry.path !== this.selectedBlock )
                 {
                     return entry;
                 }
@@ -6171,15 +7733,36 @@ document.addEventListener( 'alpine:init', () =>
             return null;
         },
 
+        // The pill over a hovered section reads "Section", except for
+        // a template's own header or footer root on the template
+        // canvas, which it names (Mikey).
+        get sectionHandleWord ()
+        {
+            const path = this.sectionHandle?.path ?? '';
+
+            if ( this.blockInfoAt( path )?.kind === 'slot' ) { return t( 'blockContent' ); }
+
+            const part = this.workspace === 'template' ? /^(header|footer)\[\d+\]$/.exec( path )?.[ 1 ] : undefined;
+
+            return t( part === 'header' ? 'partHeader' : part === 'footer' ? 'partFooter' : 'blockSection' );
+        },
+
         get sectionHandleStyle ()
         {
             const handle = this.sectionHandle;
 
             if ( handle === null ) { return {}; }
 
+            // The pill rides the section's top edge, where a horizontal
+            // seam also lives; when one is showing there, the pill
+            // tucks inside the section instead of colliding (Mikey).
+            const seam = this.seamInfo;
+            const edge = Math.max( 2, handle.rect.y - 11 );
+            const collides = seam !== null && seam.orientation !== 'v' && Math.abs( seam.at - handle.rect.y ) < 26;
+
             return {
                 left: `${handle.rect.x + handle.rect.width / 2 - 34}px`,
-                top: `${Math.max( 2, handle.rect.y - 11 )}px`,
+                top: `${collides ? handle.rect.y + 10 : edge}px`,
             };
         },
 
@@ -6201,9 +7784,11 @@ document.addEventListener( 'alpine:init', () =>
         {
             if ( typeof path !== 'string' ) { return undefined; }
 
-            const indexes = [ ...path.matchAll( /blocks\[(\d+)\]/g ) ].map( ( match ) => Number( match[ 1 ] ) );
+            const indexes = [ ...path.matchAll( /(?:blocks|header|footer)\[(\d+)\]/g ) ].map( ( match ) => Number( match[ 1 ] ) );
             let info;
-            let level = this.surface !== null ? this.surfaceBlocks : this.selectedPage?.blocks;
+            let level = this.workspace === 'template'
+                ? ( this.snapshot?.templates?.[ this.surface ]?.[ this.partOfPath( path ) ] ?? [] )
+                : ( this.surface !== null ? this.surfaceBlocks : this.selectedPage?.blocks );
 
             for ( const index of indexes )
             {
@@ -6222,9 +7807,37 @@ document.addEventListener( 'alpine:init', () =>
             return t( info.kind === 'repeat' ? 'blockRepeat' : 'blockSection' );
         },
 
+        // A label for a marker path: the block's own, except a
+        // template's header or footer root (Mikey: "Header"/"Footer",
+        // never "Section") and the content slot ("Content").
+        blockLabelAt ( path )
+        {
+            const info = this.blockInfoAt( path );
+
+            if ( info?.kind === 'slot' ) { return t( 'blockContent' ); }
+
+            const part = this.workspace === 'template' ? /^(header|footer)\[\d+\]$/.exec( path ?? '' )?.[ 1 ] : undefined;
+
+            if ( part === 'header' ) { return t( 'partHeader' ); }
+            if ( part === 'footer' ) { return t( 'partFooter' ); }
+
+            return this.blockLabel( info );
+        },
+
+        // The subtitle word for the selected block: section, component,
+        // or the slot's owner.
+        selectedKindWord ()
+        {
+            const kind = this.blockInfoAt( this.selectedBlock )?.kind;
+
+            if ( kind === 'slot' ) { return `${t( 'kindTemplate' )} · ${this.surface ?? ''}`; }
+
+            return t( kind === 'section' ? 'blockSection' : 'kindComponent' ).toLowerCase();
+        },
+
         get selectionLabel ()
         {
-            return this.blockLabel( this.blockInfoAt( this.selectedBlock ) );
+            return this.blockLabelAt( this.selectedBlock );
         },
 
         // The breadcrumb's ancestor crumbs: every prefix of the
@@ -6233,14 +7846,14 @@ document.addEventListener( 'alpine:init', () =>
         {
             if ( this.selectedBlock === null ) { return []; }
 
-            const parts = [ ...this.selectedBlock.matchAll( /blocks\[\d+\]/g ) ].map( ( match ) => match[ 0 ] );
+            const parts = [ ...this.selectedBlock.matchAll( /(?:blocks|header|footer)\[\d+\]/g ) ].map( ( match ) => match[ 0 ] );
             const trail = [];
             let prefix = '';
 
             for ( const part of parts )
             {
                 prefix = prefix === '' ? part : `${prefix}.${part}`;
-                trail.push( { path: prefix, label: this.blockLabel( this.blockInfoAt( prefix ) ) } );
+                trail.push( { path: prefix, label: this.blockLabelAt( prefix ) } );
             }
 
             return trail;
@@ -6252,7 +7865,7 @@ document.addEventListener( 'alpine:init', () =>
 
             if ( this.surface !== null )
             {
-                const owner = this.workspace === 'settings'
+                const owner = this.workspace === 'settings' || this.workspace === 'template'
                     ? this.surfaceLabel
                     : ( this.workspace === 'taxonomy' ? this.taxonomyDisplayLabel : this.collectionDisplayLabel );
 
@@ -6261,6 +7874,8 @@ document.addEventListener( 'alpine:init', () =>
 
             if ( this.workspace === 'collection' )
             {
+                if ( this.layoutsRow !== null ) { return this.layoutsRow.name; }
+
                 if ( this.collectionView === 'fields' )
                 {
                     return this.fieldEditor !== null ? this.fieldEditor.label : this.collectionDisplayLabel;
@@ -6290,6 +7905,7 @@ document.addEventListener( 'alpine:init', () =>
                 return this.selectedMedia !== null ? this.mediaLabelOf( this.selectedMedia ) : t( 'navMedia' );
             }
 
+            if ( this.workspace === 'pages' ) { return this.pagesRow !== null ? this.pagesRow.title : t( 'navPages' ); }
             if ( this.workspace === 'settings' ) { return this.projectName; }
 
             return this.selectedBlock !== null ? this.selectionLabel : this.selectedPage?.title ?? '';
@@ -6309,10 +7925,11 @@ document.addEventListener( 'alpine:init', () =>
 
                     if ( typeof reference === 'string' ) { return reference.replace( '/', ' / ' ); }
 
-                    return t( this.blockInfoAt( this.selectedBlock )?.kind === 'section' ? 'blockSection' : 'kindComponent' ).toLowerCase();
+                    return this.selectedKindWord();
                 }
 
-                if ( this.workspace === 'settings' ) { return `${t( 'kindSite' )} · ${this.surfaceLabel.toLowerCase()}`; }
+                if ( this.workspace === 'settings' ) { return `${t( 'kindPartial' )} · ${this.surfaceLabel.toLowerCase()}`; }
+                if ( this.workspace === 'template' ) { return t( 'kindTemplate' ); }
 
                 return `${this.workspace === 'taxonomy' ? this.taxonomyDisplayLabel : this.collectionDisplayLabel} · ${this.surfaceLabel.toLowerCase()}`;
             }
@@ -6321,6 +7938,8 @@ document.addEventListener( 'alpine:init', () =>
             {
                 return `${this.collectionDisplayLabel} · ${t( 'kindField' )}`;
             }
+
+            if ( this.workspace === 'collection' && this.layoutsRow !== null ) { return `${t( 'kindLayout' )} · ${this.workspaceFile ?? ''}`; }
 
             if ( this.workspace === 'collection' )
             {
@@ -6352,6 +7971,7 @@ document.addEventListener( 'alpine:init', () =>
                     : `${t( 'kindMediaLibrary' )} · ${home}`;
             }
 
+            if ( this.workspace === 'pages' ) { return this.pagesRow !== null ? `${t( 'kindPage' )} · ${this.pagesRow.slug}` : 'pages.json'; }
             if ( this.workspace === 'settings' ) { return t( 'kindSite' ); }
 
             if ( this.selectedBlock !== null )
@@ -6360,7 +7980,7 @@ document.addEventListener( 'alpine:init', () =>
 
                 if ( typeof reference === 'string' ) { return reference.replace( '/', ' / ' ); }
 
-                return t( this.blockInfoAt( this.selectedBlock )?.kind === 'section' ? 'blockSection' : 'kindComponent' ).toLowerCase();
+                return this.selectedKindWord();
             }
 
             return t( 'kindPage' );
@@ -6663,7 +8283,17 @@ document.addEventListener( 'alpine:init', () =>
 
             if ( options === undefined ) { return []; }
             if ( options.source === 'static' ) { return options.values.map( ( entry ) => entry.value ); }
-            if ( options.source === 'byField' ) { return options.map[ this.target[ options.byField ] ] ?? []; }
+            // A dependent select follows its driver field's value, or the
+            // driver's default while nothing is set yet - a repeat's wiring
+            // starts with no layout chosen, and the style dropdown sat
+            // empty (Mikey).
+            if ( options.source === 'byField' )
+            {
+                const chosen = this.target[ options.byField ];
+                const key = typeof chosen === 'string' && chosen !== '' ? chosen : this.fields[ options.byField ]?.default;
+
+                return options.map[ key ] ?? [];
+            }
 
             // Token families ride whichever editor hosts this row -
             // a component block's, or a repeat's wiring.
