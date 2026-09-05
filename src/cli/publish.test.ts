@@ -27,6 +27,21 @@ async function makeProject (): Promise<string>
 
 describe( 'caso init', () =>
 {
+    it( 'records --origin normalized in site.json and refuses a path', async () =>
+    {
+        const directory = await mkdtemp( join( tmpdir(), 'casomer-project-' ) );
+
+        assert.equal( await runInit( [ '--origin', 'Sunrise-Bakery.com/' ], directory ), 0 );
+
+        const site = JSON.parse( await readFile( join( directory, 'site.json' ), 'utf8' ) ) as { origin?: string };
+
+        assert.equal( site.origin, 'https://sunrise-bakery.com' );
+
+        const other = await mkdtemp( join( tmpdir(), 'casomer-project-' ) );
+
+        await assert.rejects( runInit( [ '--origin', 'https://example.com/shop' ], other ), /public address/ );
+    } );
+
     it( 'creates a repository and a canonical starter site', async () =>
     {
         const directory = await makeProject();

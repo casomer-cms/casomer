@@ -18,7 +18,7 @@ import { type SchemaIssue } from '../schema/manifest.ts';
 import { type LoadedPackage } from '../schema/loadPackage.ts';
 import { loadSiteDirectory, type SiteLoadResult } from '../content/loadSiteDirectory.ts';
 import { collectionIsDraft, collectionPathSegments, entrySlug, pageIsDraft, pagePathSegments, pagesById, resolveEntryUrls, resolveMenus } from '../content/urlTree.ts';
-import { termAndDescendantIds, entryLayoutOf } from '../content/contentDocuments.ts';
+import { termAndDescendantIds, entryLayoutOf, termLayoutOf } from '../content/contentDocuments.ts';
 import { entryRequiredProblems } from '../content/contentProblems.ts';
 import { loadCoreComponents } from './coreComponents.ts';
 import { assemblePage, entryScopeOf, termScopeOf, type PageInput } from './assemblePage.ts';
@@ -206,7 +206,7 @@ function taxonomyPages ( site: SiteLoadResult, issues: SchemaIssue[] ): Collecti
             const address = `${stem}/${segments.join( '/' )}`;
 
             pages.push( {
-                page: { id: term.id, title: term.name, slug: address, blocks: taxonomy.templateBlocks, ...( taxonomy.termTemplate === undefined ? {} : { template: taxonomy.termTemplate } ) },
+                page: { id: term.id, title: term.name, slug: address, blocks: termLayoutOf( taxonomy, term ).blocks ?? taxonomy.templateBlocks, ...( termLayoutOf( taxonomy, term ).template === undefined ? {} : { template: termLayoutOf( taxonomy, term ).template } ) },
                 relativeFile: `${address}/index.html`,
                 termScope: termScopeOf( term ),
                 termContext: { taxonomyStem: stem, termIds: termAndDescendantIds( taxonomy.terms, term.id ) },

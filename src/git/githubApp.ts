@@ -10,7 +10,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-export const githubClientId = 'lv23IiQXR6Im4sElf4b5';
+export const githubClientId = 'Iv23liQXR6Im4sElf4b5';
 export const githubAppSlug = 'casomer-cms';
 
 export interface GitHubEndpoints
@@ -88,8 +88,13 @@ export async function requestDeviceCode ( endpoints = defaultEndpoints ): Promis
 
     if ( typeof body.device_code !== 'string' )
     {
+        // A 404 here is what GitHub sends when Device Flow is not
+        // enabled on the app (Settings, Developer settings, GitHub Apps,
+        // Casomer CMS, General, Enable Device Flow), not a bad URL.
+        const said = typeof body.error === 'string' ? ` GitHub answered "${body.error}".` : '';
+
         throw new Error(
-            'GitHub did not start the device flow. If this app was just created, make sure Device Flow is enabled in its settings.',
+            `GitHub did not start the device flow.${said} Device Flow must be enabled in the app's settings on GitHub (Developer settings, GitHub Apps, Casomer CMS, General).`,
         );
     }
 
@@ -160,6 +165,13 @@ export async function pollForAccessToken (
     }
 
     throw new Error( 'the device code expired before it was authorized; run caso init again to get a new one' );
+}
+
+// Whether a remote is one caso pushes to with the GitHub App: a
+// github.com address with caso as git's credential helper for it.
+export function usesGitHubApp ( remoteUrl: string, credentialHelper: string ): boolean
+{
+    return /^https:\/\/github\.com\//i.test( remoteUrl.trim() ) && credentialHelper.trim() === '!caso credential';
 }
 
 // A valid token, refreshing a stale one through the refresh grant when

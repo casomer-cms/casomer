@@ -13,16 +13,26 @@ import { execFile } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { watch, type FSWatcher } from 'node:fs';
-import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, stat, unlink, writeFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { homedir } from 'node:os';
+
 import { basename, dirname, extname, join, normalize, sep } from 'node:path';
 
-import { defaultMediaSettings, optimizeUpload } from './optimize.ts';
+import { defaultMediaSettings, optimizeAvatar, optimizeUpload } from './optimize.ts';
 import { NOT_FOUND_PAGE_ID, loadSiteDirectory } from '../content/loadSiteDirectory.ts';
 import { parseJsonDocument, serializeCanonicalJson, type JsonValue } from '../content/canonicalJson.ts';
+import { normalizeOrigin } from '../content/siteConfig.ts';
+import { deployTargetOf, hasCredential, normalizeRemotePath, readDeployRecord, runDeploy, testConnection, updateDeployRecord, type DeployRecord, type SftpTarget } from '../deploy/sftp.ts';
+import { claimSupporterMoment, licenseKeyVerdict, licenseState, publishCount, recordGraceStart, siteKeyFor, sponsorKeyOk, storeLicenseKey, supporterKeyOk, type LicenseState } from '../licensing/gate.ts';
+import { cleanKey, keyProblem, verifyKey } from '../licensing/keys.ts';
+import { recheckKeysAtPublish } from '../licensing/recheck.ts';
+import { activateLicenseOnline, billingPortalOnline, checkKeyOnline, onlineProblem, removeWallEntry, sendWallEntry } from '../licensing/relay.ts';
+import { readUserConfig, updateUserConfig } from '../licensing/userConfig.ts';
+import { userConfigDirectory } from '../licensing/userConfig.ts';
+import { chromeWithoutCompiler } from './chromeCss.ts';
 import { buildSite } from '../compiler/buildSite.ts';
-import { appendIgnoreLines, commit, hasRemote, hasStagedChanges, pushCurrentBranch, removeIgnoreLines, runGit, stagePaths } from '../git/repository.ts';
+import { appendIgnoreLines, commit, hasRemote, hasStagedChanges, pullCurrentBranch, pushCurrentBranch, removeIgnoreLines, runGit, stagePaths } from '../git/repository.ts';
+import { defaultEndpoints, getValidAccessToken, githubAppSlug, listAccessibleRepositories, pollForAccessToken, requestDeviceCode, usesGitHubApp, type DeviceAuthorization, type GitHubEndpoints } from '../git/githubApp.ts';
 import { journalRedo, journalSnapshot, journalUndo, ownedContentFiles } from '../git/journal.ts';
 import { entryRequiredProblems } from '../content/contentProblems.ts';
 
@@ -102,6 +112,9 @@ export interface StudioServerOptions
     readonly generatorVersion?: string;
     readonly host?: string;
     readonly token?: string;
+
+    // GitHub's endpoints, replaceable by the tests' mock.
+    readonly githubEndpoints?: GitHubEndpoints;
 }
 
 export interface StudioServer
@@ -179,6 +192,19 @@ function issuesPreviewPage ( issues: readonly { path: string; message: string }[
 `;
 }
 
+async function prebuiltChromeCss ( assetsDirectory: string ): Promise<boolean>
+{
+    try
+    {
+        await stat( join( assetsDirectory, 'chrome.css' ) );
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
 async function serveAsset ( assetsDirectory: string, urlPath: string, response: ServerResponse ): Promise<void>
 {
     const candidates = urlPath === '/' || extname( urlPath ) === '' ? [ '/index.html' ] : [ urlPath ];
@@ -191,7 +217,15 @@ async function serveAsset ( assetsDirectory: string, urlPath: string, response: 
 
         try
         {
-            const body = await readFile( file );
+            let body: Buffer | string = await readFile( file );
+
+            // The published package carries a prebuilt chrome.css
+            // (npm run chrome:build): the page links it instead of
+            // compiling in the browser. Absent in development.
+            if ( candidate === '/index.html' && await prebuiltChromeCss( assetsDirectory ) )
+            {
+                body = chromeWithoutCompiler( body.toString( 'utf8' ) );
+            }
 
             // no-cache, like serveFile: heuristic caching here is how
             // a reload ran weeks-stale chrome ("outdated casomer").
@@ -237,7 +271,24 @@ interface BlockSummaryBody
     readonly kind: string;
     readonly title?: string;
     readonly children?: readonly BlockSummaryBody[];
+    readonly direction?: string;
 }
+
+// The wrapper's own layout (SCHEMA 11: size, breathing room, pull,
+// hidden), read for the inspector's Layout card on every block kind.
+function wrapperLayoutOf ( block: Record<string, unknown> ): Record<string, unknown>
+{
+    return {
+        size: block.size ?? null,
+        spaceBefore: block.spaceBefore ?? null,
+        spaceAfter: block.spaceAfter ?? null,
+        pull: block.pull ?? null,
+        hidden: block.hidden === true,
+    };
+}
+
+const sectionEditableKeys = [ 'gap', 'justify', 'align', 'wrap', 'padding', 'direction', 'minHeight', 'width' ] as const;
+const wrapperEditableKeys = [ 'size', 'spaceBefore', 'spaceAfter', 'pull', 'hidden' ] as const;
 
 function blockSummary ( block: unknown, packages: readonly LoadedPackage[], core: ReadonlyMap<string, LoadedComponent> ): BlockSummaryBody
 {
@@ -258,8 +309,9 @@ function blockSummary ( block: unknown, packages: readonly LoadedPackage[], core
 
     const children = ( ( record.blocks ?? [] ) as unknown[] )
         .map( ( child ) => blockSummary( child, packages, core ) );
+    const section = record.section as { direction?: unknown } | undefined;
 
-    return { kind: 'section', children };
+    return { kind: 'section', children, ...( typeof section?.direction === 'string' ? { direction: section.direction } : {} ) };
 }
 
 // The status chip tells the truth about which recovery layer applies
@@ -277,7 +329,20 @@ async function siteStatus ( directory: string, changed: { versioned: boolean; fi
 
     const since = await runGit( directory, [ 'rev-list', '--count', `${publishSha}..HEAD` ] );
 
-    return since.stdout.trim() === '0' ? 'published' : 'saved';
+    if ( since.stdout.trim() !== '0' ) { return 'saved'; }
+
+    // Published, but not yet on the backup (Mikey, 2026-09-03: a
+    // quiet failed push looks like a broken tool when the live site
+    // does not change). With a remote set, any commit the upstream
+    // lacks - or no upstream at all - keeps the chip talking.
+    if ( await hasRemote( directory ) && await gitDeployEnabled( directory ) )
+    {
+        const ahead = await runGit( directory, [ 'rev-list', '--count', '@{u}..HEAD' ] );
+
+        if ( ahead.code !== 0 || ahead.stdout.trim() !== '0' ) { return 'unpushed'; }
+    }
+
+    return 'published';
 }
 
 // Per-document dirty (the nav dots): which owned files differ from
@@ -356,25 +421,242 @@ async function changedContent ( directory: string ): Promise<{ versioned: boolea
 // names an image stored in that same directory. Until account
 // editing lands the file is placed by hand; the chip shows it
 // whenever it resolves, and falls back to the person mark.
-function userConfigDirectory (): string
+// A GitHub handle as typed: the leading @ and any URL prefix go.
+function githubHandle ( value: string ): string
 {
-    return join( homedir(), '.config', 'casomer' );
+    return value.trim().replace( /^@/, '' ).replace( /^https?:\/\/(www\.)?github\.com\//i, '' ).replace( /^@/, '' ).replace( /\/.*$/, '' ).trim();
+}
+
+// The site's licensing facts straight from site.json (BUSINESS 5.3):
+// the declaration and the public address, read raw so a publish
+// gate never depends on the rest of the file loading.
+// Go live (SCHEMA 12.4): the destination from site.json, the secret's
+// presence (never its value) and the trusted host key from the user
+// config, for the Go live card.
+export interface DeployState
+{
+    // Pull & push on publish: on unless site.json says otherwise.
+    // github: 'none' for a remote that is not through the app, 'ok'
+    // with a usable token, 'expired' when the person must authorize
+    // again (a refresh token lasts six months unused).
+    readonly git: { readonly enabled: boolean; readonly github: 'none' | 'ok' | 'expired' };
+    readonly target: SftpTarget | null;
+    readonly hasCredential: boolean;
+    readonly credential: 'password' | 'key' | null;
+    readonly keyFile: string;
+    readonly hostKeyTrusted: boolean;
+    readonly lastDeployedAt: string;
+}
+
+async function gitDeployEnabled ( directory: string ): Promise<boolean>
+{
+    try
+    {
+        const raw = JSON.parse( await readFile( join( directory, 'site.json' ), 'utf8' ) ) as { deploy?: { git?: { enabled?: unknown } } } | null;
+
+        return raw?.deploy?.git?.enabled !== false;
+    }
+    catch
+    {
+        return true;
+    }
+}
+
+async function deployTargetIn ( directory: string ): Promise<SftpTarget | null>
+{
+    try
+    {
+        const raw = JSON.parse( await readFile( join( directory, 'site.json' ), 'utf8' ) ) as { deploy?: unknown } | null;
+
+        return deployTargetOf( raw?.deploy );
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+async function githubConnectionOf ( directory: string, endpoints: GitHubEndpoints ): Promise<'none' | 'ok' | 'expired'>
+{
+    const remote = await runGit( directory, [ 'remote', 'get-url', 'origin' ] );
+    const helper = await runGit( directory, [ 'config', '--local', 'credential.https://github.com.helper' ] );
+
+    if ( remote.code !== 0 || !usesGitHubApp( remote.stdout, helper.code === 0 ? helper.stdout : '' ) ) { return 'none'; }
+
+    return await getValidAccessToken( endpoints ) === undefined ? 'expired' : 'ok';
+}
+
+async function deployStateOf ( directory: string, endpoints: GitHubEndpoints = defaultEndpoints ): Promise<DeployState>
+{
+    const target = await deployTargetIn( directory );
+    const record = await readDeployRecord( ( await licenseStateOf( directory ) ).siteKey );
+    const keyed = typeof record.keyFile === 'string' && record.keyFile !== '';
+
+    return {
+        git: { enabled: await gitDeployEnabled( directory ), github: await githubConnectionOf( directory, endpoints ) },
+        target,
+        hasCredential: hasCredential( record ),
+        credential: keyed ? 'key' : ( typeof record.password === 'string' && record.password !== '' ? 'password' : null ),
+        keyFile: keyed ? record.keyFile as string : '',
+        hostKeyTrusted: typeof record.hostKey === 'string' && record.hostKey !== '',
+        lastDeployedAt: typeof record.at === 'string' ? record.at : '',
+    };
+}
+
+async function siteMetaOf ( directory: string ): Promise<{ declaredUse: 'personal' | 'commercial'; origin: string }>
+{
+    try
+    {
+        const raw = JSON.parse( await readFile( join( directory, 'site.json' ), 'utf8' ) ) as { use?: unknown; origin?: unknown } | null;
+        const declaredUse = raw?.use === 'commercial' ? 'commercial' : 'personal';
+        const origin = typeof raw?.origin === 'string' ? ( normalizeOrigin( raw.origin ) ?? '' ) : '';
+
+        return { declaredUse, origin };
+    }
+    catch
+    {
+        return { declaredUse: 'personal', origin: '' };
+    }
+}
+
+// The supporter wall entry as casomer.com receives it: the profile's
+// name and handle, the avatar bytes when there are any, and the
+// supporter key as the proof. Nothing else about the person.
+async function wallEntryFromConfig ( config: Record<string, unknown> ): Promise<{ key: string; name: string; github: string; avatar?: { type: string; data: string } } | null>
+{
+    if ( typeof config.supporterConfirm !== 'string' || typeof config.name !== 'string' || typeof config.github !== 'string' ) { return null; }
+
+    const entry: { key: string; name: string; github: string; avatar?: { type: string; data: string } } = { key: config.supporterConfirm, name: config.name, github: config.github };
+
+    if ( typeof config.avatar === 'string' && config.avatar !== '' )
+    {
+        // Raster only: an SVG served from casomer.com's origin could carry
+        // a script (Mikey, 2026-09-05), so none is stored or sent.
+        const types: Readonly<Record<string, string>> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+        const type = types[ extname( config.avatar ).toLowerCase() ];
+
+        try
+        {
+            const bytes = await readFile( join( userConfigDirectory(), basename( config.avatar ) ) );
+
+            if ( type !== undefined && bytes.length <= 256 * 1024 ) { entry.avatar = { type, data: bytes.toString( 'base64' ) }; }
+        }
+        catch
+        {
+            /* no avatar to send */
+        }
+    }
+
+    return entry;
+}
+
+// Send the wall entry when the person has opted in, or the removal
+// when they have left (Mikey, 2026-09-05: leaving is a toggle in
+// Studio, never an email): sent now, or kept pending
+// (supporterWallPending) until the relay can be reached.
+// supporterWallSentAt says an entry is up there, so a decline from
+// someone never on the wall sends nothing; leaving keeps the person
+// on the wall as a private supporter, which the registry does on
+// its own.
+async function sendWallIfDue ( force = false ): Promise<void>
+{
+    const config = await readUserConfig();
+
+    if ( !force && config.supporterWallPending !== true ) { return; }
+
+    if ( config.supporterWall !== true )
+    {
+        if ( typeof config.supporterWallSentAt !== 'string' || typeof config.supporterConfirm !== 'string' )
+        {
+            await updateUserConfig( ( current ) => { delete current.supporterWallPending; } );
+            return;
+        }
+
+        const removed = await removeWallEntry( config.supporterConfirm );
+
+        await updateUserConfig( ( current ) =>
+        {
+            if ( removed === null ) { current.supporterWallPending = true; }
+            else
+            {
+                delete current.supporterWallSentAt;
+                delete current.supporterWallPending;
+            }
+        } );
+        return;
+    }
+
+    const entry = await wallEntryFromConfig( config );
+
+    if ( entry === null ) { return; }
+
+    const sent = await sendWallEntry( entry );
+
+    await updateUserConfig( ( current ) =>
+    {
+        if ( sent === true )
+        {
+            current.supporterWallSentAt = new Date().toISOString();
+            delete current.supporterWallPending;
+        }
+        else if ( sent === null )
+        {
+            current.supporterWallPending = true;
+        }
+        else
+        {
+            // Refused (a key the desk forced private, or one the registry
+            // does not know): not on the wall by name, then, and the
+            // chrome says so rather than claiming otherwise.
+            current.supporterWall = false;
+            delete current.supporterWallSentAt;
+            delete current.supporterWallPending;
+        }
+    } );
+}
+
+async function licenseStateOf ( directory: string ): Promise<LicenseState>
+{
+    const meta = await siteMetaOf( directory );
+
+    return licenseState( { directory, declaredUse: meta.declaredUse, origin: meta.origin } );
 }
 
 // The person at the keyboard, for the user chip's menu: the user
 // config's name and email when set, else git's, else nothing. A
 // local studio has no accounts; this is identity, not authentication.
-async function userIdentity (): Promise<{ name: string; email: string }>
+async function userIdentity (): Promise<{ name: string; email: string; github: string; supporter: boolean; sponsor: boolean; wall: boolean; subscription: boolean }>
 {
     let name = '';
     let email = '';
+    let github = '';
+    let supporter = false;
+    let sponsor = false;
+    let wall = false;
+    let subscription = false;
 
     try
     {
-        const config = JSON.parse( await readFile( join( userConfigDirectory(), 'config.json' ), 'utf8' ) ) as { name?: unknown; email?: unknown };
+        const config = JSON.parse( await readFile( join( userConfigDirectory(), 'config.json' ), 'utf8' ) ) as { name?: unknown; email?: unknown; github?: unknown; supporterConfirm?: unknown; sponsorConfirm?: unknown; supporterWall?: unknown; supporterSubscription?: unknown };
 
         if ( typeof config.name === 'string' ) { name = config.name.trim(); }
         if ( typeof config.email === 'string' ) { email = config.email.trim(); }
+        if ( typeof config.github === 'string' ) { github = config.github.trim(); }
+
+        // The supporter wall (EDITOR: the account badge): opted into
+        // from the modal that follows a verified key.
+        wall = config.supporterWall === true;
+
+        // A monthly supporter (the registry said so at Verify or at a
+        // publish): the menu's Manage subscription row.
+        subscription = config.supporterSubscription === true;
+
+        // The supporter key (EDITOR: the account badge), stored by the
+        // Verify step of the supporter modal; it counts when it
+        // verifies under the shipped public key (keys.ts). The
+        // sponsor key is its commercial sibling.
+        supporter = supporterKeyOk( config.supporterConfirm );
+        sponsor = sponsorKeyOk( config.sponsorConfirm );
     }
     catch
     {
@@ -389,7 +671,7 @@ async function userIdentity (): Promise<{ name: string; email: string }>
     if ( name === '' ) { name = await git( 'user.name' ); }
     if ( email === '' ) { email = await git( 'user.email' ); }
 
-    return { name, email };
+    return { name, email, github, supporter, sponsor, wall, subscription };
 }
 
 const studioVersion = ( (): string =>
@@ -450,7 +732,15 @@ async function serveSite ( options: StudioServerOptions, response: ServerRespons
         user: await userIdentity(),
         studioVersion,
         declaredUse: result.config.declaredUse ?? 'personal',
+        origin: result.config.origin ?? '',
+
+        // The publish moments (BUSINESS 5.3, 5.5): the chrome's gate
+        // modal, its License card, and the chip's license badge read
+        // this; the count feeds nothing in the chrome yet.
+        licensing: await licenseStateOf( options.contentDirectory ),
+        publishCount: await publishCount( options.contentDirectory ),
         remoteUrl: remote.code === 0 ? remote.stdout.trim() : '',
+        deploy: await deployStateOf( options.contentDirectory, options.githubEndpoints ?? defaultEndpoints ),
         lastPublishedAt: lastPublish.code === 0 ? lastPublish.stdout.trim() : '',
         config: result.issues.length === 0 ? result.config : undefined,
         pages: result.pages.map( ( page ) => ( {
@@ -546,7 +836,7 @@ function collectionSurfaceBlocks (
 
     if ( surface === 'template' )
     {
-        return 'layouts' in document ? ( document.layouts[ layoutName ]?.blocks ?? [] ) : ( document.templateBlocks ?? [] );
+        return document.layouts[ layoutName ]?.blocks ?? document.templateBlocks ?? [];
     }
 
     return document.indexBlocks === false ? [] : ( document.indexBlocks ?? [] );
@@ -612,6 +902,7 @@ async function serveBlock ( options: StudioServerOptions, url: URL, response: Se
 
         jsonResponse( response, 200, {
             kind: 'repeat',
+            layout: wrapperLayoutOf( block ),
             repeat: block.repeat,
             componentTitle: repeatComponent?.manifest.title ?? repeat.component ?? '',
             componentFields: repeatComponent?.manifest.fields ?? {},
@@ -665,7 +956,23 @@ async function serveBlock ( options: StudioServerOptions, url: URL, response: Se
     // its name and offers its own canvas.
     if ( typeof block?.partial === 'string' )
     {
-        jsonResponse( response, 200, { kind: 'partial', name: block.partial } );
+        jsonResponse( response, 200, { kind: 'partial', name: block.partial, layout: wrapperLayoutOf( block ) } );
+        return;
+    }
+
+    // A section (SCHEMA 11): its arrangement record for the Section
+    // inspector (Mikey, 2026-09-03: the controls for the spacing
+    // outside and inside, and the span of the children).
+    if ( block !== undefined && block.component === undefined && block.repeat === undefined && block.slot === undefined && Array.isArray( block.blocks ) )
+    {
+        jsonResponse( response, 200, {
+            kind: 'section',
+            section: block.section ?? {},
+            layout: wrapperLayoutOf( block ),
+            tokens: Object.fromEntries(
+                Object.entries( result.config.theme.families ).map( ( [ family, values ] ) => [ family, Object.keys( values ) ] ),
+            ),
+        } );
         return;
     }
 
@@ -697,6 +1004,7 @@ async function serveBlock ( options: StudioServerOptions, url: URL, response: Se
         title: component.manifest.title,
         fields: component.manifest.fields,
         props: block?.props ?? {},
+        layout: wrapperLayoutOf( block ?? {} ),
         tokens,
 
         // Morph links (SCHEMA 6): the block's link name and the
@@ -991,7 +1299,7 @@ async function resolveBlockTarget (
         // A collection's entry layout is one of its named layouts
         // ("layout" in the body, default when unnamed); a taxonomy's
         // term layout stays the single "layout" object.
-        if ( body.surface === 'template' && document.kind === 'collection' )
+        if ( body.surface === 'template' && ( document.kind === 'collection' || document.kind === 'taxonomy' ) )
         {
             const layouts = collectionLayouts( document );
             const name = typeof body.layout === 'string' && /^[a-z][a-z0-9-]*$/.test( body.layout ) ? body.layout : 'default';
@@ -1064,6 +1372,8 @@ async function writeBlock ( options: StudioServerOptions, request: IncomingMessa
         props?: JsonValue;
         repeat?: JsonValue;
         morph?: string | null;
+        section?: Record<string, unknown>;
+        wrapper?: Record<string, unknown>;
     };
 
     const target = await resolveBlockTarget( options, body );
@@ -1078,6 +1388,45 @@ async function writeBlock ( options: StudioServerOptions, request: IncomingMessa
     }
 
     let wrote = false;
+
+    // The section record (SCHEMA 11): only a section's, only its
+    // known keys; a null clears, an empty record disappears.
+    if ( body.section !== undefined && body.section !== null && typeof body.section === 'object' && Array.isArray( block.blocks ) && block.component === undefined )
+    {
+        const record = ( block.section !== null && typeof block.section === 'object' ? { ...block.section as Record<string, unknown> } : {} );
+
+        for ( const key of sectionEditableKeys )
+        {
+            if ( !( key in body.section ) ) { continue; }
+
+            const value = body.section[ key ];
+
+            if ( value === null || value === '' || value === undefined || value === false ) { delete record[ key ]; }
+            else { record[ key ] = value; }
+        }
+
+        if ( Object.keys( record ).length === 0 ) { block.section = {}; }
+        else { block.section = record; }
+
+        wrote = true;
+    }
+
+    // The wrapper layout (SCHEMA 11): size, breathing room, pull,
+    // hidden - on any block kind but the slot.
+    if ( body.wrapper !== undefined && body.wrapper !== null && typeof body.wrapper === 'object' && block.slot === undefined )
+    {
+        for ( const key of wrapperEditableKeys )
+        {
+            if ( !( key in body.wrapper ) ) { continue; }
+
+            const value = body.wrapper[ key ];
+
+            if ( value === null || value === '' || value === undefined || value === false ) { delete block[ key ]; }
+            else { block[ key ] = value; }
+        }
+
+        wrote = true;
+    }
 
     // Morph links (SCHEMA 6): the block-level link name; null or
     // empty clears it, a token-shaped name (leading letter - it
@@ -1158,6 +1507,81 @@ async function insertBlock ( options: StudioServerOptions, request: IncomingMess
     jsonResponse( response, 200, { inserted: true, index } );
 }
 
+// A block moves (EDITOR 2, the selection tag's grip): out of its
+// list and into the container at the index the seam named, in one
+// write. Never into itself or its descendants; on a template canvas
+// never across parts (header, blocks, footer are separate lists).
+// The response names the block's new path so the chrome can keep it
+// selected across the reload.
+async function moveBlock ( options: StudioServerOptions, request: IncomingMessage, response: ServerResponse ): Promise<void>
+{
+    const body = JSON.parse( await readBody( request ) ) as {
+        pageId?: string;
+        doc?: string;
+        surface?: string;
+        entry?: string;
+        template?: string;
+        region?: string;
+        path?: string;
+        container?: string;
+        index?: number;
+    };
+    const path = body.path ?? '';
+    const container = body.container ?? '';
+    const target = await resolveBlockTarget( options, body );
+    const indexes = pathIndexes( path );
+
+    if ( target?.blocks === undefined || indexes.length === 0 || typeof body.index !== 'number' )
+    {
+        jsonResponse( response, 400, { error: 'The move names no block or no destination.' } );
+        return;
+    }
+
+    if ( container === path || container.startsWith( `${path}.` ) )
+    {
+        jsonResponse( response, 400, { error: 'A block cannot move inside itself.' } );
+        return;
+    }
+
+    const partOf = ( value: string ): string => /^(header|footer)/.exec( value )?.[ 1 ] ?? 'blocks';
+
+    if ( body.template !== undefined && partOf( path ) !== partOf( container ) )
+    {
+        jsonResponse( response, 400, { error: 'A block moves within its part of the template.' } );
+        return;
+    }
+
+    const listAt = ( parentPath: string ): unknown[] | undefined =>
+    {
+        if ( parentPath === '' || parentPath === 'header' || parentPath === 'footer' ) { return target.blocks; }
+
+        const parent = blockAtPath( target.blocks as unknown[], parentPath );
+
+        return parent !== undefined && Array.isArray( parent.blocks ) ? parent.blocks as unknown[] : undefined;
+    };
+    const from = listAt( path.replace( /\.?(?:blocks|header|footer)\[\d+\]$/, '' ) );
+    const to = listAt( container );
+    const fromIndex = indexes[ indexes.length - 1 ] as number;
+
+    if ( from === undefined || to === undefined || from[ fromIndex ] === undefined )
+    {
+        jsonResponse( response, 400, { error: 'The move names no block or no destination.' } );
+        return;
+    }
+
+    const [ block ] = from.splice( fromIndex, 1 );
+    // The seam counted the list with the block still in it: past its
+    // old spot the index shifts down by one, then clamps to the list.
+    const wanted = from === to && body.index > fromIndex ? body.index - 1 : body.index;
+    const index = Math.max( 0, Math.min( to.length, wanted ) );
+    to.splice( index, 0, block );
+    await writeTargetDocument( options, target );
+
+    const newPath = container === '' ? `blocks[${index}]` : ( container === 'header' || container === 'footer' ? `${container}[${index}]` : `${container}.blocks[${index}]` );
+
+    jsonResponse( response, 200, { moved: true, path: newPath } );
+}
+
 async function removeBlock ( options: StudioServerOptions, request: IncomingMessage, response: ServerResponse ): Promise<void>
 {
     const body = JSON.parse( await readBody( request ) ) as {
@@ -1211,6 +1635,7 @@ async function removeBlock ( options: StudioServerOptions, request: IncomingMess
 async function publishVersion ( options: StudioServerOptions, response: ServerResponse ): Promise<void>
 {
     const directory = options.contentDirectory;
+    const githubEndpoints = options.githubEndpoints ?? defaultEndpoints;
     const top = await runGit( directory, [ 'rev-parse', '--show-toplevel' ] );
     const sameRoot = top.code === 0
         && normalize( top.stdout.trim() ).toLowerCase() === normalize( directory ).replace( /[\\/]+$/, '' ).toLowerCase();
@@ -1219,6 +1644,28 @@ async function publishVersion ( options: StudioServerOptions, response: ServerRe
     {
         response.writeHead( 409, { 'content-type': 'application/json; charset=utf-8' } );
         response.end( JSON.stringify( { error: 'This site\'s folder is not its own repository, so it cannot publish from here.' } ) );
+        return;
+    }
+
+    // The grace gate (BUSINESS 5.3): publish is the license moment.
+    // During the window the countdown informs (the chrome shows it);
+    // past it, publishing needs the key. Build and preview never
+    // come here.
+    const meta = await siteMetaOf( directory );
+
+    // Revocation reaches this computer here (Mikey, 2026-09-04): the
+    // stored keys are asked about, once a day at most, before the
+    // gate looks; a revoked key is cleared and its sentence carried
+    // to the person. No answer is no news.
+    const notices = await recheckKeysAtPublish( siteKeyFor( meta.origin, directory ) );
+    const gate = await licenseState( { directory, declaredUse: meta.declaredUse, origin: meta.origin } );
+
+    if ( gate.phase === 'expired' )
+    {
+        const revoked = notices.find( ( notice ) => notice.kind === 'license' );
+
+        response.writeHead( 402, { 'content-type': 'application/json; charset=utf-8' } );
+        response.end( JSON.stringify( { error: revoked?.problem ?? 'The evaluation has ended; publishing this site needs its license key.', notices: notices.map( ( notice ) => notice.problem ), licensing: gate } ) );
         return;
     }
 
@@ -1266,7 +1713,9 @@ async function publishVersion ( options: StudioServerOptions, response: ServerRe
 
     const count = result.pagesWritten.length;
 
-    if ( await hasStagedChanges( directory ) )
+    const committedNow = await hasStagedChanges( directory );
+
+    if ( committedNow )
     {
         const committed = await commit( directory, `casomer: publish ${count} page${count === 1 ? '' : 's'}` );
 
@@ -1278,10 +1727,97 @@ async function publishVersion ( options: StudioServerOptions, response: ServerRe
         }
     }
 
-    if ( await hasRemote( directory ) ) { await pushCurrentBranch( directory ); }
+    // The backup push rides after the commit and never blocks it, but
+    // its outcome is SAID (Mikey, 2026-09-03): the card tells the
+    // person the version is saved here and not yet out there.
+    // Pull & push (Go live): the remote's latest first, then the
+    // push; a conflicting remote is said and nothing is half-done.
+    let backup: 'none' | 'off' | 'pushed' | 'failed' | 'conflict' | 'expired' = 'none';
+    let backupError = '';
+    const changed = committedNow;
+
+    if ( await hasRemote( directory ) )
+    {
+        if ( !await gitDeployEnabled( directory ) ) { backup = 'off'; }
+        else if ( await githubConnectionOf( directory, githubEndpoints ) === 'expired' ) { backup = 'expired'; }
+        else
+        {
+            const pulled = await pullCurrentBranch( directory );
+
+            if ( pulled.kind === 'conflict' || pulled.kind === 'failed' )
+            {
+                backup = pulled.kind;
+                backupError = pulled.detail;
+            }
+            else
+            {
+                const pushed = await pushCurrentBranch( directory );
+
+                backup = pushed.code === 0 ? 'pushed' : 'failed';
+                backupError = pushed.code === 0 ? '' : ( pushed.stderr.trim().split( '\n' ).find( ( line ) => line.trim() !== '' ) ?? '' ).slice( 0, 200 );
+            }
+        }
+    }
+
+    // Go live (SCHEMA 12.4): the upload rides after the commit and
+    // the backup and never blocks either; its outcome is said on the
+    // card. Off means the destination is set but switched off; a
+    // failed upload is carried again by the next publish.
+    let deploy: 'none' | 'off' | 'uploaded' | 'failed' = 'none';
+    let deployError = '';
+    let deployUploaded = 0;
+    let deployDeleted = 0;
+    const target = await deployTargetIn( directory );
+
+    if ( target !== null )
+    {
+        if ( !target.enabled ) { deploy = 'off'; }
+        else
+        {
+            const outcome = await runDeploy( directory, gate.siteKey, target );
+
+            if ( outcome.ok )
+            {
+                deploy = 'uploaded';
+                deployUploaded = outcome.uploaded;
+                deployDeleted = outcome.deleted;
+            }
+            else
+            {
+                deploy = 'failed';
+                deployError = outcome.error;
+            }
+        }
+    }
+
+    // The first commercial publish opens the window: the second
+    // witness is written now so a replaced repository keeps the
+    // clock. The supporter moment belongs to personal sites only.
+    if ( gate.declaredUse === 'commercial' && gate.anchor === null ) { await recordGraceStart( gate.siteKey, new Date().toISOString() ); }
+
+    const publishes = await publishCount( directory );
+    const supporterMoment = gate.declaredUse === 'personal' ? await claimSupporterMoment( publishes ) : null;
+
+    // A wall entry that could not be sent when the person joined goes
+    // with the next publish that finds the relay reachable.
+    void sendWallIfDue();
 
     response.writeHead( 200, { 'content-type': 'application/json; charset=utf-8' } );
-    response.end( JSON.stringify( { published: true, pages: count } ) );
+    response.end( JSON.stringify( {
+        published: true,
+        pages: count,
+        changed,
+        backup,
+        backupError,
+        deploy,
+        deployError,
+        deployUploaded,
+        deployDeleted,
+        publishCount: publishes,
+        supporterMoment,
+        notices: notices.map( ( notice ) => notice.problem ),
+        licensing: await licenseState( { directory, declaredUse: meta.declaredUse, origin: meta.origin } ),
+    } ) );
 }
 
 // The content-document CRUD (SCHEMA section 13.1): every write goes
@@ -1533,7 +2069,7 @@ function migrateEntryLayoutKey ( document: Record<string, unknown> ): void
 
 function collectionLayouts ( document: Record<string, unknown> ): Record<string, Record<string, unknown>>
 {
-    if ( document.kind !== 'collection' ) { throw new Error( 'Layouts are a collection\'s.' ); }
+    if ( document.kind !== 'collection' && document.kind !== 'taxonomy' ) { throw new Error( 'Layouts belong to collections and taxonomies.' ); }
 
     migrateEntryLayoutKey( document );
 
@@ -1634,6 +2170,98 @@ async function freshDocumentName ( directory: string, label: string ): Promise<s
     }
 }
 
+// A fields patch carries the simple facts (type, label, required,
+// help) per key; a field's richer shape - select options, a list's
+// nested fields - is merged in from the authored document, never
+// flattened away by the chrome. Shared by the fields PUT and the
+// create modal's POST (Mikey, 2026-09-03: the new-collection modal
+// brings fields along, so a collection is born complete in one
+// journaled write). Returns the 400 payload on a bad patch.
+function applyFieldsPatch ( document: Record<string, unknown>, patchFields: Record<string, Record<string, unknown>> ): Record<string, unknown> | undefined
+{
+    const existing = ( document.fields ?? {} ) as Record<string, unknown>;
+    const merged: Record<string, unknown> = {};
+
+    for ( const [ key, incoming ] of Object.entries( patchFields ) )
+    {
+        const base = existing[ key ];
+        const carried = base !== null && typeof base === 'object' && !Array.isArray( base )
+            ? { ...base as Record<string, unknown> }
+            : {};
+
+        merged[ key ] = {
+            ...carried,
+            type: incoming.type,
+            label: incoming.label,
+            ...( incoming.required === true ? { required: true } : {} ),
+            ...( typeof incoming.help === 'string' && incoming.help !== '' ? { help: incoming.help } : {} ),
+        };
+
+        const mergedField = merged[ key ] as Record<string, unknown>;
+
+        if ( incoming.required !== true ) { delete mergedField.required; }
+        if ( typeof incoming.help !== 'string' || incoming.help === '' ) { delete mergedField.help; }
+
+        // A reference field's target rides a rule (SCHEMA
+        // 13.3): "taxonomy" for term assignment, "type" for
+        // another collection's entries. One target at a time;
+        // leaving the reference type clears both.
+        const rules = ( mergedField.rules ?? {} ) as Record<string, unknown>;
+
+        if ( incoming.type === 'reference' && typeof incoming.taxonomy === 'string' && incoming.taxonomy !== '' )
+        {
+            rules.taxonomy = incoming.taxonomy;
+            delete rules.type;
+        }
+        else if ( incoming.type === 'reference' && typeof incoming.collection === 'string' && incoming.collection !== '' )
+        {
+            rules.type = incoming.collection;
+            delete rules.taxonomy;
+        }
+        else if ( incoming.type !== 'reference' )
+        {
+            delete rules.taxonomy;
+            delete rules.type;
+        }
+
+        // A date field's spoken form (SCHEMA 13.5): long is
+        // the default and stays implicit; short and iso ride
+        // the "format" rule.
+        if ( incoming.type === 'date' && ( incoming.format === 'short' || incoming.format === 'iso' ) )
+        {
+            rules.format = incoming.format;
+        }
+        else { delete rules.format; }
+
+        // A multiple reference (SCHEMA 13.3): the value is an
+        // array of ids.
+        if ( incoming.type === 'reference' && incoming.multiple === true ) { rules.multiple = true; }
+        else { delete rules.multiple; }
+
+        if ( Object.keys( rules ).length > 0 ) { mergedField.rules = rules; }
+        else { delete mergedField.rules; }
+    }
+
+    try
+    {
+        const normalized = normalizeFields( merged );
+
+        if ( normalized.title === undefined )
+        {
+            return { error: 'Every collection has a "title" field (SCHEMA section 13.3).' };
+        }
+    }
+    catch ( error )
+    {
+        if ( !( error instanceof FieldSchemaError ) ) { throw error; }
+
+        return { error: 'The fields do not validate.', issues: error.issues };
+    }
+
+    document.fields = merged;
+    return undefined;
+}
+
 async function handleCollection ( options: StudioServerOptions, request: IncomingMessage, url: URL, response: ServerResponse ): Promise<void>
 {
     const directory = options.contentDirectory;
@@ -1712,7 +2340,7 @@ async function handleCollection ( options: StudioServerOptions, request: Incomin
         return;
     }
 
-    const body = JSON.parse( await readBody( request ) ) as { file?: unknown; label?: unknown; index?: unknown; patch?: Record<string, unknown> };
+    const body = JSON.parse( await readBody( request ) ) as { file?: unknown; label?: unknown; index?: unknown; fields?: unknown; patch?: Record<string, unknown> };
 
     if ( request.method === 'POST' )
     {
@@ -1731,15 +2359,34 @@ async function handleCollection ( options: StudioServerOptions, request: Incomin
         }
 
         const file = await freshDocumentName( directory, body.label );
-
-        await writeOwnedDocument( directory, file, {
+        const created: Record<string, unknown> = {
             casomerSchema: 1,
             kind: 'collection',
             label: body.label.trim(),
             fields: { title: 'text!' },
             ...( body.index === false ? { index: false } : {} ),
             entries: [],
-        } );
+        };
+
+        // The create modal can bring the collection's fields along
+        // (Mikey, 2026-09-03): same wire shape as the fields patch.
+        // Title is seeded first when the payload doesn't speak for it.
+        if ( body.fields !== null && typeof body.fields === 'object' && !Array.isArray( body.fields ) )
+        {
+            const incoming = body.fields as Record<string, Record<string, unknown>>;
+            const failure = applyFieldsPatch( created, {
+                ...( incoming.title === undefined ? { title: { type: 'text', label: 'Title', required: true } } : {} ),
+                ...incoming,
+            } );
+
+            if ( failure !== undefined )
+            {
+                jsonResponse( response, 400, failure );
+                return;
+            }
+        }
+
+        await writeOwnedDocument( directory, file, created as JsonValue );
         jsonResponse( response, 200, { created: true, file } );
         return;
     }
@@ -1875,94 +2522,15 @@ async function handleCollection ( options: StudioServerOptions, request: Incomin
             document.parent = patch.parent;
         }
 
-        // A fields patch carries the simple facts (type, label,
-        // required, help) per key; a field's richer shape - select
-        // options, a list's nested fields - is merged in from the
-        // authored document, never flattened away by the chrome.
         if ( patch.fields !== undefined && patch.fields !== null && typeof patch.fields === 'object' )
         {
-            const existing = ( document.fields ?? {} ) as Record<string, unknown>;
-            const merged: Record<string, unknown> = {};
+            const failure = applyFieldsPatch( document, patch.fields as Record<string, Record<string, unknown>> );
 
-            for ( const [ key, incoming ] of Object.entries( patch.fields as Record<string, Record<string, unknown>> ) )
+            if ( failure !== undefined )
             {
-                const base = existing[ key ];
-                const carried = base !== null && typeof base === 'object' && !Array.isArray( base )
-                    ? { ...base as Record<string, unknown> }
-                    : {};
-
-                merged[ key ] = {
-                    ...carried,
-                    type: incoming.type,
-                    label: incoming.label,
-                    ...( incoming.required === true ? { required: true } : {} ),
-                    ...( typeof incoming.help === 'string' && incoming.help !== '' ? { help: incoming.help } : {} ),
-                };
-
-                const mergedField = merged[ key ] as Record<string, unknown>;
-
-                if ( incoming.required !== true ) { delete mergedField.required; }
-                if ( typeof incoming.help !== 'string' || incoming.help === '' ) { delete mergedField.help; }
-
-                // A reference field's target rides a rule (SCHEMA
-                // 13.3): "taxonomy" for term assignment, "type" for
-                // another collection's entries. One target at a time;
-                // leaving the reference type clears both.
-                const rules = ( mergedField.rules ?? {} ) as Record<string, unknown>;
-
-                if ( incoming.type === 'reference' && typeof incoming.taxonomy === 'string' && incoming.taxonomy !== '' )
-                {
-                    rules.taxonomy = incoming.taxonomy;
-                    delete rules.type;
-                }
-                else if ( incoming.type === 'reference' && typeof incoming.collection === 'string' && incoming.collection !== '' )
-                {
-                    rules.type = incoming.collection;
-                    delete rules.taxonomy;
-                }
-                else if ( incoming.type !== 'reference' )
-                {
-                    delete rules.taxonomy;
-                    delete rules.type;
-                }
-
-                // A date field's spoken form (SCHEMA 13.5): long is
-                // the default and stays implicit; short and iso ride
-                // the "format" rule.
-                if ( incoming.type === 'date' && ( incoming.format === 'short' || incoming.format === 'iso' ) )
-                {
-                    rules.format = incoming.format;
-                }
-                else { delete rules.format; }
-
-                // A multiple reference (SCHEMA 13.3): the value is an
-                // array of ids.
-                if ( incoming.type === 'reference' && incoming.multiple === true ) { rules.multiple = true; }
-                else { delete rules.multiple; }
-
-                if ( Object.keys( rules ).length > 0 ) { mergedField.rules = rules; }
-                else { delete mergedField.rules; }
-            }
-
-            try
-            {
-                const normalized = normalizeFields( merged );
-
-                if ( normalized.title === undefined )
-                {
-                    jsonResponse( response, 400, { error: 'Every collection has a "title" field (SCHEMA section 13.3).' } );
-                    return;
-                }
-            }
-            catch ( error )
-            {
-                if ( !( error instanceof FieldSchemaError ) ) { throw error; }
-
-                jsonResponse( response, 400, { error: 'The fields do not validate.', issues: error.issues } );
+                jsonResponse( response, 400, failure );
                 return;
             }
-
-            document.fields = merged;
         }
 
         if ( Array.isArray( patch.table ) ) { document.table = patch.table; }
@@ -2132,6 +2700,11 @@ async function handleTaxonomy ( options: StudioServerOptions, request: IncomingM
             hierarchical: taxonomy.hierarchical,
             indexTemplate: taxonomy.indexTemplate ?? null,
             termTemplate: taxonomy.termTemplate ?? null,
+            layouts: Object.fromEntries( Object.entries( taxonomy.layouts ).map( ( [ name, layout ] ) => [ name, {
+                template: layout.template ?? null,
+                blocks: layout.blocks.map( ( block ) => blockSummary( block, packages, core ) ),
+                entries: taxonomy.terms.filter( ( term ) => ( term.layout ?? 'default' ) === name ).length,
+            } ] ) ),
             templateBlocks: ( taxonomy.templateBlocks ?? [] ).map( ( block ) => blockSummary( block, packages, core ) ),
             indexBlocks: ( Array.isArray( taxonomy.indexBlocks ) ? taxonomy.indexBlocks : [] )
                 .map( ( block ) => blockSummary( block, packages, core ) ),
@@ -2207,11 +2780,29 @@ async function handleTaxonomy ( options: StudioServerOptions, request: IncomingM
         if ( patch.index === false ) { document.index = false; }
         else if ( patch.index === true && document.index === false ) { delete document.index; }
 
-        migrateEntryLayoutKey( document );
-
-        for ( const [ key, layout ] of [ [ 'indexTemplate', 'index' ], [ 'termTemplate', 'layout' ] ] as const )
         {
-            const problem = await applyLayoutTemplate( options, document, layout, patch[ key ] );
+            const problem = await applyLayoutTemplate( options, document, 'index', patch.indexTemplate );
+
+            if ( problem !== undefined )
+            {
+                jsonResponse( response, 400, { error: problem } );
+                return;
+            }
+        }
+
+        const layoutTemplates = { ...( patch.termTemplate === undefined ? {} : { default: patch.termTemplate } ), ...( patch.layoutTemplates !== null && typeof patch.layoutTemplates === 'object' ? patch.layoutTemplates as Record<string, unknown> : {} ) };
+
+        for ( const [ name, value ] of Object.entries( layoutTemplates ) )
+        {
+            const layouts = collectionLayouts( document );
+
+            if ( layouts[ name ] === undefined )
+            {
+                jsonResponse( response, 404, { error: `There is no layout "${name}".` } );
+                return;
+            }
+
+            const problem = await applyLayoutTemplate( options, layouts as Record<string, unknown>, name, value );
 
             if ( problem !== undefined )
             {
@@ -2234,19 +2825,26 @@ async function handleTaxonomy ( options: StudioServerOptions, request: IncomingM
             document.terms = [ ...ordered, ...rest ] as JsonValue;
         }
 
-        // Turning hierarchy ON is free; turning it OFF would sever
-        // existing nesting, so it is refused while any term has a
-        // parent - un-nest first, never lose structure silently.
+        // Turning hierarchy ON is free. Turning it OFF severs nesting,
+        // so with nested terms it happens only with "flatten": true,
+        // the chrome's confirmed answer (Mikey, 2026-09-05): every
+        // parent goes, in this one journaled write, so undo brings the
+        // nesting back whole. Without the word, it is refused.
         if ( patch.hierarchical === true ) { document.hierarchical = true; }
         else if ( patch.hierarchical === false )
         {
-            const nested = Array.isArray( document.terms )
-                && ( document.terms as Record<string, unknown>[] ).some( ( term ) => term?.parent !== undefined );
+            const terms = Array.isArray( document.terms ) ? document.terms as Record<string, unknown>[] : [];
+            const nested = terms.some( ( term ) => term?.parent !== undefined );
 
-            if ( nested )
+            if ( nested && patch.flatten !== true )
             {
-                jsonResponse( response, 409, { error: 'Terms are still nested; move them to the top level first.' } );
+                jsonResponse( response, 409, { error: 'Terms are still nested; move them to the top level first, or send "flatten": true to move them all.' } );
                 return;
+            }
+
+            for ( const term of terms )
+            {
+                if ( term !== null && typeof term === 'object' ) { delete term.parent; }
             }
 
             delete document.hierarchical;
@@ -2272,7 +2870,7 @@ async function handleTaxonomy ( options: StudioServerOptions, request: IncomingM
 async function handleTerm ( options: StudioServerOptions, request: IncomingMessage, response: ServerResponse ): Promise<void>
 {
     const directory = options.contentDirectory;
-    const body = JSON.parse( await readBody( request ) ) as { file?: unknown; id?: unknown; name?: unknown; parent?: unknown; description?: unknown; image?: unknown };
+    const body = JSON.parse( await readBody( request ) ) as { file?: unknown; id?: unknown; name?: unknown; parent?: unknown; description?: unknown; image?: unknown; layout?: unknown };
     const file = safeDocumentName( body.file );
     const document = file === undefined ? undefined : await readOwnedDocument( directory, file );
 
@@ -2338,12 +2936,31 @@ async function handleTerm ( options: StudioServerOptions, request: IncomingMessa
             image = ( body.image as Record<string, unknown> ).src === '' ? undefined : body.image;
         }
 
+        // The layout choice (SCHEMA 13.4): a name the taxonomy has, null
+        // for the default; absent leaves it.
+        let layoutChoice = typeof current.layout === 'string' ? current.layout : undefined;
+
+        if ( body.layout === null ) { layoutChoice = undefined; }
+        else if ( typeof body.layout === 'string' )
+        {
+            const layouts = collectionLayouts( document );
+
+            if ( layouts[ body.layout ] === undefined )
+            {
+                jsonResponse( response, 404, { error: `There is no layout "${body.layout}".` } );
+                return;
+            }
+
+            layoutChoice = body.layout === 'default' ? undefined : body.layout;
+        }
+
         terms[ index ] = {
             id: current.id,
             name,
             ...( parent === undefined ? {} : { parent } ),
             ...( description === undefined ? {} : { description } ),
             ...( image === undefined ? {} : { image } ),
+            ...( layoutChoice === undefined ? {} : { layout: layoutChoice } ),
         };
 
         await writeOwnedDocument( directory, file, document as JsonValue );
@@ -2610,6 +3227,13 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
     }
     catch { /* a missing watcher degrades to manual reloads, never a crash */ }
 
+    // Connect GitHub (EDITOR: Go live, Pull & push): the device flow
+    // caso init runs, held here while the person authorizes in the
+    // browser; the chrome polls /api/github until it is done.
+    const githubEndpoints = options.githubEndpoints ?? defaultEndpoints;
+    let githubPending: { authorization: DeviceAuthorization; startedAt: number } | null = null;
+    let githubError = '';
+
     const server: Server = createServer( ( request, response ) =>
     {
         void ( async () =>
@@ -2626,6 +3250,320 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
             if ( url.searchParams.get( 't' ) === token )
             {
                 response.setHeader( 'set-cookie', `${tokenCookieName}=${token}; HttpOnly; SameSite=Strict; Path=/` );
+            }
+
+            // The profile (EDITOR: the account badge, local state): name
+            // and email in the user-level config, never in a site.
+            // The supporter key (EDITOR: the account badge). PUT stores
+            // the key as the user config's "supporterConfirm"; DELETE
+            // clears it. Verification against casomer.com, with the
+            // person's consent, is owed before go-live (DEVELOPMENT);
+            // today storing the key is the whole of "verify".
+            // The stored key back out (Mikey, 2026-09-03: the licensed
+            // card offers a copy-to-clipboard): only the key this site
+            // already holds on this computer, never a lookup elsewhere.
+            if ( url.pathname === '/api/license' && request.method === 'GET' )
+            {
+                const current = await licenseStateOf( options.contentDirectory );
+                const config = await readUserConfig();
+                const licenses = ( config.licenses !== null && typeof config.licenses === 'object' ? config.licenses : {} ) as Record<string, unknown>;
+                const key = licenses[ current.siteKey ];
+
+                if ( typeof key !== 'string' || key === '' )
+                {
+                    jsonResponse( response, 404, { error: 'No license key is stored for this site.' } );
+                    return;
+                }
+
+                jsonResponse( response, 200, { key } );
+                return;
+            }
+
+            // The license key (BUSINESS 5.3): stored in the user config
+            // under the site's key, never in the repo. Verification of
+            // signed keys is owed before go-live (DEVELOPMENT).
+            if ( url.pathname === '/api/license' && request.method === 'PUT' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { key?: unknown };
+                const current = await licenseStateOf( options.contentDirectory );
+                const verdict = licenseKeyVerdict( body.key, current.siteKey );
+
+                if ( !verdict.ok )
+                {
+                    jsonResponse( response, 400, { error: verdict.problem } );
+                    return;
+                }
+
+                const online = await checkKeyOnline( body.key as string, current.siteKey );
+
+                if ( online !== null && !online.valid )
+                {
+                    jsonResponse( response, 400, { error: onlineProblem( online, 'license' ) } );
+                    return;
+                }
+
+                await storeLicenseKey( current.siteKey, body.key as string );
+
+                if ( online !== null )
+                {
+                    await activateLicenseOnline( body.key as string, current.siteKey );
+                    await updateUserConfig( ( config ) =>
+                    {
+                        const verified = ( config.licensesVerifiedAt !== null && typeof config.licensesVerifiedAt === 'object' ? config.licensesVerifiedAt : {} ) as Record<string, unknown>;
+
+                        verified[ current.siteKey ] = new Date().toISOString();
+                        config.licensesVerifiedAt = verified;
+                    } );
+                }
+                jsonResponse( response, 200, { saved: true, licensing: await licenseStateOf( options.contentDirectory ) } );
+                return;
+            }
+
+            // The supporter and sponsor keys share one shape (Mikey,
+            // 2026-09-03): a signed key of the right kind, stored as a
+            // confirm flag in the user config, refused when the
+            // registry answers and says no. Sponsor is the commercial
+            // sibling - no wall follows it.
+            if ( ( url.pathname === '/api/supporter' || url.pathname === '/api/sponsor' ) && ( request.method === 'PUT' || request.method === 'DELETE' ) )
+            {
+                const kind = url.pathname === '/api/sponsor' ? 'sponsor' as const : 'supporter' as const;
+                const confirmField = kind === 'sponsor' ? 'sponsorConfirm' : 'supporterConfirm';
+                const directory = userConfigDirectory();
+                const file = join( directory, 'config.json' );
+                let config: Record<string, unknown> = {};
+
+                try
+                {
+                    config = JSON.parse( await readFile( file, 'utf8' ) ) as Record<string, unknown>;
+                }
+                catch
+                {
+                    config = {};
+                }
+
+                if ( request.method === 'DELETE' )
+                {
+                    delete config[ confirmField ];
+                    delete config[ kind === 'sponsor' ? 'sponsorVerifiedAt' : 'supporterVerifiedAt' ];
+
+                    if ( kind === 'supporter' ) { delete config.supporterSubscription; }
+                }
+                else
+                {
+                    const body = JSON.parse( await readBody( request ) ) as { key?: unknown };
+                    const key = cleanKey( typeof body.key === 'string' ? body.key : '' );
+
+                    if ( key === '' )
+                    {
+                        jsonResponse( response, 400, { error: `A ${kind} key is needed.` } );
+                        return;
+                    }
+
+                    const verdict = verifyKey( key, { kind } );
+
+                    if ( !verdict.ok )
+                    {
+                        jsonResponse( response, 400, { error: keyProblem( verdict, kind ) } );
+                        return;
+                    }
+
+                    // The registry's word when it can be asked: a revoked
+                    // or unknown key is refused; no answer is no news.
+                    const online = await checkKeyOnline( key );
+
+                    if ( online !== null && !online.valid )
+                    {
+                        jsonResponse( response, 400, { error: onlineProblem( online, kind ) } );
+                        return;
+                    }
+
+                    config[ confirmField ] = key;
+
+                    if ( online !== null ) { config[ kind === 'sponsor' ? 'sponsorVerifiedAt' : 'supporterVerifiedAt' ] = new Date().toISOString(); }
+                    if ( online !== null && kind === 'supporter' ) { config.supporterSubscription = online.subscription === true; }
+                }
+
+                await mkdir( directory, { recursive: true } );
+                await writeFile( file, `${JSON.stringify( config, null, 4 )}\n`, 'utf8' );
+                jsonResponse( response, 200, { saved: true, [ kind ]: request.method === 'PUT' } );
+                return;
+            }
+
+            // Manage subscription (Mikey, 2026-09-04): a monthly
+            // supporter's row in the menu opens Stripe's customer portal
+            // in a new tab. The row is a plain link so the tab opens on
+            // the click itself; the relay turns the stored key into a
+            // portal session and this answers with the redirect. Cancel
+            // there or not, the key stays: it was thanks.
+            if ( url.pathname === '/api/supporter/portal' && request.method === 'GET' )
+            {
+                const config = await readUserConfig();
+                const portal = typeof config.supporterConfirm === 'string' ? await billingPortalOnline( config.supporterConfirm ) : null;
+
+                if ( portal === null )
+                {
+                    response.writeHead( 503, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } );
+                    response.end( '<!doctype html><meta charset="utf-8"><title>casomer.com could not be reached</title><p style="font: 14px/1.5 system-ui, sans-serif; margin: 40px auto; max-width: 32em;">casomer.com could not be reached, so the subscription page could not open. Try again in a little while, sign in with your email at <a href="https://billing.stripe.com/p/login/aFaeVf44w4lY7kdcgs4gg00">Stripe&#39;s billing page</a>, or write to support@casomer.com.</p>' );
+                    return;
+                }
+
+                response.writeHead( 302, { 'location': portal, 'cache-control': 'no-store' } );
+                response.end();
+                return;
+            }
+
+            // The supporter wall (EDITOR: the account badge): the modal
+            // after a verified key. Joining needs a name and a GitHub
+            // handle (the image is optional) and records them in the
+            // user config with "supporterWall": true; declining or leaving
+            // records false. Joining sends the entry through the relay at
+            // once and leaving sends the removal; unreachable keeps either
+            // pending for the next publish. Off the wall by name is still
+            // on it as a private supporter (Mikey, 2026-09-05).
+            if ( url.pathname === '/api/supporter-wall' && request.method === 'PUT' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { join?: unknown; name?: unknown; github?: unknown };
+                const directory = userConfigDirectory();
+                const file = join( directory, 'config.json' );
+                let config: Record<string, unknown> = {};
+
+                try
+                {
+                    config = JSON.parse( await readFile( file, 'utf8' ) ) as Record<string, unknown>;
+                }
+                catch
+                {
+                    config = {};
+                }
+
+                if ( body.join === true )
+                {
+                    const name = typeof body.name === 'string' ? body.name.trim() : '';
+                    const github = typeof body.github === 'string' ? githubHandle( body.github ) : '';
+
+                    if ( name === '' || github === '' )
+                    {
+                        jsonResponse( response, 400, { error: 'A name and a GitHub handle are needed for the wall.' } );
+                        return;
+                    }
+
+                    config.name = name;
+                    config.github = github;
+                    config.supporterWall = true;
+                }
+                else
+                {
+                    config.supporterWall = false;
+                }
+
+                await mkdir( directory, { recursive: true } );
+                await writeFile( file, `${JSON.stringify( config, null, 4 )}\n`, 'utf8' );
+
+                await sendWallIfDue( true );
+
+                jsonResponse( response, 200, { saved: true, wall: config.supporterWall } );
+                return;
+            }
+
+            if ( url.pathname === '/api/profile' && request.method === 'PUT' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { name?: unknown; email?: unknown; github?: unknown };
+                const directory = userConfigDirectory();
+                const file = join( directory, 'config.json' );
+                let config: Record<string, unknown> = {};
+
+                try
+                {
+                    config = JSON.parse( await readFile( file, 'utf8' ) ) as Record<string, unknown>;
+                }
+                catch
+                {
+                    config = {};
+                }
+
+                if ( typeof body.name === 'string' ) { config.name = body.name.trim(); }
+                if ( typeof body.email === 'string' ) { config.email = body.email.trim(); }
+                if ( typeof body.github === 'string' ) { config.github = githubHandle( body.github ); }
+
+                await mkdir( directory, { recursive: true } );
+                await writeFile( file, `${JSON.stringify( config, null, 4 )}\n`, 'utf8' );
+                jsonResponse( response, 200, { saved: true } );
+                return;
+            }
+
+            // The avatar (EDITOR: the account badge): the image is stored
+            // in the user config directory and named by config.json's
+            // "avatar" key - a person's, never a site's.
+            if ( url.pathname === '/api/profile-avatar' && ( request.method === 'POST' || request.method === 'DELETE' ) )
+            {
+                const directory = userConfigDirectory();
+                const file = join( directory, 'config.json' );
+                let config: Record<string, unknown> = {};
+
+                try
+                {
+                    config = JSON.parse( await readFile( file, 'utf8' ) ) as Record<string, unknown>;
+                }
+                catch
+                {
+                    config = {};
+                }
+
+                await mkdir( directory, { recursive: true } );
+
+                const previous = typeof config.avatar === 'string' && config.avatar !== '' ? join( directory, basename( config.avatar ) ) : null;
+
+                if ( request.method === 'DELETE' )
+                {
+                    delete config.avatar;
+                    await writeFile( file, `${JSON.stringify( config, null, 4 )}\n`, 'utf8' );
+
+                    if ( previous !== null ) { await rm( previous, { force: true } ); }
+
+                    jsonResponse( response, 200, { saved: true } );
+                    return;
+                }
+
+                // Raster only (Mikey, 2026-09-05): an SVG is a document with
+                // a script slot, and the wall serves avatars from
+                // casomer.com's origin, so none gets in here.
+                const extensions: Readonly<Record<string, string>> = {
+                    'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp',
+                };
+                const extension = extensions[ request.headers[ 'content-type' ] ?? '' ];
+
+                if ( extension === undefined )
+                {
+                    jsonResponse( response, 400, { error: 'An avatar is a png, jpeg, or webp image.' } );
+                    return;
+                }
+
+                const chunks: Buffer[] = [];
+
+                for await ( const chunk of request ) { chunks.push( chunk as Buffer ); }
+
+                const bytes = Buffer.concat( chunks );
+
+                if ( bytes.length === 0 || bytes.length > 2 * 1024 * 1024 )
+                {
+                    jsonResponse( response, 400, { error: 'An avatar is between 1 byte and 2 MB.' } );
+                    return;
+                }
+
+                // Small at the source (Mikey, 2026-09-05): a center square
+                // at 256px webp, so the chip and the wall entry carry a
+                // few kilobytes rather than the photo.
+                const optimized = await optimizeAvatar( bytes, extension );
+                const name = `avatar-${randomUUID().slice( 0, 8 )}${optimized.extension}`;
+
+                await writeFile( join( directory, name ), optimized.bytes );
+                config.avatar = name;
+                await writeFile( file, `${JSON.stringify( config, null, 4 )}\n`, 'utf8' );
+
+                if ( previous !== null && basename( previous ) !== name ) { await rm( previous, { force: true } ); }
+
+                jsonResponse( response, 200, { saved: true, avatar: name } );
+                return;
             }
 
             if ( url.pathname === '/api/avatar' )
@@ -2645,6 +3583,12 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
             if ( url.pathname === '/api/site' )
             {
                 await serveSite( options, response );
+                return;
+            }
+
+            if ( url.pathname === '/api/block-move' && request.method === 'POST' )
+            {
+                await moveBlock( options, request, response );
                 return;
             }
 
@@ -2700,9 +3644,9 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                 const file = safeDocumentName( body.file );
                 const document = file === undefined ? undefined : await readOwnedDocument( options.contentDirectory, file );
 
-                if ( file === undefined || document === undefined || document.kind !== 'collection' )
+                if ( file === undefined || document === undefined || ( document.kind !== 'collection' && document.kind !== 'taxonomy' ) )
                 {
-                    jsonResponse( response, 404, { error: 'No collection lives in that file.' } );
+                    jsonResponse( response, 404, { error: 'No collection or taxonomy lives in that file.' } );
                     return;
                 }
 
@@ -2749,7 +3693,9 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
 
                 let moved = 0;
 
-                for ( const entry of ( Array.isArray( document.entries ) ? document.entries : [] ) as Record<string, unknown>[] )
+                const followers = ( Array.isArray( document.entries ) ? document.entries : ( Array.isArray( document.terms ) ? document.terms : [] ) ) as Record<string, unknown>[];
+
+                for ( const entry of followers )
                 {
                     if ( entry.layout !== raw ) { continue; }
 
@@ -4257,13 +5203,317 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                 return;
             }
 
+            // Go live (SCHEMA 12.4, EDITOR: Site settings, Publishing). PUT
+            // writes the destination into site.json and the password or
+            // key file into the user config; test logs in and looks at
+            // the folder; run uploads now (the retry after a failed
+            // publish upload).
+            if ( url.pathname === '/api/deploy' && request.method === 'PUT' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { host?: unknown; port?: unknown; user?: unknown; path?: unknown; enabled?: unknown; password?: unknown; keyFile?: unknown; passphrase?: unknown; forgetHostKey?: unknown; hostKey?: unknown };
+                const directory = options.contentDirectory;
+                const siteFile = join( directory, 'site.json' );
+                const raw = JSON.parse( await readFile( siteFile, 'utf8' ) ) as Record<string, unknown>;
+                const current = deployTargetOf( raw.deploy );
+                const host = typeof body.host === 'string' ? body.host.trim() : ( current?.host ?? '' );
+
+                if ( host === '' )
+                {
+                    // No host: the destination is cleared; the secret stays
+                    // until a new host is tested, harmless on its own.
+                    delete raw.deploy;
+                    await writeFile( siteFile, serializeCanonicalJson( raw as JsonValue ), 'utf8' );
+                    jsonResponse( response, 200, { ok: true, deploy: await deployStateOf( directory ) } );
+                    return;
+                }
+
+                if ( /[\s/]/.test( host ) )
+                {
+                    jsonResponse( response, 400, { error: 'The host is a name such as ftp.example.com, without a scheme or a path.' } );
+                    return;
+                }
+
+                const port = body.port === undefined || body.port === '' ? ( current?.port ?? 22 ) : Number( body.port );
+
+                if ( !Number.isInteger( port ) || port < 1 || port > 65535 )
+                {
+                    jsonResponse( response, 400, { error: 'The port is a whole number; SFTP is usually 22.' } );
+                    return;
+                }
+
+                const user = typeof body.user === 'string' ? body.user.trim() : ( current?.user ?? '' );
+
+                if ( user === '' )
+                {
+                    jsonResponse( response, 400, { error: 'The user name is needed.' } );
+                    return;
+                }
+
+                const path = normalizeRemotePath( typeof body.path === 'string' ? body.path : ( current?.path ?? '/' ) );
+                const enabled = typeof body.enabled === 'boolean' ? body.enabled : ( current?.enabled ?? true );
+
+                raw.deploy = { ...( raw.deploy !== null && typeof raw.deploy === 'object' ? raw.deploy as Record<string, unknown> : {} ), sftp: { host, port, user, path, enabled } };
+                await writeFile( siteFile, serializeCanonicalJson( raw as JsonValue ), 'utf8' );
+
+                const siteKey = ( await licenseStateOf( directory ) ).siteKey;
+                const patch: Record<string, unknown> = {};
+
+                if ( typeof body.keyFile === 'string' && body.keyFile.trim() !== '' )
+                {
+                    patch.keyFile = body.keyFile.trim();
+                    patch.password = undefined;
+                    patch.passphrase = typeof body.passphrase === 'string' && body.passphrase !== '' ? body.passphrase : undefined;
+                }
+                else if ( typeof body.password === 'string' && body.password !== '' )
+                {
+                    patch.password = body.password;
+                    patch.keyFile = undefined;
+                    patch.passphrase = undefined;
+                }
+
+                if ( body.forgetHostKey === true || ( current !== null && current.host !== host ) ) { patch.hostKey = undefined; }
+
+                // The key a successful test just saw, carried in by Save:
+                // trusted from now on for this host.
+                if ( typeof body.hostKey === 'string' && /^SHA256:[A-Za-z0-9+/]+$/.test( body.hostKey ) ) { patch.hostKey = body.hostKey; }
+                // A new host or folder starts the upload record over.
+                if ( current !== null && ( current.host !== host || current.path !== path ) )
+                {
+                    patch.commit = undefined;
+                    patch.manifest = undefined;
+                }
+                if ( Object.keys( patch ).length > 0 ) { await updateDeployRecord( siteKey, patch ); }
+
+                jsonResponse( response, 200, { ok: true, deploy: await deployStateOf( directory ) } );
+                return;
+            }
+
+            if ( url.pathname === '/api/github' && request.method === 'GET' )
+            {
+                const tokens = await getValidAccessToken( githubEndpoints );
+                const pending = githubPending !== null && Date.now() < githubPending.startedAt + githubPending.authorization.expiresInSeconds * 1000 ? githubPending.authorization : null;
+
+                jsonResponse( response, 200, {
+                    connected: tokens !== undefined,
+                    pending: pending === null ? null : { userCode: pending.userCode, verificationUri: pending.verificationUri, ...( pending.verificationUriComplete === undefined ? {} : { verificationUriComplete: pending.verificationUriComplete } ) },
+                    error: githubError,
+                    installUrl: `https://github.com/apps/${githubAppSlug}/installations/new`,
+                } );
+                return;
+            }
+
+            if ( url.pathname === '/api/github/connect' && request.method === 'POST' )
+            {
+                if ( await getValidAccessToken( githubEndpoints ) !== undefined )
+                {
+                    jsonResponse( response, 200, { connected: true } );
+                    return;
+                }
+
+                if ( githubPending === null || Date.now() >= githubPending.startedAt + githubPending.authorization.expiresInSeconds * 1000 )
+                {
+                    let authorization: DeviceAuthorization;
+
+                    try
+                    {
+                        authorization = await requestDeviceCode( githubEndpoints );
+                    }
+                    catch ( error )
+                    {
+                        jsonResponse( response, 502, { error: error instanceof Error ? error.message : 'GitHub did not answer.' } );
+                        return;
+                    }
+
+                    const started = { authorization, startedAt: Date.now() };
+
+                    githubPending = started;
+                    githubError = '';
+
+                    // The wait runs on its own; the chrome asks how it went.
+                    void pollForAccessToken( authorization, githubEndpoints ).then( () =>
+                    {
+                        if ( githubPending === started ) { githubPending = null; }
+                    }, ( error: unknown ) =>
+                    {
+                        if ( githubPending === started ) { githubPending = null; }
+
+                        githubError = error instanceof Error ? error.message : 'GitHub did not answer.';
+                    } );
+                }
+
+                const { authorization } = githubPending;
+
+                jsonResponse( response, 200, { connected: false, userCode: authorization.userCode, verificationUri: authorization.verificationUri, ...( authorization.verificationUriComplete === undefined ? {} : { verificationUriComplete: authorization.verificationUriComplete } ) } );
+                return;
+            }
+
+            if ( url.pathname === '/api/github/repositories' && request.method === 'GET' )
+            {
+                const tokens = await getValidAccessToken( githubEndpoints );
+
+                if ( tokens === undefined )
+                {
+                    jsonResponse( response, 401, { error: 'GitHub is not connected.' } );
+                    return;
+                }
+
+                try
+                {
+                    jsonResponse( response, 200, { repositories: await listAccessibleRepositories( tokens.accessToken, githubEndpoints ) } );
+                }
+                catch
+                {
+                    jsonResponse( response, 502, { error: 'GitHub did not answer.' } );
+                }
+
+                return;
+            }
+
+            // The chosen repository becomes the remote, with caso as git's
+            // credential helper for github.com: exactly what caso init does.
+            if ( url.pathname === '/api/github/remote' && request.method === 'PUT' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { fullName?: unknown };
+                const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : '';
+
+                if ( !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test( fullName ) )
+                {
+                    jsonResponse( response, 400, { error: 'A repository is owner/name.' } );
+                    return;
+                }
+
+                const directory = options.contentDirectory;
+                const remoteUrl = `https://github.com/${fullName}.git`;
+                const existing = await runGit( directory, [ 'remote', 'get-url', 'origin' ] );
+
+                await runGit( directory, existing.code === 0 ? [ 'remote', 'set-url', 'origin', remoteUrl ] : [ 'remote', 'add', 'origin', remoteUrl ] );
+                await runGit( directory, [ 'config', '--local', 'credential.https://github.com.helper', '!caso credential' ] );
+                jsonResponse( response, 200, { ok: true, remoteUrl } );
+                return;
+            }
+
+            if ( url.pathname === '/api/deploy/git' && request.method === 'PUT' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { enabled?: unknown };
+
+                if ( typeof body.enabled !== 'boolean' )
+                {
+                    jsonResponse( response, 400, { error: '"enabled" is true or false.' } );
+                    return;
+                }
+
+                const siteFile = join( options.contentDirectory, 'site.json' );
+                const raw = JSON.parse( await readFile( siteFile, 'utf8' ) ) as Record<string, unknown>;
+                const deploy = raw.deploy !== null && typeof raw.deploy === 'object' ? raw.deploy as Record<string, unknown> : {};
+
+                // On is the default, so on is the key's absence.
+                if ( body.enabled ) { delete deploy.git; }
+                else { deploy.git = { enabled: false }; }
+
+                if ( Object.keys( deploy ).length === 0 ) { delete raw.deploy; }
+                else { raw.deploy = deploy; }
+
+                await writeFile( siteFile, serializeCanonicalJson( raw as JsonValue ), 'utf8' );
+                jsonResponse( response, 200, { ok: true, deploy: await deployStateOf( options.contentDirectory ) } );
+                return;
+            }
+
+            if ( url.pathname === '/api/deploy/test' && request.method === 'POST' )
+            {
+                const body = JSON.parse( await readBody( request ) ) as { host?: unknown; port?: unknown; user?: unknown; path?: unknown; password?: unknown; keyFile?: unknown; passphrase?: unknown };
+                const directory = options.contentDirectory;
+                const current = await deployTargetIn( directory );
+                const host = typeof body.host === 'string' && body.host.trim() !== '' ? body.host.trim() : ( current?.host ?? '' );
+                const portValue = body.port === undefined || body.port === '' ? ( current?.port ?? 22 ) : Number( body.port );
+                const target: SftpTarget = {
+                    host,
+                    port: Number.isInteger( portValue ) && portValue > 0 && portValue < 65536 ? portValue : 22,
+                    user: typeof body.user === 'string' && body.user.trim() !== '' ? body.user.trim() : ( current?.user ?? '' ),
+                    path: normalizeRemotePath( typeof body.path === 'string' && body.path.trim() !== '' ? body.path : ( current?.path ?? '/' ) ),
+                    enabled: true,
+                };
+
+                if ( target.host === '' || target.user === '' )
+                {
+                    jsonResponse( response, 400, { error: 'A host and a user name are needed to test.' } );
+                    return;
+                }
+
+                const siteKey = ( await licenseStateOf( directory ) ).siteKey;
+                const stored = await readDeployRecord( siteKey );
+                const sameHost = current !== null && current.host === target.host;
+                // The draft's secret over the stored one for the same host;
+                // a key file and a password never both.
+                const merged: Record<string, unknown> = sameHost ? { ...stored } : {};
+
+                if ( typeof body.keyFile === 'string' && body.keyFile.trim() !== '' )
+                {
+                    merged.keyFile = body.keyFile.trim();
+                    delete merged.password;
+
+                    if ( typeof body.passphrase === 'string' && body.passphrase !== '' ) { merged.passphrase = body.passphrase; }
+                    else { delete merged.passphrase; }
+                }
+
+                if ( typeof body.password === 'string' && body.password !== '' )
+                {
+                    merged.password = body.password;
+                    delete merged.keyFile;
+                    delete merged.passphrase;
+                }
+
+                const record = merged as DeployRecord;
+
+                if ( !hasCredential( record ) )
+                {
+                    jsonResponse( response, 400, { error: 'A password or a key file is needed to test.' } );
+                    return;
+                }
+
+                const outcome = await testConnection( target, record );
+
+                // A first successful login trusts the host's key, for the
+                // host the destination names.
+                if ( outcome.ok && outcome.trusted === 'new' && sameHost ) { await updateDeployRecord( siteKey, { hostKey: outcome.hostKey } ); }
+
+                jsonResponse( response, outcome.ok ? 200 : 400, outcome );
+                return;
+            }
+
+            if ( url.pathname === '/api/deploy/run' && request.method === 'POST' )
+            {
+                const directory = options.contentDirectory;
+                const target = await deployTargetIn( directory );
+
+                if ( target === null )
+                {
+                    jsonResponse( response, 400, { error: 'No host is set under Go live.' } );
+                    return;
+                }
+
+                const outcome = await runDeploy( directory, ( await licenseStateOf( directory ) ).siteKey, target );
+
+                jsonResponse( response, outcome.ok ? 200 : 400, outcome );
+                return;
+            }
+
             if ( url.pathname === '/api/site-meta' && request.method === 'PUT' )
             {
-                const body = JSON.parse( await readBody( request ) ) as { use?: unknown; name?: unknown };
+                const body = JSON.parse( await readBody( request ) ) as { use?: unknown; name?: unknown; origin?: unknown };
 
-                if ( body.use === undefined && body.name === undefined )
+                if ( body.use === undefined && body.name === undefined && body.origin === undefined )
                 {
-                    jsonResponse( response, 400, { error: 'A site-meta patch carries "use" or "name".' } );
+                    jsonResponse( response, 400, { error: 'A site-meta patch carries "use", "name", or "origin".' } );
+                    return;
+                }
+
+                // The public address (SCHEMA 12.3): stored normalized;
+                // an empty one clears it; anything else is refused.
+                const origin = typeof body.origin === 'string' ? normalizeOrigin( body.origin ) : undefined;
+
+                if ( body.origin !== undefined && ( typeof body.origin !== 'string' || origin === null ) )
+                {
+                    jsonResponse( response, 400, { error: 'The site address is a scheme and host such as https://example.com, with no path.' } );
                     return;
                 }
 
@@ -4277,6 +5527,12 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                 const raw = JSON.parse( await readFile( siteFile, 'utf8' ) ) as Record<string, unknown>;
 
                 if ( body.use !== undefined ) { raw.use = body.use; }
+
+                if ( origin !== undefined && origin !== null )
+                {
+                    if ( origin === '' ) { delete raw.origin; }
+                    else { raw.origin = origin; }
+                }
 
                 // The display name: a real string sets it, an empty
                 // one returns the site to its folder-derived name.
@@ -4526,7 +5782,7 @@ export function startStudioServer ( options: StudioServerOptions, port: number )
                     return;
                 }
 
-                const rendered = await pipeline.renderTaxonomySurface( stem, surface, true, url.searchParams.get( 'term' ) ?? undefined );
+                const rendered = await pipeline.renderTaxonomySurface( stem, surface, true, url.searchParams.get( 'term' ) ?? undefined, surface === 'template' ? ( url.searchParams.get( 'layout' ) ?? 'default' ) : undefined );
                 const html = rendered.html?.replace( '</body>', '<script type="module" src="/preview-bridge.js"></script>\n</body>' );
 
                 response.writeHead( 200, { 'content-type': 'text/html; charset=utf-8' } );

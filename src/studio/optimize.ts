@@ -236,6 +236,38 @@ function toArrayBuffer ( bytes: Buffer ): ArrayBuffer
     return bytes.buffer.slice( bytes.byteOffset, bytes.byteOffset + bytes.byteLength ) as ArrayBuffer;
 }
 
+// The three raster kinds, decoded to pixels; a JPEG comes out upright.
+async function decodeImage ( bytes: Buffer, kind: string ): Promise<ImageDataLike>
+{
+    if ( kind === '.png' ) { return await decodePng( toArrayBuffer( bytes ) ) as ImageDataLike; }
+    if ( kind === '.webp' ) { return await decodeWebp( toArrayBuffer( bytes ) ) as ImageDataLike; }
+
+    return applyOrientation( await decodeJpeg( toArrayBuffer( bytes ) ) as ImageDataLike, jpegOrientation( bytes ) );
+}
+
+// The middle square of an image, edge for edge.
+function cropSquare ( image: ImageDataLike ): ImageDataLike
+{
+    const edge = Math.min( image.width, image.height );
+
+    if ( edge === image.width && edge === image.height ) { return image; }
+
+    const left = Math.floor( ( image.width - edge ) / 2 );
+    const top = Math.floor( ( image.height - edge ) / 2 );
+    const out = new Uint8ClampedArray( edge * edge * 4 );
+
+    for ( let y = 0; y < edge; y += 1 )
+    {
+        const from = ( ( top + y ) * image.width + left ) * 4;
+
+        out.set( image.data.subarray( from, from + edge * 4 ), y * edge * 4 );
+    }
+
+    const Constructor = ( globalThis as unknown as { ImageData: new ( data: Uint8ClampedArray, width: number, height: number ) => ImageDataLike } ).ImageData;
+
+    return new Constructor( out, edge, edge );
+}
+
 export async function optimizeUpload (
     bytes: Buffer,
     extension: string,
@@ -253,16 +285,7 @@ export async function optimizeUpload (
     {
         await codecsReady();
 
-        let image: ImageDataLike;
-
-        if ( kind === '.png' ) { image = await decodePng( toArrayBuffer( bytes ) ) as ImageDataLike; }
-        else if ( kind === '.webp' ) { image = await decodeWebp( toArrayBuffer( bytes ) ) as ImageDataLike; }
-        else
-        {
-            image = await decodeJpeg( toArrayBuffer( bytes ) ) as ImageDataLike;
-            image = applyOrientation( image, jpegOrientation( bytes ) );
-        }
-
+        const image = await decodeImage( bytes, kind );
         const target = fitWithin( image.width, image.height, settings.maxEdge );
 
         // An in-bounds webp is already the delivered shape.
@@ -284,6 +307,45 @@ export async function optimizeUpload (
         }
 
         return { bytes: encoded, extension: '.webp', converted: true };
+    }
+    catch
+    {
+        return { bytes, extension, converted: false };
+    }
+}
+
+export const AVATAR_EDGE = 256;
+const AVATAR_QUALITY = 82;
+
+// The avatar (Mikey, 2026-09-05): the chip and the wall show a small
+// circle, so the image is center-cropped square and brought to
+// AVATAR_EDGE as webp once, at the moment it is chosen - the
+// profile, the chip, and the wall entry all carry the small file
+// from then on. A smaller image is cropped, never enlarged. Only
+// rasters arrive (the route refuses SVG, Mikey 2026-09-05); anything
+// else, or a decode failure, keeps the bytes as they were.
+export async function optimizeAvatar ( bytes: Buffer, extension: string ): Promise<OptimizedUpload>
+{
+    const kind = extension.toLowerCase();
+
+    if ( ![ '.jpg', '.jpeg', '.png', '.webp' ].includes( kind ) ) { return { bytes, extension, converted: false }; }
+
+    try
+    {
+        await codecsReady();
+
+        const image = await decodeImage( bytes, kind );
+
+        // A square webp already within the edge is the delivered shape.
+        if ( kind === '.webp' && image.width === image.height && image.width <= AVATAR_EDGE ) { return { bytes, extension, converted: false }; }
+
+        const square = cropSquare( image );
+        const edge = Math.min( AVATAR_EDGE, square.width );
+        const resized = edge === square.width
+            ? square
+            : await resize( square as never, { width: edge, height: edge } ) as unknown as ImageDataLike;
+
+        return { bytes: Buffer.from( await encodeWebp( resized as never, { quality: AVATAR_QUALITY } ) ), extension: '.webp', converted: true };
     }
     catch
     {

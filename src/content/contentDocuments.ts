@@ -13,7 +13,7 @@ import { normalizeFields, suggestNearest, FieldSchemaError, type NormalizedField
 
 const contentKinds = [ 'collection', 'taxonomy', 'comments' ];
 const collectionHeaderKeys = [ 'casomerSchema', 'kind', 'label', 'fields', 'layouts', 'layout', 'template', 'index', 'table', 'locked', 'parent', 'entries' ];
-const taxonomyHeaderKeys = [ 'casomerSchema', 'kind', 'label', 'terms', 'index', 'layout', 'template', 'hierarchical' ];
+const taxonomyHeaderKeys = [ 'casomerSchema', 'kind', 'label', 'terms', 'index', 'layouts', 'layout', 'template', 'hierarchical' ];
 const uuidShape = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export interface LoadedEntry
@@ -110,6 +110,21 @@ export interface LoadedTaxonomy
     // The page templates the two render through (SCHEMA 12.6).
     readonly indexTemplate?: string;
     readonly termTemplate?: string;
+
+    // Every named term layout (SCHEMA 13.4, named 2026-09-02), the
+    // twin of a collection's; templateBlocks and termTemplate mirror
+    // the default's.
+    readonly layouts: Readonly<Record<string, EntryLayout>>;
+}
+
+// The layout a term renders through: the named one, else the
+// default. Terms carry no blocks of their own (the fixed shape).
+export function termLayoutOf ( taxonomy: Pick<LoadedTaxonomy, 'layouts'>, term: Pick<LoadedTerm, 'layout'> ): { readonly name: string; readonly blocks?: readonly unknown[]; readonly template?: string }
+{
+    const name = term.layout ?? 'default';
+    const layout = taxonomy.layouts[ name ] ?? taxonomy.layouts.default;
+
+    return { name, ...( layout === undefined ? {} : { blocks: layout.blocks, ...( layout.template === undefined ? {} : { template: layout.template } ) } ) };
 }
 
 // A layout's page template (SCHEMA 12.6): "template" inside an index
@@ -131,6 +146,10 @@ export interface LoadedTerm
     readonly parent?: string;
     readonly description?: string;
     readonly image?: Readonly<Record<string, unknown>>;
+
+    // The named layout the term's page follows (SCHEMA 13.4); absent
+    // means default.
+    readonly layout?: string;
 }
 
 // A term and everything nested beneath it (SCHEMA 13.3: a category
@@ -417,7 +436,7 @@ function parseTaxonomy ( record: Record<string, unknown>, file: string, issues: 
     }
 
     const hierarchical = record.hierarchical === true;
-    const terms: { id: string; name: string; parent?: string; description?: string; image?: Record<string, unknown> }[] = [];
+    const terms: { id: string; name: string; parent?: string; description?: string; image?: Record<string, unknown>; layout?: string }[] = [];
 
     for ( const [ index, rawTerm ] of termList.entries() )
     {
@@ -464,12 +483,18 @@ function parseTaxonomy ( record: Record<string, unknown>, file: string, issues: 
             else { termImage = rawImage; }
         }
 
+        if ( term.layout !== undefined && ( typeof term.layout !== 'string' || !/^[a-z][a-z0-9-]*$/.test( term.layout ) ) )
+        {
+            issues.push( { path: `${termPath}.layout`, message: '"layout" names one of the taxonomy\'s layouts: lowercase, digits, hyphens.' } );
+        }
+
         terms.push( {
             id: term.id,
             name: term.name,
             ...( hierarchical && typeof term.parent === 'string' ? { parent: term.parent } : {} ),
             ...( typeof term.description === 'string' && term.description !== '' ? { description: term.description } : {} ),
             ...( termImage !== undefined ? { image: termImage } : {} ),
+            ...( typeof term.layout === 'string' && /^[a-z][a-z0-9-]*$/.test( term.layout ) ? { layout: term.layout } : {} ),
         } );
     }
 
@@ -506,20 +531,70 @@ function parseTaxonomy ( record: Record<string, unknown>, file: string, issues: 
     let templateBlocks: readonly unknown[] | undefined;
     let layoutTemplate: string | undefined;
 
-    const layoutKey = record.layout !== undefined ? 'layout' : 'template';
-
-    if ( record[ layoutKey ] !== undefined )
+    // Named term layouts, the twin of a collection's (SCHEMA 13.4); a
+    // single "layout" object (or its retired "template" spelling)
+    // reads as the default.
+    const layouts: Record<string, EntryLayout> = {};
+    const readLayout = ( value: unknown, path: string ): EntryLayout | undefined =>
     {
-        const template = record[ layoutKey ] as Record<string, unknown> | null;
+        const record = value as Record<string, unknown> | null;
 
-        if ( template === null || typeof template !== 'object' || Array.isArray( template ) || !Array.isArray( template.blocks ) )
+        if ( record === null || typeof record !== 'object' || Array.isArray( record ) || !Array.isArray( record.blocks ) )
         {
-            issues.push( { path: `${file}.${layoutKey}`, message: '"layout" is an object with a "blocks" array - the layout every term page follows.' } );
+            issues.push( { path, message: '"layout" is an object with a "blocks" array - a term layout.' } );
+            return undefined;
+        }
+
+        const template = templateNameOf( record.template, `${path}.template`, issues );
+
+        return { blocks: record.blocks, ...( template === undefined ? {} : { template } ) };
+    };
+
+    if ( record.layouts !== undefined )
+    {
+        if ( record.layouts === null || typeof record.layouts !== 'object' || Array.isArray( record.layouts ) )
+        {
+            issues.push( { path: `${file}.layouts`, message: '"layouts" is an object of named term layouts.' } );
         }
         else
         {
-            templateBlocks = template.blocks;
-            layoutTemplate = templateNameOf( template.template, `${file}.${layoutKey}.template`, issues );
+            for ( const [ name, value ] of Object.entries( record.layouts as Record<string, unknown> ) )
+            {
+                if ( !/^[a-z][a-z0-9-]*$/.test( name ) )
+                {
+                    issues.push( { path: `${file}.layouts.${name}`, message: 'A layout name is token shaped: lowercase, digits, hyphens.' } );
+                    continue;
+                }
+
+                const layout = readLayout( value, `${file}.layouts.${name}` );
+
+                if ( layout !== undefined ) { layouts[ name ] = layout; }
+            }
+        }
+    }
+    else
+    {
+        const layoutKey = record.layout !== undefined ? 'layout' : 'template';
+
+        if ( record[ layoutKey ] !== undefined )
+        {
+            const layout = readLayout( record[ layoutKey ], `${file}.${layoutKey}` );
+
+            if ( layout !== undefined ) { layouts.default = layout; }
+        }
+    }
+
+    if ( layouts.default !== undefined )
+    {
+        templateBlocks = layouts.default.blocks;
+        layoutTemplate = layouts.default.template;
+    }
+
+    for ( const [ index, term ] of terms.entries() )
+    {
+        if ( term.layout !== undefined && layouts[ term.layout ] === undefined )
+        {
+            issues.push( { path: `${file}.terms[${index}].layout`, message: `There is no layout "${term.layout}" in this taxonomy.` } );
         }
     }
 
@@ -549,6 +624,7 @@ function parseTaxonomy ( record: Record<string, unknown>, file: string, issues: 
         label,
         hierarchical,
         terms,
+        layouts,
         ...( templateBlocks === undefined ? {} : { templateBlocks } ),
         ...( indexBlocks === undefined ? {} : { indexBlocks } ),
         ...( indexTemplate === undefined ? {} : { indexTemplate } ),

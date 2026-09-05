@@ -5,9 +5,12 @@ desktop
 cloud
 components
 github
+website
 .DS_Store
 *.log
 .env
 .env.*
 studio/dist/
+studio/app/chrome.css
+studio/app/chrome.source.css
 studio-design/

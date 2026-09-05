@@ -85,7 +85,7 @@ function slotSlot ()
 // gap, every island's bottom row (the row above the gap, or the card
 // header when the slot sits first, and the last row of the list)
 // wears the card's bottom edge, the row below the gap wears a top
-// edge, and the pane color bleeds one radius under each neighbour of
+// edge (so does the first row of a header-less list), and the pane color bleeds one radius under each neighbour of
 // the gap, which is what shows in their rounded corners.
 function previewSlot ( slot )
 {
@@ -119,7 +119,12 @@ function previewSlot ( slot )
     const visible = [ ...list.querySelectorAll( '[data-sort-id]' ) ].filter( ( row ) => row !== slot && !row.classList.contains( 'sort-family-hidden' ) );
     const last = visible.at( -1 ) ?? null;
     const bottoms = new Set( [ above ?? header, ...below === null ? [] : [ last ] ].filter( ( el ) => el !== null ) );
-    const tops = new Set( below === null ? [] : [ below ] );
+    // A header-less list has no header to wear the card's top
+    // corners while the clip is open, so its first row does (Mikey,
+    // 2026-09-03) - the slot's neighbour below, or the top of the
+    // upper island.
+    const first = header === null ? ( visible[ 0 ] ?? null ) : null;
+    const tops = new Set( [ ...below === null ? [] : [ below ], ...first === null ? [] : [ first ] ] );
 
     setIsland( card, bottoms, 'sort-island-bottom' );
     setIsland( card, tops, 'sort-island-top' );
@@ -607,6 +612,65 @@ async function rendererFor ( reference, fields, templateText )
     return renderer;
 }
 
+// A press that starts in one place and releases in another is a drag
+// (a text selection swept out of a field, say), not a click. The
+// browser still fires a click on the common ancestor - for a modal
+// that is its veil, for a popover whatever lies outside it - so the
+// modal or menu closed the moment a selection ended past its edge
+// (Mikey, 2026-09-03). Two rules, applied before any handler sees
+// the click: a veil dismisses only when the press began on the veil
+// itself, and a press that began in a text field is never a click on
+// anything else.
+let pressTarget = null;
+
+document.addEventListener( 'mousedown', ( event ) => { pressTarget = event.target; }, true );
+document.addEventListener( 'click', ( event ) =>
+{
+    const target = event.target;
+    const pressed = pressTarget;
+
+    pressTarget = null;
+
+    if ( !( target instanceof Element ) || pressed === null || pressed === target ) { return; }
+
+    const veil = target.classList.contains( 'bg-veil' );
+    const field = pressed instanceof Element && pressed.closest( 'input, textarea, [contenteditable]' ) !== null;
+
+    if ( veil || field ) { event.stopPropagation(); }
+}, true );
+
+// Text to the clipboard: the async API where the page may use it,
+// else the selection-and-copy fallback (an http://localhost tab and a
+// blocked permission both land there).
+async function copyText ( text )
+{
+    try
+    {
+        if ( navigator.clipboard !== undefined )
+        {
+            await navigator.clipboard.writeText( text );
+            return;
+        }
+    }
+    catch
+    {
+        /* falls through to the selection copy */
+    }
+
+    const area = document.createElement( 'textarea' );
+
+    area.value = text;
+    area.setAttribute( 'readonly', '' );
+    area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
+    document.body.appendChild( area );
+    area.select();
+
+    try { document.execCommand( 'copy' ); }
+    catch { /* nothing to do: the tag stays visible to copy by hand */ }
+
+    area.remove();
+}
+
 document.addEventListener( 'alpine:init', () =>
 {
     const Alpine = window.Alpine;
@@ -641,6 +705,7 @@ document.addEventListener( 'alpine:init', () =>
         selectedPageId: null,
         viewport: 'desktop',
         themeDark: document.documentElement?.dataset.theme === 'dark',
+        themeTick: 0,
         palette: null,
         contentVersion: 0,
         selectedBlock: null,
@@ -671,6 +736,7 @@ document.addEventListener( 'alpine:init', () =>
         navCreateIndex: true,
         navCreateError: '',
         navCreateHierarchical: false,
+        navCreateFields: [],
         createKind: null,
         createLabel: '',
         createValues: {},
@@ -683,6 +749,10 @@ document.addEventListener( 'alpine:init', () =>
         collectionView: 'entries',
         taxonomyView: 'terms',
         selectedFieldKey: null,
+        fieldTagCopied: false,
+        fieldTagCopiedTimer: null,
+        licenseKeyCopied: false,
+        licenseKeyCopiedTimer: null,
         fieldsDraft: null,
         fieldsSaveTimer: null,
         fieldsOpChain: null,
@@ -701,18 +771,36 @@ document.addEventListener( 'alpine:init', () =>
         pickerComponents: null,
         pickerQuery: '',
         publishProblems: [],
+        publishFailure: null,
+        publishConfirmOpen: false,
+        licenseKeyDraft: '',
+        licenseKeyProblem: false,
+        licenseKeyProblemText: '',
+        supporterKeyProblem: '',
+        publishCard: null,
+        publishCardTimer: null,
+
+        // What the last publish said about the stored keys (a revoked
+        // one, in the registry's words): the gate modal's line when the
+        // window has ended, the card's note otherwise.
+        publishNotices: [],
         pendingAbandon: null,
         abandonName: '',
         abandonBypass: false,
         saveConfirmOpen: false,
         saveProblems: [],
         commercialAssentOpen: false,
+        hierarchyOffOpen: false,
         renameConfirmOpen: false,
         metaNameGuardOpen: false,
         metaNameGuardFile: null,
         collapsedPages: {},
         sortEpoch: 0,
         siteNameDraft: '',
+        siteOriginDraft: '',
+        siteOriginTouched: false,
+        siteOriginTimer: null,
+        siteOriginProblem: false,
         mediaPicker: null,
         mediaLibrary: null,
         mediaTrash: [],
@@ -736,6 +824,7 @@ document.addEventListener( 'alpine:init', () =>
         samplePageId: null,
         canvasFitHeight: 200,
         focusFreshPath: null,
+        canvasDrag: null,
         pageTitleDraft: '',
         addressConfirmOpen: false,
         navCollapsed: { pages: false, collections: false, taxonomies: false, site: false },
@@ -744,6 +833,22 @@ document.addEventListener( 'alpine:init', () =>
         // workspace's (partials or menus).
         pagesView: 'pages',
         userMenuOpen: false,
+        profileOpen: false,
+        supporterOpen: false,
+        supporterIntroOpen: false,
+        supporterKey: '',
+        sponsorOpen: false,
+        sponsorIntroOpen: false,
+        sponsorKey: '',
+        sponsorKeyProblem: '',
+        avatarVersion: 0,
+        profileDraft: { name: '', email: '', github: '' },
+        supporterWallOpen: false,
+        supporterWallDraft: { name: '', github: '' },
+
+        // A scope selected on a page canvas (a partial, or a template's
+        // own block): named in the sidebar with the way to its canvas.
+        scopeSelection: null,
 
         // A create modal closing with something typed asks first
         // (Mikey): which modal is waiting on the answer.
@@ -767,6 +872,21 @@ document.addEventListener( 'alpine:init', () =>
         outlineItems: [],
         remoteEditOpen: false,
         remoteDraft: '',
+
+        // Connect GitHub (the device flow, held by the server).
+        github: { phase: 'idle', userCode: '', verificationUri: '', error: '', repositories: [], installUrl: 'https://github.com/apps/casomer-cms/installations/new' },
+        githubRepo: '',
+        githubTimer: null,
+        githubCodeCopied: false,
+        githubCodeCopiedTimer: null,
+
+        // Go live (SCHEMA 12.4): the card's editor, its test, its save.
+        deployEditOpen: false,
+        deployDraft: { host: '', port: '', user: '', path: '', password: '', keyFile: '' },
+        deployTesting: false,
+        deployTest: null,
+        deployProblem: '',
+        deployUploading: false,
 
         init ()
         {
@@ -917,8 +1037,24 @@ document.addEventListener( 'alpine:init', () =>
 
         onCanvasMessage ( message )
         {
+            if ( message.kind === 'select' && message.scope !== undefined && message.scope !== null )
+            {
+                this.selectedBlock = null;
+                this.blockEditor = null;
+                this.repeatEditor = null;
+                this.inlineEdit = null;
+                this.scopeSelection = message.scope;
+                this.selectionRect = message.rect;
+                this.selectionRadius = message.radius;
+                this.hoverChain = [];
+                this.tab = 'content';
+                return;
+            }
+
             if ( message.kind === 'select' )
             {
+                this.scopeSelection = null;
+
                 // A repeat block lives in repeatEditor, not blockEditor:
                 // comparing against the block editor alone made every
                 // scroll re-report a "new" selection and refetch the
@@ -981,6 +1117,16 @@ document.addEventListener( 'alpine:init', () =>
             {
                 clearTimeout( this.hoverClearTimer );
                 this.hoverChain = message.chain;
+
+                // A pinned pill (the pointer rests on it) follows its
+                // section when the canvas scrolls under it (Mikey): the
+                // pin keeps the path, the chain brings the fresh rect.
+                if ( this.pinnedHandle !== null )
+                {
+                    const fresh = message.chain.find( ( entry ) => entry.path === this.pinnedHandle.path );
+
+                    if ( fresh !== undefined ) { this.pinnedHandle = fresh; }
+                }
             }
 
             if ( message.kind === 'hover-clear' )
@@ -1004,6 +1150,7 @@ document.addEventListener( 'alpine:init', () =>
         applyDeselect ()
         {
             this.focusFreshPath = null;
+            this.scopeSelection = null;
             this.selectedBlock = null;
             this.selectionRect = null;
             this.hoverChain = [];
@@ -1065,7 +1212,7 @@ document.addEventListener( 'alpine:init', () =>
             if ( this.workspace === 'template' ) { return { template: this.surface }; }
             if ( this.workspace === 'settings' ) { return { region: this.surface }; }
             if ( this.surface === 'entry' ) { return { doc: this.stem, surface: 'entry', entry: this.sampleEntryId }; }
-            if ( this.surface === 'template' && this.workspace === 'collection' ) { return { doc: this.stem, surface: 'template', layout: this.layoutName }; }
+            if ( this.surface === 'template' && ( this.workspace === 'collection' || this.workspace === 'taxonomy' ) ) { return { doc: this.stem, surface: 'template', layout: this.layoutName }; }
 
             return { doc: this.stem, surface: this.surface };
         },
@@ -1091,7 +1238,7 @@ document.addEventListener( 'alpine:init', () =>
                 kind = this.blockInfoAt( path )?.kind;
             }
 
-            if ( kind !== 'component' && kind !== 'repeat' && kind !== 'partial' ) { return; }
+            if ( kind !== 'component' && kind !== 'repeat' && kind !== 'partial' && kind !== 'section' ) { return; }
 
             const query = this.surface === null
                 ? new URLSearchParams( { page: this.selectedPageId, path } )
@@ -1101,7 +1248,7 @@ document.addEventListener( 'alpine:init', () =>
                             ? new URLSearchParams( { region: this.surface, path } )
                             : ( this.surface === 'entry'
                                     ? new URLSearchParams( { doc: this.stem, surface: 'entry', entry: this.sampleEntryId ?? '', path } )
-                                    : new URLSearchParams( { doc: this.stem, surface: this.surface, path, ...( this.surface === 'template' && this.workspace === 'collection' ? { layout: this.layoutName } : {} ) } ) ) );
+                                    : new URLSearchParams( { doc: this.stem, surface: this.surface, path, ...( this.surface === 'template' && ( this.workspace === 'collection' || this.workspace === 'taxonomy' ) ? { layout: this.layoutName } : {} ) } ) ) );
             const response = await fetch( `/api/block?${query.toString()}` );
 
             // A newer load superseded this one while it was in flight.
@@ -1110,6 +1257,14 @@ document.addEventListener( 'alpine:init', () =>
             if ( !response.ok ) { return; }
 
             const loaded = await response.json();
+
+            // A section (SCHEMA 11): the Section inspector edits its
+            // record; there are no fields, so no props to seed.
+            if ( loaded.kind === 'section' )
+            {
+                this.blockEditor = { path, editorTarget: this.blockTarget, ...this.blockTarget, ...loaded, section: structuredClone( loaded.section ?? {} ), layout: structuredClone( loaded.layout ?? {} ) };
+                return;
+            }
 
             if ( loaded.kind === 'repeat' )
             {
@@ -1209,9 +1364,12 @@ document.addEventListener( 'alpine:init', () =>
             return null;
         },
 
+        // The Preview button never leaves the top bar (Mikey,
+        // 2026-09-03): a view with a preview of its own opens that;
+        // anywhere else opens the site's front door, the homepage.
         openPreview ()
         {
-            if ( this.previewPopUrl !== null ) { window.open( this.previewPopUrl, '_blank' ); }
+            window.open( this.previewPopUrl ?? '/preview/', '_blank' );
         },
 
         // Save records a version (EDITOR section 9): the edits join
@@ -1260,33 +1418,275 @@ document.addEventListener( 'alpine:init', () =>
             return t( this.saveState === 'saved' ? 'saved' : 'save' );
         },
 
-        async publishNow ()
+        // The licensing facts (BUSINESS 5.3) the snapshot carries.
+        get licensing ()
+        {
+            return this.snapshot?.licensing ?? { declaredUse: 'personal', phase: 'personal', daysLeft: 14, hasKey: false, siteKey: '' };
+        },
+
+        // A commercial site confirms its publish (the grace gate's
+        // modal: the countdown, or the key once the window has
+        // ended); a personal or licensed site publishes at once.
+        get publishNeedsConfirm ()
+        {
+            return [ 'unstarted', 'grace', 'expired' ].includes( this.licensing.phase );
+        },
+
+        get licenseHost ()
+        {
+            const origin = this.siteOrigin;
+
+            if ( origin !== '' )
+            {
+                try { return new URL( origin ).host; }
+                catch { /* not an address */ }
+            }
+
+            return this.folderName;
+        },
+
+        get publishChangedLine ()
+        {
+            const n = ( this.snapshot?.changedPageIds ?? [] ).length;
+
+            return `${tCount( 'publishChangedPages', n )} · ${this.licenseHost}`;
+        },
+
+        get graceLine ()
+        {
+            const state = this.licensing;
+
+            if ( state.phase === 'unstarted' ) { return t( 'graceUnstartedLine' ); }
+            if ( state.phase === 'grace' ) { return tCount( 'graceDaysLeft', state.daysLeft ); }
+            if ( state.phase === 'expired' ) { return t( 'graceExpiredLine' ); }
+            if ( state.phase === 'licensed' ) { return t( 'licenseLicensed' ); }
+
+            return '';
+        },
+
+        get licenseKeyReady ()
+        {
+            return String( this.licenseKeyDraft ?? '' ).trim() !== '';
+        },
+
+        // A license binds to its address, so moving domains is a
+        // transfer, and transfers go through support (Mikey,
+        // 2026-09-03) - the card readies the email, subject and the
+        // current binding prefilled, never a self-serve route.
+        get licenseTransferMailto ()
+        {
+            const subject = encodeURIComponent( t( 'licenseTransferSubject' ) );
+            const body = encodeURIComponent( tFill( 'licenseTransferBody', { host: this.licenseHost } ) );
+
+            return `mailto:support@casomer.com?subject=${subject}&body=${body}`;
+        },
+
+        // The licensed card's copy (Mikey, 2026-09-03): the key comes
+        // off this computer's own store on demand, lands on the
+        // clipboard, and the button says "Copied" for a moment.
+        async copyLicenseKey ()
+        {
+            const response = await fetch( '/api/license' );
+
+            if ( !response.ok ) { return; }
+
+            const body = await response.json().catch( () => ( {} ) );
+
+            if ( typeof body.key !== 'string' || body.key === '' ) { return; }
+
+            await copyText( body.key );
+            this.licenseKeyCopied = true;
+            clearTimeout( this.licenseKeyCopiedTimer );
+            this.licenseKeyCopiedTimer = setTimeout( () => { this.licenseKeyCopied = false; }, 1400 );
+        },
+
+        openPublishConfirm ()
+        {
+            this.licenseKeyDraft = '';
+            this.licenseKeyProblem = false;
+            this.publishConfirmOpen = true;
+        },
+
+        closePublishConfirm ()
+        {
+            if ( this.licenseKeyReady ) { this.discardPrompt = 'publishConfirm'; }
+            else { this.publishConfirmOpen = false; }
+        },
+
+        // The key from the gate modal or the License card: stored for
+        // this site, then the snapshot's licensing follows.
+        async saveLicenseKey ()
+        {
+            const key = String( this.licenseKeyDraft ?? '' ).trim();
+
+            if ( key === '' ) { return false; }
+
+            const response = await fetch( '/api/license', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { key } ),
+            } );
+
+            const body = await response.json().catch( () => ( {} ) );
+
+            this.licenseKeyProblem = !response.ok;
+            this.licenseKeyProblemText = response.ok ? '' : ( typeof body.error === 'string' ? body.error : t( 'licenseKeyProblem' ) );
+
+            if ( response.ok )
+            {
+                if ( this.snapshot !== null && body.licensing !== undefined ) { this.snapshot.licensing = body.licensing; }
+
+                this.licenseKeyDraft = '';
+            }
+
+            return response.ok;
+        },
+
+        // The modal's Publish: past the window it stores the key
+        // first, then publishes like any confirmed publish.
+        async confirmPublish ()
+        {
+            if ( this.licensing.phase === 'expired' && !( await this.saveLicenseKey() ) ) { return; }
+
+            this.publishConfirmOpen = false;
+            await this.publishNow( true );
+        },
+
+        async publishNow ( confirmed = false )
         {
             if ( this.publishState === 'publishing' ) { return; }
 
-            this.publishState = 'publishing';
-            this.publishProblems = [];
-            this.suppressReloadUntil = Date.now() + 8000;
-
-            const response = await fetch( '/api/publish', { method: 'POST' } );
-
-            // A refused publish names its reasons (required fields,
-            // unavailable components): the enforcement moment is here,
-            // never while drafting, so the reasons must be visible.
-            if ( !response.ok )
+            if ( !confirmed && this.publishNeedsConfirm )
             {
-                const body = await response.json().catch( () => ( {} ) );
-
-                this.publishProblems = Array.isArray( body.issues ) ? body.issues : [];
+                this.openPublishConfirm();
+                return;
             }
 
-            this.publishState = response.ok ? 'published' : 'failed';
+            this.publishState = 'publishing';
+            this.publishProblems = [];
+            this.publishNotices = [];
+            this.dismissPublishCard();
+            this.suppressReloadUntil = Date.now() + 8000;
+
+            // The spinner holds for a beat even when the publish is
+            // quick: a state that flashes reads as a glitch.
+            const startedAt = Date.now();
+            let response = null;
+            let body = {};
+
+            try
+            {
+                response = await fetch( '/api/publish', { method: 'POST' } );
+                body = await response.json().catch( () => ( {} ) );
+            }
+            catch
+            {
+                response = null;
+            }
+
+            const remaining = 900 - ( Date.now() - startedAt );
+
+            if ( remaining > 0 ) { await new Promise( ( resolve ) => setTimeout( resolve, remaining ) ); }
+
+            // A refused publish names its reasons (required fields,
+            // unavailable components, a folder that is not its own
+            // repository, a server that is gone): the enforcement moment
+            // is here, never while drafting, so the reason is a MODAL
+            // (Mikey, 2026-09-03) and the button simply returns.
+            if ( response === null || !response.ok )
+            {
+                this.publishProblems = Array.isArray( body.issues ) ? body.issues : [];
+
+                // The gate closed between the snapshot and the publish
+                // (the window ended today): the key modal, not this one.
+                if ( response !== null && response.status === 402 )
+                {
+                    if ( this.snapshot !== null && body.licensing !== undefined ) { this.snapshot.licensing = body.licensing; }
+
+                    this.publishNotices = Array.isArray( body.notices ) ? body.notices.filter( ( notice ) => typeof notice === 'string' ) : [];
+                    this.openPublishConfirm();
+                }
+                else
+                {
+                    this.publishFailure = {
+                        error: response === null ? t( 'publishUnreachable' ) : ( typeof body.error === 'string' && body.error !== '' ? body.error : tFill( 'publishFailedStatus', { status: String( response.status ) } ) ),
+                        issues: this.publishProblems,
+                    };
+                }
+
+                this.publishState = 'idle';
+                this.suppressReloadUntil = Date.now() + 1500;
+                void this.refresh();
+                return;
+            }
+
+            this.showPublishCard( body );
+            this.publishState = 'published';
             this.suppressReloadUntil = Date.now() + 1500;
             void this.refresh();
             setTimeout( () =>
             {
                 this.publishState = 'idle';
             }, 2200 );
+        },
+
+        // The publish confirmation card (EDITOR: the supporter moment):
+        // what was published, and on a personal site's fifth or
+        // fortieth publish one gentle line offering support, once
+        // each. A plain card goes on its own; a card with the line
+        // waits for its x.
+        showPublishCard ( body )
+        {
+            const moment = body.supporterMoment === 5 || body.supporterMoment === 40 ? body.supporterMoment : null;
+
+            const backup = body.backup === 'failed' || body.backup === 'conflict' || body.backup === 'expired' || body.backup === 'pushed' || body.backup === 'off' ? body.backup : 'none';
+
+            this.publishCard = { pages: typeof body.pages === 'number' ? body.pages : 0, moment, backup, backupError: typeof body.backupError === 'string' ? body.backupError : '', changed: body.changed !== false, deploy: body.deploy === 'uploaded' || body.deploy === 'failed' || body.deploy === 'off' ? body.deploy : 'none', deployError: typeof body.deployError === 'string' ? body.deployError : '', deployUploaded: typeof body.deployUploaded === 'number' ? body.deployUploaded : 0, deployDeleted: typeof body.deployDeleted === 'number' ? body.deployDeleted : 0, notices: Array.isArray( body.notices ) ? body.notices.filter( ( notice ) => typeof notice === 'string' ) : [] };
+
+            if ( this.snapshot !== null && body.licensing !== undefined ) { this.snapshot.licensing = body.licensing; }
+
+            clearTimeout( this.publishCardTimer );
+
+            // A card with the supporter line, with a backup that did
+            // not go, or with a word about a key, waits for its x.
+            if ( moment !== null || backup === 'failed' || backup === 'conflict' || backup === 'expired' || this.publishCard.deploy === 'failed' || this.publishCard.notices.length > 0 ) { return; }
+
+            this.publishCardTimer = setTimeout( () =>
+            {
+                this.publishCard = null;
+            }, 6000 );
+        },
+
+        dismissPublishCard ()
+        {
+            clearTimeout( this.publishCardTimer );
+            this.publishCard = null;
+        },
+
+        // The card's first line: what was published, or - when nothing
+        // was new and the click was for the backup's sake - what the
+        // backup did.
+        get publishCardTitle ()
+        {
+            const card = this.publishCard;
+
+            if ( card === null ) { return ''; }
+            if ( card.changed === false ) { return t( card.backup === 'pushed' ? 'publishNothingNewBackedUp' : 'publishNothingNew' ); }
+
+            return tCount( 'publishedPages', card.pages );
+        },
+
+        get supporterMomentLine ()
+        {
+            return t( this.publishCard?.moment === 40 ? 'supporterMomentForty' : 'supporterMomentFive' );
+        },
+
+        // The support link on the card: the page, and the key modal
+        // beside it, like the menu's row.
+        supportFromCard ()
+        {
+            this.dismissPublishCard();
+            this.userMenuGo( 'support' );
         },
 
         // Restored content (a journal step, a discard) morphs in -
@@ -1315,13 +1715,35 @@ document.addEventListener( 'alpine:init', () =>
 
             // The open workspace's drafts resync once the fresh
             // snapshot lands - a restore is real only when the screen
-            // shows it (Mikey's undo-a-color report).
+            // shows it (Mikey's undo-a-color report). A restore can
+            // also take the open document itself away (undoing the
+            // create, Mikey 2026-09-03) - then the workspace ejects
+            // to a surviving sibling, or the pages table when none
+            // remain, never lingering inside a ghost.
             void this.refresh().then( () =>
             {
                 if ( this.workspace === 'settings' ) { this.syncSettingsDrafts(); }
                 if ( this.workspace === 'menu' ) { this.syncMenuEditor(); }
-                if ( this.workspace === 'collection' ) { void this.loadCollection(); }
-                if ( this.workspace === 'taxonomy' ) { void this.loadTaxonomy(); }
+
+                if ( this.workspace === 'collection' || this.workspace === 'taxonomy' )
+                {
+                    const isTaxonomy = this.workspace === 'taxonomy';
+                    const rows = isTaxonomy ? this.taxonomies : this.collections;
+
+                    if ( !rows.some( ( row ) => row.file === this.workspaceFile ) )
+                    {
+                        const sibling = rows[ 0 ];
+
+                        if ( sibling === undefined ) { this.openPagesWorkspace(); }
+                        else if ( isTaxonomy ) { this.openTaxonomy( sibling.file ); }
+                        else { this.openCollection( sibling.file ); }
+
+                        return;
+                    }
+
+                    if ( isTaxonomy ) { void this.loadTaxonomy(); }
+                    else { void this.loadCollection(); }
+                }
             } );
 
             if ( this.selectedBlock !== null ) { void this.loadBlock( this.selectedBlock ); }
@@ -1358,6 +1780,7 @@ document.addEventListener( 'alpine:init', () =>
         {
             if ( this.status === 'unsaved' ) { return t( 'statusUnsaved' ); }
             if ( this.status === 'saved' ) { return t( 'statusSaved' ); }
+            if ( this.status === 'unpushed' ) { return t( 'statusUnpushed' ); }
 
             return '';
         },
@@ -1894,12 +2317,13 @@ document.addEventListener( 'alpine:init', () =>
             this.pickerKind = kind;
         },
 
-        // A ghost preview earns the card only when the component
-        // declares an example; anything else keeps the plate glyph
-        // (partial pseudo-entries carry no exampleProps at all).
+        // Every component earns a real-render ghost (Mikey,
+        // 2026-09-03): an example when it declares one, else props
+        // stood in from its fields. Only a partial pseudo-entry keeps
+        // the plate glyph - it is not a component.
         componentHasGhost ( component )
         {
-            return Object.keys( component.exampleProps ?? {} ).length > 0;
+            return typeof component.reference === 'string' && !component.reference.startsWith( 'partial:' );
         },
 
         get pickerGroups ()
@@ -2047,6 +2471,287 @@ document.addEventListener( 'alpine:init', () =>
             void this.refresh();
         },
 
+        // The tag's trash: the same confirm the inspector's trash and
+        // the Delete key use. The content slot is not removable.
+        requestRemoveSelected ()
+        {
+            if ( this.selectedBlock !== null && this.confirmTarget === null && this.blockInfoAt( this.selectedBlock )?.kind !== 'slot' ) { this.confirmTarget = 'block'; }
+        },
+
+        // ---- The Section inspector and the Layout card (SCHEMA 11;
+        // Mikey, 2026-09-03: sections dictate the spacing outside and
+        // inside and the span of their children) ----
+
+        // The editor holding the selected block's wrapper layout: the
+        // block editor for a component or section, the repeat editor
+        // for a repeat.
+        get layoutEditor ()
+        {
+            return this.blockEditor ?? this.repeatEditor;
+        },
+
+        get layoutValues ()
+        {
+            return this.layoutEditor?.layout ?? {};
+        },
+
+        get sectionValues ()
+        {
+            return this.blockEditor?.kind === 'section' ? ( this.blockEditor.section ?? {} ) : {};
+        },
+
+        // A value that is a breakpoint map stays the file's business
+        // for now: the select shows its base and a note says so.
+        layoutValueBase ( value )
+        {
+            if ( value === null || value === undefined ) { return ''; }
+            if ( typeof value === 'object' ) { return String( value.base ?? '' ); }
+
+            return String( value );
+        },
+
+        layoutValueResponsive ( value )
+        {
+            return value !== null && typeof value === 'object';
+        },
+
+        get sectionTokens ()
+        {
+            return this.blockEditor?.tokens ?? this.repeatEditor?.tokens ?? {};
+        },
+
+        get sectionSpacingTokens ()
+        {
+            return this.sectionTokens.spacing ?? this.spacingTokenNames;
+        },
+
+        get sectionWidthTokens ()
+        {
+            return this.sectionTokens.widths ?? this.widthTokenNames;
+        },
+
+        // The selected block's depth (the page is 0) and its parent's
+        // flow, for the Size control: only a row parent hands out
+        // widths; a column parent stacks full-width rows.
+        get selectedDepth ()
+        {
+            return this.selectedBlock === null ? 0 : ( this.selectedBlock.match( /(?:blocks|header|footer)\[\d+\]/g ) ?? [] ).length;
+        },
+
+        get parentFlow ()
+        {
+            if ( this.selectedBlock === null ) { return 'column'; }
+
+            const parentPath = this.selectedBlock.replace( /\.?(?:blocks|header|footer)\[\d+\]$/, '' );
+            const parentDepth = this.selectedDepth - 1;
+
+            if ( parentPath === '' || parentPath === 'header' || parentPath === 'footer' ) { return 'column'; }
+
+            const info = this.blockInfoAt( parentPath );
+            const explicit = typeof info?.direction === 'string' ? info.direction : null;
+
+            return explicit ?? ( parentDepth % 2 === 1 ? 'row' : 'column' );
+        },
+
+        // What this section's children flow as when it says nothing.
+        get sectionAutoFlow ()
+        {
+            return this.selectedDepth % 2 === 1 ? 'row' : 'column';
+        },
+
+        get layoutCardShown ()
+        {
+            return this.canvasActive && this.selectedBlock !== null && this.layoutEditor !== null && this.blockInfoAt( this.selectedBlock )?.kind !== 'slot';
+        },
+
+        get sizeOptions ()
+        {
+            return [ '1/4', '1/3', '1/2', '2/3', '3/4', 'full' ];
+        },
+
+        async saveSection ( key, value )
+        {
+            const editor = this.blockEditor;
+
+            if ( editor === null || editor.kind !== 'section' ) { return; }
+
+            const section = { ...( editor.section ?? {} ) };
+
+            if ( value === '' || value === null || value === false ) { delete section[ key ]; }
+            else { section[ key ] = value; }
+
+            editor.section = section;
+            await this.writeArrangement( { section: { [ key ]: value === '' ? null : value } } );
+        },
+
+        async saveLayout ( key, value )
+        {
+            const editor = this.layoutEditor;
+
+            if ( editor === null ) { return; }
+
+            editor.layout = { ...( editor.layout ?? {} ), [ key ]: value === '' ? null : value };
+            await this.writeArrangement( { wrapper: { [ key ]: value === '' ? null : value } } );
+        },
+
+        // One write, then the canvas refreshes through the server:
+        // arrangement is classes on wrappers, which the client
+        // renderer does not produce.
+        async writeArrangement ( patch )
+        {
+            const editor = this.layoutEditor;
+
+            if ( editor === null ) { return; }
+
+            const target = this.targetOfEditor( editor );
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/block', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { ...target, path: editor.path, ...patch } ),
+            } );
+            this.sendToCanvas( { kind: 'refresh' } );
+            void this.refresh();
+        },
+
+        get selectionCanMove ()
+        {
+            return this.selectedBlock !== null && this.blockInfoAt( this.selectedBlock )?.kind !== 'slot';
+        },
+
+        get canvasDragGhostStyle ()
+        {
+            const drag = this.canvasDrag;
+
+            return drag === null ? {} : { left: `${drag.x + 14}px`, top: `${drag.y + 10}px` };
+        },
+
+        // Drag and drop in the preview (EDITOR 2; Mikey 2026-09-03):
+        // the tag's grip captures the pointer, so every move reaches
+        // the chrome even over the iframe; the chrome hands the
+        // canvas-relative point to the bridge, whose seam machinery
+        // (the same one the plus uses) says where the block would
+        // land; the drop moves it there in one write and keeps it
+        // selected at its new path. A press that travels under 4px
+        // is a click, not a drag.
+        beginCanvasDrag ( event )
+        {
+            if ( event.button !== 0 || this.selectedBlock === null || this.canvasDrag !== null ) { return; }
+
+            const grip = event.currentTarget;
+            const drag = { path: this.selectedBlock, label: this.selectionLabel, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, active: false };
+            const move = ( e ) => this.trackCanvasDrag( e );
+            const finish = ( e ) =>
+            {
+                grip.removeEventListener( 'pointermove', move );
+                grip.removeEventListener( 'pointerup', finish );
+                grip.removeEventListener( 'pointercancel', cancel );
+                void this.endCanvasDrag( e );
+            };
+            const cancel = () =>
+            {
+                grip.removeEventListener( 'pointermove', move );
+                grip.removeEventListener( 'pointerup', finish );
+                grip.removeEventListener( 'pointercancel', cancel );
+                this.cancelCanvasDrag();
+            };
+
+            this.canvasDrag = drag;
+            try { grip.setPointerCapture( event.pointerId ); }
+            catch { /* a synthetic pointer has no capture; the listeners still ride the grip */ }
+            grip.addEventListener( 'pointermove', move );
+            grip.addEventListener( 'pointerup', finish );
+            grip.addEventListener( 'pointercancel', cancel );
+            event.preventDefault();
+        },
+
+        trackCanvasDrag ( event )
+        {
+            const drag = this.canvasDrag;
+
+            if ( drag === null ) { return; }
+
+            drag.x = event.clientX;
+            drag.y = event.clientY;
+
+            if ( !drag.active )
+            {
+                if ( Math.hypot( drag.x - drag.startX, drag.y - drag.startY ) < 4 ) { return; }
+
+                drag.active = true;
+                document.body.classList.add( 'canvas-dragging' );
+                this.sendToCanvas( { kind: 'drag-start', path: drag.path } );
+            }
+
+            const frame = this.$refs.canvas?.getBoundingClientRect();
+
+            if ( frame === undefined ) { return; }
+
+            this.sendToCanvas( { kind: 'drag-at', x: drag.x - frame.left, y: drag.y - frame.top } );
+        },
+
+        cancelCanvasDrag ()
+        {
+            const drag = this.canvasDrag;
+
+            this.canvasDrag = null;
+            document.body.classList.remove( 'canvas-dragging' );
+
+            if ( drag?.active === true )
+            {
+                this.sendToCanvas( { kind: 'drag-end' } );
+                this.seamInfo = null;
+            }
+        },
+
+        async endCanvasDrag ()
+        {
+            const drag = this.canvasDrag;
+            const seam = this.seamInfo;
+
+            this.cancelCanvasDrag();
+
+            if ( drag === null || !drag.active || seam === null ) { return; }
+
+            // Dropping on the block's own boundaries changes nothing.
+            const parent = drag.path.replace( /\.?(?:blocks|header|footer)\[\d+\]$/, '' );
+            const own = Number( /\[(\d+)\]$/.exec( drag.path )?.[ 1 ] ?? -1 );
+
+            if ( seam.container === parent && ( seam.index === own || seam.index === own + 1 ) ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const response = await fetch( '/api/block-move', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { ...this.blockTarget, path: drag.path, container: seam.container, index: seam.index } ),
+            } );
+
+            if ( !response.ok ) { return; }
+
+            const body = await response.json().catch( () => ( {} ) );
+            const freshPath = typeof body.path === 'string' ? body.path : null;
+
+            // A structural change reloads the canvas; the moved block
+            // selects itself again when the fresh document announces.
+            this.contentVersion += 1;
+
+            if ( freshPath !== null )
+            {
+                this.focusFreshPath = freshPath;
+                this.selectedBlock = freshPath;
+                setTimeout( () =>
+                {
+                    if ( this.focusFreshPath === freshPath ) { this.focusFreshPath = null; }
+                }, 4000 );
+            }
+
+            if ( this.workspace === 'collection' ) { await this.loadCollection(); }
+
+            void this.refresh();
+        },
+
         async removeSelectedBlock ()
         {
             const path = this.selectedBlock;
@@ -2088,6 +2793,7 @@ document.addEventListener( 'alpine:init', () =>
                 // the first load (Mikey's report), not only after Site
                 // settings opens; a name mid-edit keeps its keystrokes.
                 if ( this.siteNameTouched !== true ) { this.siteNameDraft = loaded.config?.name ?? ''; }
+                if ( this.siteOriginTouched !== true ) { this.siteOriginDraft = loaded.origin ?? ''; }
 
                 if ( !loaded.pages.some( ( page ) => page.id === this.selectedPageId ) )
                 {
@@ -2106,7 +2812,7 @@ document.addEventListener( 'alpine:init', () =>
         // state and deliberately not routed.
         get routeHash ()
         {
-            if ( this.workspace === 'pages' ) { return '#/pages'; }
+            if ( this.workspace === 'pages' ) { return this.pagesRowId === null ? '#/pages' : `#/pages/${this.pagesRowId}`; }
             if ( this.workspace === 'site' ) { return `#/site/${this.siteView}`; }
             if ( this.workspace === 'theme' ) { return '#/theme'; }
             if ( this.workspace === 'template' && this.surface !== null ) { return `#/template/${this.surface}`; }
@@ -2127,16 +2833,19 @@ document.addEventListener( 'alpine:init', () =>
                 if ( this.surface === 'template' ) { return `#/collection/${this.stem}/template/${this.layoutName}`; }
                 if ( this.surface !== null ) { return `#/collection/${this.stem}/${this.surface}`; }
                 if ( this.collectionView === 'fields' ) { return `#/collection/${this.stem}/fields`; }
-                if ( this.collectionView === 'layouts' ) { return `#/collection/${this.stem}/layouts`; }
+                if ( this.collectionView === 'layouts' ) { return this.layoutsRowName === null ? `#/collection/${this.stem}/layouts` : `#/collection/${this.stem}/layouts/${this.layoutsRowName}`; }
 
                 return `#/collection/${this.stem}`;
             }
 
             if ( this.workspace === 'taxonomy' && this.workspaceFile !== null )
             {
+                if ( this.surface === 'template' ) { return `#/taxonomy/${this.stem}/template/${this.layoutName}`; }
                 if ( this.surface !== null ) { return `#/taxonomy/${this.stem}/${this.surface}`; }
 
-                return this.taxonomyView === 'layouts' ? `#/taxonomy/${this.stem}/layouts` : `#/taxonomy/${this.stem}`;
+                if ( this.taxonomyView === 'layouts' ) { return this.layoutsRowName === null ? `#/taxonomy/${this.stem}/layouts` : `#/taxonomy/${this.stem}/layouts/${this.layoutsRowName}`; }
+
+                return `#/taxonomy/${this.stem}`;
             }
 
             if ( this.workspace === 'menu' && this.menuName !== null ) { return `#/menu/${this.menuName}`; }
@@ -2147,6 +2856,14 @@ document.addEventListener( 'alpine:init', () =>
         async applyRoute ()
         {
             const parts = window.location.hash.replace( /^#\/?/, '' ).split( '/' ).filter( ( part ) => part !== '' );
+
+            // A bare address opens the pages table, not the home page's
+            // canvas (Mikey, 2026-09-05): the overview first.
+            if ( parts.length === 0 )
+            {
+                this.openPagesWorkspace( 'pages' );
+                return;
+            }
 
             if ( parts[ 0 ] === 'settings' )
             {
@@ -2171,7 +2888,12 @@ document.addEventListener( 'alpine:init', () =>
                 // Templates moved under Site (Mikey); the old address
                 // still lands.
                 if ( parts[ 1 ] === 'templates' ) { this.openSiteWorkspace( 'templates' ); }
-                else { this.openPagesWorkspace( 'pages' ); }
+                else
+                {
+                    this.openPagesWorkspace( 'pages' );
+
+                    if ( parts[ 1 ] !== undefined && this.pages.some( ( page ) => page.id === parts[ 1 ] ) ) { this.selectPagesRow( parts[ 1 ] ); }
+                }
 
                 return;
             }
@@ -2213,7 +2935,12 @@ document.addEventListener( 'alpine:init', () =>
                 await this.loadCollection();
 
                 if ( parts[ 2 ] === 'fields' ) { this.openFields(); }
-                if ( parts[ 2 ] === 'layouts' ) { this.showLayoutsView(); }
+                if ( parts[ 2 ] === 'layouts' )
+                {
+                    this.showLayoutsView();
+
+                    if ( parts[ 3 ] !== undefined ) { this.selectLayoutRow( parts[ 3 ] ); }
+                }
                 if ( parts[ 2 ] === 'template' && parts[ 3 ] !== undefined ) { this.layoutName = parts[ 3 ]; }
                 if ( parts[ 2 ] === 'index' || parts[ 2 ] === 'template' ) { this.openSurface( parts[ 2 ] ); }
                 if ( parts[ 2 ] === 'entry' && parts[ 3 ] !== undefined ) { this.openEntryLayout( parts[ 3 ] ); }
@@ -2225,8 +2952,14 @@ document.addEventListener( 'alpine:init', () =>
             {
                 this.openTaxonomy( `${parts[ 1 ]}.json` );
 
+                if ( parts[ 2 ] === 'template' && parts[ 3 ] !== undefined ) { this.layoutName = parts[ 3 ]; }
                 if ( parts[ 2 ] === 'index' || parts[ 2 ] === 'template' ) { this.openSurface( parts[ 2 ] ); }
-                if ( parts[ 2 ] === 'layouts' ) { this.showTaxonomyLayoutsView(); }
+                if ( parts[ 2 ] === 'layouts' )
+                {
+                    this.showTaxonomyLayoutsView();
+
+                    if ( parts[ 3 ] !== undefined ) { this.selectLayoutRow( parts[ 3 ] ); }
+                }
             }
 
             if ( parts[ 0 ] === 'menu' && this.menuNames.includes( parts[ 1 ] ) )
@@ -2506,7 +3239,7 @@ document.addEventListener( 'alpine:init', () =>
 
             const editor = this.workspace === 'taxonomy' ? this.taxonomyEditor : this.collectionEditor;
 
-            if ( this.surface === 'template' ) { return this.workspace === 'collection' ? ( editor?.layouts?.[ this.layoutName ]?.blocks ?? editor?.templateBlocks ?? [] ) : ( editor?.templateBlocks ?? [] ); }
+            if ( this.surface === 'template' ) { return editor?.layouts?.[ this.layoutName ]?.blocks ?? editor?.templateBlocks ?? []; }
             if ( this.surface === 'index' ) { return editor?.indexBlocks ?? []; }
             if ( this.surface === 'entry' ) { return editor?.entryLayouts?.[ this.sampleEntryId ] ?? []; }
 
@@ -3393,20 +4126,30 @@ document.addEventListener( 'alpine:init', () =>
         // Hierarchy turns on freely; turning it off is locked while
         // any term is nested (the server refuses it too) - structure
         // is never severed silently.
-        async toggleTaxonomyHierarchical ()
+        // Off with nested terms asks first (Mikey, 2026-09-05): the
+        // terms flatten to the top level in one journaled write, so
+        // undo brings the nesting back.
+        async toggleTaxonomyHierarchical ( confirmed = false )
         {
             const editor = this.taxonomyEditor;
 
             if ( editor === null ) { return; }
-            if ( editor.hierarchical === true && this.taxonomyHasNested ) { return; }
 
+            if ( editor.hierarchical === true && this.taxonomyHasNested && !confirmed )
+            {
+                this.hierarchyOffOpen = true;
+                return;
+            }
+
+            this.hierarchyOffOpen = false;
             this.suppressReloadUntil = Date.now() + 1500;
             await fetch( '/api/taxonomy', {
                 method: 'PUT',
                 headers: { 'content-type': 'application/json' },
-                body: JSON.stringify( { file: this.workspaceFile, patch: { hierarchical: editor.hierarchical !== true } } ),
+                body: JSON.stringify( { file: this.workspaceFile, patch: { hierarchical: editor.hierarchical !== true, ...( editor.hierarchical === true ? { flatten: true } : {} ) } } ),
             } );
             await this.loadTaxonomy();
+            void this.refresh();
         },
 
         async toggleCollectionSetting ( key )
@@ -3546,6 +4289,26 @@ document.addEventListener( 'alpine:init', () =>
             if ( this.fieldsDraft === null || this.selectedFieldKey === null ) { return null; }
 
             return this.fieldsDraft.find( ( field ) => field.key === this.selectedFieldKey ) ?? null;
+        },
+
+        // The field's tag as a layout would write it; the line under
+        // the name copies it on click (Mikey, 2026-09-03) and says
+        // "Copied" for a moment in its place.
+        get fieldTag ()
+        {
+            return this.fieldEditor === null ? '' : `{{ $entry.${this.fieldEditor.key} }}`;
+        },
+
+        async copyFieldTag ()
+        {
+            const tag = this.fieldTag;
+
+            if ( tag === '' ) { return; }
+
+            await copyText( tag );
+            this.fieldTagCopied = true;
+            clearTimeout( this.fieldTagCopiedTimer );
+            this.fieldTagCopiedTimer = setTimeout( () => { this.fieldTagCopied = false; }, 1400 );
         },
 
         // The simple types a field can become from the chrome; select,
@@ -3706,6 +4469,7 @@ document.addEventListener( 'alpine:init', () =>
         showTaxonomyLayoutsView ()
         {
             this.taxonomyView = 'layouts';
+            this.layoutsRowName = null;
             this.selectedTermId = null;
         },
 
@@ -4255,6 +5019,125 @@ document.addEventListener( 'alpine:init', () =>
             list.splice( 0, list.length, ...ordered, ...rest );
         },
 
+        // A term dropped in a hierarchical taxonomy: the same rule as
+        // the pages table. The family (the term and its descendants)
+        // lands whole; the slot's depth, clamped to what the neighbours
+        // allow, becomes the parent; siblings keep their order. A flat
+        // taxonomy is the plain sorter.
+        async sortTermRows ( key, container )
+        {
+            const editor = this.taxonomyEditor;
+
+            if ( editor === null ) { return; }
+            if ( editor.hierarchical !== true )
+            {
+                await this.sortRows( 'term', container );
+                return;
+            }
+
+            const moved = editor.terms.find( ( term ) => term.id === key );
+
+            if ( moved === undefined )
+            {
+                this.sortEpoch += 1;
+                return;
+            }
+
+            const descendants = new Set();
+            const collect = ( id ) =>
+            {
+                for ( const term of editor.terms )
+                {
+                    if ( term.parent === id && !descendants.has( term.id ) )
+                    {
+                        descendants.add( term.id );
+                        collect( term.id );
+                    }
+                }
+            };
+
+            collect( key );
+
+            const domRows = [ ...container.querySelectorAll( '[data-sort-id]' ) ].filter( ( row ) => row.dataset.sortId === key || !descendants.has( row.dataset.sortId ) );
+            const self = domRows.find( ( row ) => row.dataset.sortId === key );
+
+            if ( self === undefined )
+            {
+                this.sortEpoch += 1;
+                return;
+            }
+
+            const at = domRows.indexOf( self );
+            const above = domRows[ at - 1 ] ?? null;
+            const below = domRows[ at + 1 ] ?? null;
+            const min = below === null ? 0 : Number( below.dataset.depth );
+            const max = above === null ? 0 : Number( above.dataset.depth ) + 1;
+            const requested = self.dataset.dropDepth === undefined ? min : Number( self.dataset.dropDepth );
+            const depth = Math.min( max, Math.max( min, requested ) );
+
+            self.dataset.dropped = '1';
+
+            const family = this.termRows.filter( ( row ) => row.term.id === key || descendants.has( row.term.id ) );
+            const rootDepth = family[ 0 ]?.depth ?? 0;
+            const flat = [];
+
+            for ( const row of domRows )
+            {
+                if ( row === self )
+                {
+                    for ( const member of family ) { flat.push( { id: member.term.id, depth: member.depth - rootDepth + depth } ); }
+                    continue;
+                }
+
+                flat.push( { id: row.dataset.sortId, depth: Number( row.dataset.depth ) } );
+            }
+
+            // Depths become parents: the nearest earlier row one level up.
+            const stack = [];
+            const parents = new Map();
+            const order = [];
+
+            for ( const entry of flat )
+            {
+                while ( stack.length > entry.depth ) { stack.pop(); }
+
+                parents.set( entry.id, entry.depth > 0 ? stack[ entry.depth - 1 ] : undefined );
+                order.push( entry.id );
+                stack[ entry.depth ] = entry.id;
+                stack.length = entry.depth + 1;
+            }
+
+            const before = moved.parent;
+            const after = parents.get( key );
+
+            // The list takes the new shape at once; the writes land
+            // behind it (the parent, then the order) and the reload
+            // confirms.
+            if ( after === undefined ) { delete moved.parent; }
+            else { moved.parent = after; }
+
+            this.applyRowOrder( editor.terms, 'id', order );
+            this.sortEpoch += 1;
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            if ( before !== after )
+            {
+                await fetch( '/api/term', {
+                    method: 'PUT',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify( { file: this.workspaceFile, id: key, parent: after === undefined ? null : after } ),
+                } );
+            }
+
+            await fetch( '/api/taxonomy', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file: this.workspaceFile, patch: { termOrder: editor.terms.map( ( term ) => term.id ) } } ),
+            } );
+            await this.loadTaxonomy();
+            void this.refresh();
+        },
+
         async sortRows ( kind, container )
         {
             const ids = this.sortedIdsIn( container );
@@ -4385,9 +5268,383 @@ document.addEventListener( 'alpine:init', () =>
         {
             this.userMenuOpen = false;
 
+            if ( where === 'profile' )
+            {
+                this.profileDraft = { name: this.snapshot?.user?.name ?? '', email: this.snapshot?.user?.email ?? '', github: this.snapshot?.user?.github ?? '' };
+                this.profileOpen = true;
+                return;
+            }
+
+            // The support row (Mikey, 2026-09-03): an intro first, never
+            // the site straight away - a word on what supporting means,
+            // and a way to say "already one" without leaving.
+            if ( where === 'support' )
+            {
+                this.supporterIntroOpen = true;
+                return;
+            }
+
+            // The sponsor row, the commercial sibling: the intro says
+            // sponsorship is a conversation and readies the email; the
+            // key modal waits behind "I already have a key".
+            if ( where === 'sponsor' )
+            {
+                this.sponsorIntroOpen = true;
+                return;
+            }
+
+            // The License row (Mikey, 2026-09-03): straight to the
+            // License card in Site settings, flashed so the eye lands.
+            if ( where === 'license' )
+            {
+                this.openSettings();
+                this.flashLicenseCard();
+                return;
+            }
+
             if ( where === 'settings' ) { this.openSettings(); }
             else if ( where === 'theme' ) { this.openTheme(); }
             else { this.openMediaWorkspace(); }
+        },
+
+        flashLicenseCard ()
+        {
+            let attempts = 0;
+            const attempt = () =>
+            {
+                attempts += 1;
+
+                const card = document.querySelector( '[data-license-card]' );
+
+                if ( card === null )
+                {
+                    if ( attempts < 12 ) { setTimeout( attempt, 250 ); }
+
+                    return;
+                }
+
+                card.scrollIntoView( { behavior: 'smooth', block: 'center' } );
+                card.classList.remove( 'cs-jump-flash', 'cs-jump-flash-card' );
+                void card.offsetWidth;
+                card.classList.add( 'cs-jump-flash', 'cs-jump-flash-card' );
+                setTimeout( () => card.classList.remove( 'cs-jump-flash', 'cs-jump-flash-card' ), 2800 );
+            };
+
+            setTimeout( attempt, 150 );
+        },
+
+        // "I'm already a supporter": straight to the key.
+        openSupporterKey ()
+        {
+            this.supporterIntroOpen = false;
+            this.supporterKey = '';
+            this.supporterOpen = true;
+        },
+
+        // "Become a supporter": the link opens the page in a new tab
+        // on its own; the key modal waits here for the key the email
+        // brings.
+        becomeSupporter ()
+        {
+            this.openSupporterKey();
+        },
+
+        closeSupporter ()
+        {
+            if ( String( this.supporterKey ?? '' ).trim() !== '' ) { this.discardPrompt = 'supporter'; }
+            else { this.supporterOpen = false; }
+        },
+
+        // "I'm already a sponsor": straight to the key, from the intro
+        // or the settings card.
+        openSponsorKey ()
+        {
+            this.sponsorIntroOpen = false;
+            this.sponsorKey = '';
+            this.sponsorKeyProblem = '';
+            this.sponsorOpen = true;
+        },
+
+        closeSponsor ()
+        {
+            if ( String( this.sponsorKey ?? '' ).trim() !== '' ) { this.discardPrompt = 'sponsor'; }
+            else { this.sponsorOpen = false; }
+        },
+
+        // Verify the sponsor key: stored as sponsorConfirm the way the
+        // supporter key is stored, with no wall step after - sponsor
+        // recognition is workspace-shaped and arrives later (BUSINESS
+        // 5.5).
+        async verifySponsor ()
+        {
+            const key = String( this.sponsorKey ?? '' ).trim();
+
+            if ( key === '' ) { return; }
+
+            const response = await fetch( '/api/sponsor', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { key } ),
+            } );
+
+            if ( !response.ok )
+            {
+                const failed = await response.json().catch( () => ( {} ) );
+
+                this.sponsorKeyProblem = typeof failed.error === 'string' ? failed.error : t( 'supporterKeyProblem' );
+                return;
+            }
+
+            this.sponsorKeyProblem = '';
+            this.sponsorOpen = false;
+            void this.refresh();
+        },
+
+        // Verify (EDITOR: the account badge): the key goes into the user
+        // config as supporterConfirm. The real verification call, made
+        // with the person's consent, is owed before go-live
+        // (DEVELOPMENT); until then any stored key counts.
+        async verifySupporter ()
+        {
+            const key = String( this.supporterKey ?? '' ).trim();
+
+            if ( key === '' ) { return; }
+
+            const response = await fetch( '/api/supporter', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { key } ),
+            } );
+
+            // A key that does not check out keeps the modal open and
+            // says why, in the server's words.
+            if ( !response.ok )
+            {
+                const failed = await response.json().catch( () => ( {} ) );
+
+                this.supporterKeyProblem = typeof failed.error === 'string' ? failed.error : t( 'supporterKeyProblem' );
+                return;
+            }
+
+            this.supporterKeyProblem = '';
+            this.supporterOpen = false;
+
+            // Once the key passes, the supporter wall is offered (Mikey,
+            // 2026-09-03): a second modal showing what would be sent,
+            // prefilled from the profile. Someone already on the wall is
+            // not asked again.
+            if ( this.snapshot?.user?.wall !== true ) { this.openSupporterWall(); }
+
+            void this.refresh();
+        },
+
+        // The wall modal, prefilled from the profile: after Verify, and
+        // again from the menu's supporter row (Mikey, 2026-09-03) so a
+        // decline can be revisited and an entry edited or left.
+        openSupporterWall ()
+        {
+            this.userMenuOpen = false;
+            this.supporterWallDraft = { name: this.snapshot?.user?.name ?? '', github: this.snapshot?.user?.github ?? '' };
+            this.supporterWallOpen = true;
+        },
+
+        get isOnWall ()
+        {
+            return this.snapshot?.user?.wall === true;
+        },
+
+        get supporterWallReady ()
+        {
+            return String( this.supporterWallDraft.name ?? '' ).trim() !== '' && String( this.supporterWallDraft.github ?? '' ).trim() !== '';
+        },
+
+        get supporterWallDirty ()
+        {
+            return String( this.supporterWallDraft.name ?? '' ).trim() !== String( this.snapshot?.user?.name ?? '' ).trim()
+                || String( this.supporterWallDraft.github ?? '' ).trim() !== String( this.snapshot?.user?.github ?? '' ).trim();
+        },
+
+        // Closing without deciding: an edited entry asks first, like
+        // every form; an untouched one just closes.
+        closeSupporterWall ()
+        {
+            if ( this.supporterWallDirty ) { this.discardPrompt = 'supporterWall'; }
+            else { this.supporterWallOpen = false; }
+        },
+
+        // Not now, or Leave the wall (Mikey, 2026-09-05: a toggle here,
+        // never an email): either way the person stays on the wall as a
+        // private supporter, and the server sends the removal when an
+        // entry was up.
+        async declineSupporterWall ()
+        {
+            await fetch( '/api/supporter-wall', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { join: false } ),
+            } );
+            this.supporterWallOpen = false;
+            void this.refresh();
+        },
+
+        async joinSupporterWall ()
+        {
+            if ( !this.supporterWallReady ) { return; }
+
+            await fetch( '/api/supporter-wall', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { join: true, name: String( this.supporterWallDraft.name ?? '' ).trim(), github: String( this.supporterWallDraft.github ?? '' ).trim() } ),
+            } );
+            this.supporterWallOpen = false;
+            void this.refresh();
+        },
+
+        get avatarSrc ()
+        {
+            return `/api/avatar?v=${this.avatarVersion}`;
+        },
+
+        // The avatar: stored beside config.json in the user config
+        // directory and named by its "avatar" key.
+        async uploadAvatar ( event )
+        {
+            const file = event.target.files?.[ 0 ];
+
+            if ( file === undefined ) { return; }
+
+            await fetch( '/api/profile-avatar', {
+                method: 'POST',
+                headers: { 'content-type': file.type },
+                body: file,
+            } );
+            event.target.value = '';
+            this.avatarVersion += 1;
+            void this.refresh();
+        },
+
+        async removeAvatar ()
+        {
+            await fetch( '/api/profile-avatar', { method: 'DELETE' } );
+            this.avatarVersion += 1;
+            void this.refresh();
+        },
+
+        // The profile (EDITOR: name and basics in the user-level config,
+        // no account needed) so Studio greets a person.
+        async saveProfile ()
+        {
+            await fetch( '/api/profile', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { name: String( this.profileDraft.name ?? '' ).trim(), email: String( this.profileDraft.email ?? '' ).trim(), github: String( this.profileDraft.github ?? '' ).trim() } ),
+            } );
+            this.profileOpen = false;
+            void this.refresh();
+        },
+
+        // Appearance (EDITOR): System, Light, or Dark for the chrome only,
+        // a person's preference in the browser, never a site's.
+        get themeMode ()
+        {
+            let stored = null;
+
+            try { stored = localStorage.getItem( 'studio-theme' ); }
+            catch { /* storage blocked */ }
+
+            void this.themeTick;
+
+            return stored === 'dark' || stored === 'light' ? stored : 'system';
+        },
+
+        setThemeMode ( mode )
+        {
+            const dark = mode === 'dark' || ( mode === 'system' && matchMedia( '(prefers-color-scheme: dark)' ).matches );
+
+            this.themeDark = dark;
+
+            if ( dark ) { document.documentElement.dataset.theme = 'dark'; }
+            else { delete document.documentElement.dataset.theme; }
+
+            try
+            {
+                if ( mode === 'system' ) { localStorage.removeItem( 'studio-theme' ); }
+                else { localStorage.setItem( 'studio-theme', mode ); }
+            }
+            catch
+            {
+                /* storage blocked */
+            }
+
+            this.themeTick += 1;
+        },
+
+        // A confirmed supporter (BUSINESS 5.5): the user config's flag,
+        // set by the supporter confirmation flow (pre-launch).
+        get isSupporter ()
+        {
+            return this.snapshot?.user?.supporter === true;
+        },
+
+        // A confirmed sponsor (BUSINESS 5.5): the commercial sibling
+        // of the supporter flag, lit by a verified sponsor key.
+        get isSponsor ()
+        {
+            return this.snapshot?.user?.sponsor === true;
+        },
+
+        // A monthly supporter (Mikey, 2026-09-04): the registry said a
+        // subscription stands behind the key, so the menu offers
+        // Manage subscription, a link into Stripe's customer portal.
+        get hasSubscription ()
+        {
+            return this.isSupporter && this.snapshot?.user?.subscription === true;
+        },
+
+        // The split (Mikey, 2026-09-04): asks follow the site, status
+        // follows the person. One ask at most, in the site's voice, and
+        // only to someone holding no key of either kind - the ask never
+        // targets someone already giving (BUSINESS 5.5).
+        get supportAsk ()
+        {
+            if ( this.isSupporter || this.isSponsor ) { return null; }
+
+            return this.licensing.declaredUse === 'commercial' ? 'sponsor' : 'supporter';
+        },
+
+        // The settings card's title follows what the card holds.
+        get supportCardTitle ()
+        {
+            if ( this.isSupporter && this.isSponsor ) { return t( 'supportCardTitleBoth' ); }
+            if ( this.isSponsor || this.supportAsk === 'sponsor' ) { return t( 'sponsorCardTitle' ); }
+
+            return t( 'supporterCardTitle' );
+        },
+
+        // Projects needing a license (EDITOR: the badge's one reason to
+        // light): this site, when its evaluation has ended without a
+        // key. Studio knows one site at a time.
+        get licensesNeeded ()
+        {
+            return this.licensing.phase === 'expired' ? 1 : 0;
+        },
+
+        get licensesNeededLine ()
+        {
+            return tCount( 'licensesNeeded', this.licensesNeeded );
+        },
+
+        // The per-site publish count (the snapshot has carried it
+        // since the supporter moments; the supporter card is the
+        // first chrome surface to show it).
+        get publishCount ()
+        {
+            return this.snapshot?.publishCount ?? 0;
+        },
+
+        get publishCountLine ()
+        {
+            return tCount( 'publishCountLine', this.publishCount );
         },
 
         get studioVersionLine ()
@@ -4409,7 +5666,7 @@ document.addEventListener( 'alpine:init', () =>
 
         get layoutRows ()
         {
-            const layouts = this.collectionEditor?.layouts ?? {};
+            const layouts = ( this.workspace === 'taxonomy' ? this.taxonomyEditor?.layouts : this.collectionEditor?.layouts ) ?? {};
             const names = Object.keys( layouts ).sort( ( a, b ) => ( a === 'default' ? -1 : b === 'default' ? 1 : a.localeCompare( b ) ) );
 
             return names.map( ( name ) => ( { name, ...layouts[ name ] } ) );
@@ -4417,12 +5674,55 @@ document.addEventListener( 'alpine:init', () =>
 
         get layoutsRow ()
         {
-            return this.workspace === 'collection' && this.collectionView === 'layouts' ? ( this.layoutRows.find( ( layout ) => layout.name === this.layoutsRowName ) ?? null ) : null;
+            const viewing = ( this.workspace === 'collection' && this.collectionView === 'layouts' ) || ( this.workspace === 'taxonomy' && this.taxonomyView === 'layouts' );
+
+            if ( !viewing ) { return null; }
+
+            // The index page is a row too (Mikey): its template and its
+            // edit live in the sidebar like a layout's.
+            if ( this.layoutsRowName === 'index' )
+            {
+                const editor = this.workspace === 'taxonomy' ? this.taxonomyEditor : this.collectionEditor;
+
+                return editor === null ? null : { name: 'index', index: true, template: editor.indexTemplate ?? null, off: editor.index === false };
+            }
+
+            return this.layoutRows.find( ( layout ) => layout.name === this.layoutsRowName ) ?? null;
+        },
+
+        createIndexLayout ()
+        {
+            if ( this.workspace === 'taxonomy' ) { void this.toggleTaxonomySetting(); }
+            else { void this.toggleCollectionSetting( 'index' ); }
         },
 
         layoutFollowersLine ( layout )
         {
-            return tCount( 'layoutFollowers', layout.entries ?? 0 );
+            return tCount( this.workspace === 'taxonomy' ? 'layoutFollowersTerms' : 'layoutFollowers', layout.entries ?? 0 );
+        },
+
+        // The editor behind the layouts: the collection's or the
+        // taxonomy's, reloaded the same way.
+        async reloadLayoutOwner ()
+        {
+            if ( this.workspace === 'taxonomy' ) { await this.loadTaxonomy(); }
+            else { await this.loadCollection(); }
+        },
+
+        async chooseTermLayout ( id, value )
+        {
+            const file = this.workspaceFile;
+
+            if ( file === null ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/term', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { file, id, layout: value } ),
+            } );
+            await this.loadTaxonomy();
+            this.contentVersion += 1;
         },
 
         selectLayoutRow ( name )
@@ -4442,12 +5742,12 @@ document.addEventListener( 'alpine:init', () =>
         async setNamedLayoutTemplate ( name, template )
         {
             this.suppressReloadUntil = Date.now() + 1500;
-            await fetch( '/api/collection', {
+            await fetch( this.workspace === 'taxonomy' ? '/api/taxonomy' : '/api/collection', {
                 method: 'PUT',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify( { file: this.workspaceFile, patch: { layoutTemplates: { [ name ]: template === 'default' ? null : template } } } ),
             } );
-            await this.loadCollection();
+            await this.reloadLayoutOwner();
             this.contentVersion += 1;
         },
 
@@ -4508,7 +5808,9 @@ document.addEventListener( 'alpine:init', () =>
 
         closeNavCreate ()
         {
-            if ( String( this.navCreateLabel ?? '' ).trim() !== '' ) { this.discardPrompt = 'navCreate'; }
+            const fieldWork = this.navCreateFields.some( ( row ) => row.label.trim() !== '' );
+
+            if ( String( this.navCreateLabel ?? '' ).trim() !== '' || fieldWork ) { this.discardPrompt = 'navCreate'; }
             else { this.navCreate = null; }
         },
 
@@ -4521,6 +5823,10 @@ document.addEventListener( 'alpine:init', () =>
         {
             if ( this.discardPrompt === 'create' ) { this.createKind = null; }
             if ( this.discardPrompt === 'navCreate' ) { this.navCreate = null; }
+            if ( this.discardPrompt === 'supporter' ) { this.supporterOpen = false; }
+            if ( this.discardPrompt === 'sponsor' ) { this.sponsorOpen = false; }
+            if ( this.discardPrompt === 'supporterWall' ) { this.supporterWallOpen = false; }
+            if ( this.discardPrompt === 'publishConfirm' ) { this.publishConfirmOpen = false; }
 
             this.discardPrompt = null;
         },
@@ -5114,6 +6420,7 @@ document.addEventListener( 'alpine:init', () =>
         syncSettingsDrafts ()
         {
             this.siteNameDraft = this.snapshot?.config?.name ?? '';
+            this.siteOriginDraft = this.snapshot?.origin ?? '';
 
             const theme = this.snapshot?.config?.theme;
 
@@ -5917,28 +7224,6 @@ document.addEventListener( 'alpine:init', () =>
             void this.refresh();
         },
 
-        // Chrome dark mode: the boot script in index.html resolves
-        // the first paint (stored choice, else the OS preference);
-        // the toggle stores an explicit choice per browser. Only the
-        // chrome re-voices - site previews keep the site's own look.
-        toggleTheme ()
-        {
-            this.themeDark = !this.themeDark;
-
-            if ( this.themeDark ) { document.documentElement.dataset.theme = 'dark'; }
-            else { delete document.documentElement.dataset.theme; }
-
-            // In private mode the choice just does not persist.
-            try
-            {
-                localStorage.setItem( 'studio-theme', this.themeDark ? 'dark' : 'light' );
-            }
-            catch
-            {
-                /* storage blocked */
-            }
-        },
-
         get folderName ()
         {
             return this.snapshot?.folderName ?? '';
@@ -5963,6 +7248,55 @@ document.addEventListener( 'alpine:init', () =>
             this.siteNameTouched = true;
             clearTimeout( this.siteNameTimer );
             this.siteNameTimer = setTimeout( () => void this.saveSiteName( this.siteNameDraft ), 500 );
+        },
+
+        // The public address (SCHEMA 12.3): saved on a pause like the
+        // name; a refused one marks the field until the next keystroke.
+        get siteOrigin ()
+        {
+            return this.snapshot?.origin ?? '';
+        },
+
+        // The license page with this site's address filled in
+        // (casomer.com/license?site=<host>, the domain the key will
+        // name), so the key is bought for the address the site
+        // declares; the bare page without one.
+        get licenseUrl ()
+        {
+            const page = 'https://casomer.com/license';
+
+            try
+            {
+                return this.siteOrigin ? `${page}?site=${encodeURIComponent( new URL( this.siteOrigin ).host.toLowerCase() )}` : page;
+            }
+            catch
+            {
+                return page;
+            }
+        },
+
+        markSiteOriginDirty ()
+        {
+            this.siteOriginTouched = true;
+            this.siteOriginProblem = false;
+            clearTimeout( this.siteOriginTimer );
+            this.siteOriginTimer = setTimeout( () => void this.saveSiteOrigin( this.siteOriginDraft ), 600 );
+        },
+
+        async saveSiteOrigin ( origin )
+        {
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const response = await fetch( '/api/site-meta', {
+                method: 'PUT',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify( { origin: typeof origin === 'string' ? origin : '' } ),
+            } );
+
+            this.siteOriginProblem = !response.ok;
+            this.siteOriginTouched = false;
+
+            if ( response.ok ) { void this.refresh(); }
         },
 
         async saveSiteName ( name )
@@ -6007,12 +7341,17 @@ document.addEventListener( 'alpine:init', () =>
 
         // Switching to commercial repeats the micro-assent the CLI
         // collects at init (BUSINESS 5.4); back to personal is direct.
-        requestUseChange ( value )
+        requestUseChange ( value, element = null )
         {
             if ( value === this.declaredUse ) { return; }
 
             if ( value === 'commercial' )
             {
+                // The select shows the current use until the assent
+                // lands (Mikey: Cancel left it on "commercial"); a
+                // confirm moves declaredUse and the binding follows.
+                if ( element !== null ) { element.value = this.declaredUse; }
+
                 this.commercialAssentOpen = true;
                 return;
             }
@@ -6041,6 +7380,368 @@ document.addEventListener( 'alpine:init', () =>
         {
             this.remoteDraft = this.remoteUrl;
             this.remoteEditOpen = true;
+            this.github = { ...this.github, phase: 'idle', error: '', repositories: [] };
+            void this.checkGitHub();
+        },
+
+        // Step 1 is done when a token is on hand (this Studio, or caso init
+        // earlier): the steps open at the right one.
+        get githubGrantedLine ()
+        {
+            const n = this.github.repositories.length;
+
+            return n === 0 ? t( 'githubGrantedNone' ) : tCount( 'githubGranted', n );
+        },
+
+        get githubAuthorized ()
+        {
+            return this.github.phase === 'loading' || this.github.phase === 'pick';
+        },
+
+        async checkGitHub ()
+        {
+            try
+            {
+                const body = await ( await fetch( '/api/github' ) ).json();
+
+                if ( body.connected === true && this.remoteEditOpen ) { await this.loadGitHubRepositories(); }
+            }
+            catch
+            {
+                /* the steps start at one */
+            }
+        },
+
+        // Connect GitHub: the same device flow caso init runs. The
+        // server holds the wait; this side shows the code and asks
+        // every few seconds whether the person has authorized.
+        // The code to the clipboard; the button says Copied for a moment.
+        async copyGitHubCode ()
+        {
+            await copyText( this.github.userCode );
+            this.githubCodeCopied = true;
+            clearTimeout( this.githubCodeCopiedTimer );
+            this.githubCodeCopiedTimer = setTimeout( () => { this.githubCodeCopied = false; }, 1400 );
+        },
+
+        async connectGitHub ()
+        {
+            this.github = { ...this.github, phase: 'asking', error: '' };
+
+            try
+            {
+                const response = await fetch( '/api/github/connect', { method: 'POST' } );
+                const body = await response.json().catch( () => ( {} ) );
+
+                if ( !response.ok )
+                {
+                    this.github = { ...this.github, phase: 'idle', error: typeof body.error === 'string' ? body.error : t( 'githubUnreachable' ) };
+                    return;
+                }
+
+                if ( body.connected === true )
+                {
+                    await this.loadGitHubRepositories();
+                    return;
+                }
+
+                this.github = { ...this.github, phase: 'code', userCode: String( body.userCode ?? '' ), verificationUri: String( body.verificationUriComplete ?? body.verificationUri ?? 'https://github.com/login/device' ) };
+                this.watchGitHub();
+            }
+            catch
+            {
+                this.github = { ...this.github, phase: 'idle', error: t( 'publishUnreachable' ) };
+            }
+        },
+
+        watchGitHub ()
+        {
+            clearTimeout( this.githubTimer );
+            this.githubTimer = setTimeout( async () =>
+            {
+                if ( this.github.phase !== 'code' || !this.remoteEditOpen ) { return; }
+
+                try
+                {
+                    const body = await ( await fetch( '/api/github' ) ).json();
+
+                    if ( body.connected === true )
+                    {
+                        await this.loadGitHubRepositories();
+                        return;
+                    }
+
+                    if ( typeof body.error === 'string' && body.error !== '' )
+                    {
+                        this.github = { ...this.github, phase: 'idle', error: body.error };
+                        return;
+                    }
+                }
+                catch
+                {
+                    /* asked again in a moment */
+                }
+
+                this.watchGitHub();
+            }, 3000 );
+        },
+
+        async loadGitHubRepositories ()
+        {
+            this.github = { ...this.github, phase: 'loading', error: '' };
+
+            try
+            {
+                const response = await fetch( '/api/github/repositories' );
+                const body = await response.json().catch( () => ( {} ) );
+
+                if ( !response.ok )
+                {
+                    this.github = { ...this.github, phase: 'idle', error: typeof body.error === 'string' ? body.error : t( 'githubUnreachable' ) };
+                    return;
+                }
+
+                const repositories = Array.isArray( body.repositories ) ? body.repositories : [];
+
+                this.github = { ...this.github, phase: 'pick', repositories };
+
+                const current = /github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/.exec( this.remoteUrl )?.[ 1 ] ?? '';
+
+                this.githubRepo = repositories.some( ( repository ) => repository.fullName === current ) ? current : ( repositories[ 0 ]?.fullName ?? '' );
+            }
+            catch
+            {
+                this.github = { ...this.github, phase: 'idle', error: t( 'publishUnreachable' ) };
+            }
+        },
+
+        async useGitHubRepository ()
+        {
+            if ( this.githubRepo === '' ) { return; }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            const response = await fetch( '/api/github/remote', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify( { fullName: this.githubRepo } ) } );
+            const body = await response.json().catch( () => ( {} ) );
+
+            if ( !response.ok )
+            {
+                this.github = { ...this.github, error: typeof body.error === 'string' ? body.error : t( 'publishUnreachable' ) };
+                return;
+            }
+
+            this.remoteEditOpen = false;
+            this.github = { ...this.github, phase: 'idle' };
+            void this.refresh();
+        },
+
+        get deployState ()
+        {
+            return this.snapshot?.deploy ?? { git: { enabled: true, github: 'none' }, target: null, hasCredential: false, credential: null, keyFile: '', hostKeyTrusted: false, lastDeployedAt: '' };
+        },
+
+        // Pull & push on publish: the remote's presence and the switch.
+        get gitDeployOn ()
+        {
+            return this.remoteUrl !== '' && this.deployState.git.enabled !== false;
+        },
+
+        get gitDeployExpired ()
+        {
+            return this.deployState.git.github === 'expired';
+        },
+
+        get gitDeployNote ()
+        {
+            if ( this.remoteUrl === '' ) { return t( 'goLiveGitNotSet' ); }
+            if ( this.gitDeployExpired && this.deployState.git.enabled !== false ) { return t( 'goLiveGitExpired' ); }
+
+            return this.deployState.git.enabled === false ? t( 'goLiveGitOff' ) : t( 'goLiveGitOn' );
+        },
+
+        async toggleGitDeploy ()
+        {
+            if ( this.remoteUrl === '' )
+            {
+                this.openRemoteEdit();
+                return;
+            }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/deploy/git', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify( { enabled: this.deployState.git.enabled === false } ) } );
+            void this.refresh();
+        },
+
+        // "user@host:folder", the destination in one breath.
+        get deployTargetLine ()
+        {
+            const target = this.deployState.target;
+
+            return target === null ? '' : `${target.user}@${target.host}${target.port === 22 ? '' : ':' + target.port}:${target.path}`;
+        },
+
+        get deployNote ()
+        {
+            const state = this.deployState;
+
+            if ( state.target === null ) { return t( 'goLiveNote' ); }
+            if ( !state.target.enabled ) { return t( 'goLiveOffNote' ); }
+            if ( !state.hasCredential ) { return t( 'goLiveNoSecret' ); }
+
+            return tFill( 'goLiveOnNote', { target: this.deployTargetLine } );
+        },
+
+        get deployTestLine ()
+        {
+            const test = this.deployTest;
+
+            if ( test === null ) { return ''; }
+            if ( !test.ok ) { return test.error; }
+
+            const path = this.deployDraft.path.trim() === '' ? '/' : this.deployDraft.path.trim();
+
+            return ( test.entries === 0 ? tFill( 'deployConnectedEmpty', { path } ) : ( test.entries === 1 ? tFill( 'deployConnectedOne', { path } ) : tFill( 'deployConnected', { path, n: test.entries } ) ) ) + ( test.trusted === 'new' ? ' ' + t( 'deployTrustedNew' ) : '' );
+        },
+
+        openDeployEdit ()
+        {
+            const target = this.deployState.target;
+
+            this.deployDraft = { host: target?.host ?? '', port: target === null || target.port === 22 ? '' : String( target.port ), user: target?.user ?? '', path: target?.path ?? '', password: '', keyFile: this.deployState.keyFile };
+            this.deployTest = null;
+            this.deployProblem = '';
+            this.deployEditOpen = true;
+        },
+
+        closeDeployEdit ()
+        {
+            this.deployEditOpen = false;
+            this.deployTest = null;
+            this.deployProblem = '';
+        },
+
+        deployDraftBody ()
+        {
+            const draft = this.deployDraft;
+
+            return {
+                host: draft.host.trim(),
+                port: draft.port.trim() === '' ? '' : Number( draft.port ),
+                user: draft.user.trim(),
+                path: draft.path.trim() === '' ? '/' : draft.path.trim(),
+                ...( draft.password === '' ? {} : { password: draft.password } ),
+                ...( draft.keyFile.trim() === '' ? {} : { keyFile: draft.keyFile.trim() } ),
+            };
+        },
+
+        // Test what is typed, saved or not: the person sees "Connected"
+        // before committing to anything.
+        async testDeploy ()
+        {
+            if ( this.deployTesting ) { return; }
+
+            this.deployTesting = true;
+            this.deployTest = null;
+            this.deployProblem = '';
+
+            try
+            {
+                const response = await fetch( '/api/deploy/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify( this.deployDraftBody() ) } );
+                const body = await response.json().catch( () => ( {} ) );
+
+                this.deployTest = body.ok === true ? { ...body, host: this.deployDraft.host.trim() } : { ok: false, error: typeof body.error === 'string' ? body.error : t( 'publishUnreachable' ) };
+            }
+            catch
+            {
+                this.deployTest = { ok: false, error: t( 'publishUnreachable' ) };
+            }
+
+            this.deployTesting = false;
+        },
+
+        async saveDeploy ()
+        {
+            this.deployProblem = '';
+            this.suppressReloadUntil = Date.now() + 1500;
+
+            // A test that succeeded for this host hands its key to Save,
+            // so "trusted" is true the moment the details are kept.
+            const test = this.deployTest;
+            const tested = test !== null && test.ok === true && test.host === this.deployDraft.host.trim() ? { hostKey: test.hostKey } : {};
+            const response = await fetch( '/api/deploy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify( { ...this.deployDraftBody(), enabled: true, ...tested } ) } );
+            const body = await response.json().catch( () => ( {} ) );
+
+            if ( !response.ok )
+            {
+                this.deployProblem = typeof body.error === 'string' ? body.error : t( 'publishUnreachable' );
+                return;
+            }
+
+            this.deployEditOpen = false;
+            this.deployTest = null;
+            void this.refresh();
+        },
+
+        async toggleDeploy ()
+        {
+            const target = this.deployState.target;
+
+            if ( target === null )
+            {
+                this.openDeployEdit();
+                return;
+            }
+
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/deploy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify( { enabled: !target.enabled } ) } );
+            void this.refresh();
+        },
+
+        async forgetDeployHostKey ()
+        {
+            this.suppressReloadUntil = Date.now() + 1500;
+            await fetch( '/api/deploy', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify( { forgetHostKey: true } ) } );
+            this.deployTest = null;
+            void this.refresh();
+        },
+
+        // Upload now: the retry after a publish whose upload failed.
+        async uploadNow ()
+        {
+            if ( this.deployUploading ) { return; }
+
+            this.deployUploading = true;
+
+            try
+            {
+                const response = await fetch( '/api/deploy/run', { method: 'POST' } );
+                const body = await response.json().catch( () => ( {} ) );
+
+                if ( this.publishCard !== null )
+                {
+                    this.publishCard = { ...this.publishCard, deploy: body.ok === true ? 'uploaded' : 'failed', deployError: body.ok === true ? '' : ( typeof body.error === 'string' ? body.error : t( 'publishUnreachable' ) ), deployUploaded: typeof body.uploaded === 'number' ? body.uploaded : 0, deployDeleted: typeof body.deleted === 'number' ? body.deleted : 0 };
+                }
+            }
+            catch
+            {
+                if ( this.publishCard !== null ) { this.publishCard = { ...this.publishCard, deploy: 'failed', deployError: t( 'publishUnreachable' ) }; }
+            }
+
+            this.deployUploading = false;
+            void this.refresh();
+        },
+
+        get publishUploadLine ()
+        {
+            const card = this.publishCard;
+
+            if ( card === null ) { return ''; }
+            if ( card.deploy === 'off' ) { return t( 'publishUploadOff' ); }
+            if ( card.deploy !== 'uploaded' ) { return ''; }
+
+            const moved = card.deployUploaded + card.deployDeleted;
+
+            return moved === 0 ? t( 'publishUploadedNone' ) : tCount( 'publishUploaded', moved );
         },
 
         async saveRemote ()
@@ -6189,8 +7890,10 @@ document.addEventListener( 'alpine:init', () =>
         },
 
         // Creating a collection or taxonomy: the + opens the creation
-        // modal - a name and the public-index choice - and a new
-        // collection lands on its Fields view (EDITOR section 5).
+        // modal - a name, the public-index choice, and for a
+        // collection its fields too (Mikey, 2026-09-03: the modal
+        // carries the whole shape, the born-complete doctrine) - and
+        // a new collection lands on its entry table.
         startNavCreate ( kind )
         {
             this.navCreate = kind;
@@ -6198,6 +7901,39 @@ document.addEventListener( 'alpine:init', () =>
             this.navCreateLabel = '';
             this.navCreateIndex = true;
             this.navCreateHierarchical = false;
+            this.navCreateFields = [];
+        },
+
+        addNavCreateField ()
+        {
+            this.navCreateFields.push( { label: '', type: 'text', required: false, refTarget: '' } );
+        },
+
+        removeNavCreateField ( index )
+        {
+            this.navCreateFields.splice( index, 1 );
+        },
+
+        // The reference targets the modal can offer: every taxonomy,
+        // or every EXISTING collection - the one being born is not in
+        // the snapshot yet, so it never offers itself.
+        navCreateFieldTargets ( row )
+        {
+            const pool = row.type === 'taxonomy' ? this.taxonomies : this.collections;
+
+            return pool.map( ( option ) => ( { value: option.file.replace( /\.json$/, '' ), label: option.label } ) );
+        },
+
+        setNavCreateFieldType ( row, value )
+        {
+            row.type = value;
+
+            if ( this.fieldNeedsTarget( row ) )
+            {
+                const options = this.navCreateFieldTargets( row );
+
+                if ( !options.some( ( option ) => option.value === row.refTarget ) ) { row.refTarget = options[ 0 ]?.value ?? ''; }
+            }
         },
 
         // The modal's live caption: "Saved as events.json ...". The
@@ -6274,15 +8010,18 @@ document.addEventListener( 'alpine:init', () =>
                 {
                     const failure = await response.json().catch( () => ( {} ) );
 
+                    this.navCreate = kind;
                     this.navCreateError = String( failure.error ?? t( 'createFailed' ) );
                     return;
                 }
 
                 const created = await response.json();
 
-                this.navCreate = null;
-                await this.loadCollection();
-                this.showLayoutsView();
+                await this.reloadLayoutOwner();
+
+                if ( this.workspace === 'taxonomy' ) { this.showTaxonomyLayoutsView(); }
+                else { this.showLayoutsView(); }
+
                 this.selectLayoutRow( created.name );
                 return;
             }
@@ -6334,6 +8073,37 @@ document.addEventListener( 'alpine:init', () =>
                 return;
             }
 
+            // The modal's field rows become the fields payload - the
+            // saveFields wire shape, keys derived the way the field
+            // modal derives them, "title" reserved for the seed.
+            const fieldRows = kind === 'collection' ? this.navCreateFields.filter( ( row ) => row.label.trim() !== '' ) : [];
+            const fieldKeys = [ 'title' ];
+            const fields = {};
+
+            for ( const row of fieldRows )
+            {
+                const fieldLabel = row.label.trim();
+                const words = fieldLabel.toLowerCase().replace( /[^a-z0-9]+/g, ' ' ).trim().split( ' ' ).filter( ( word ) => word !== '' );
+                const base = words.map( ( word, index ) => index === 0 ? word : word.charAt( 0 ).toUpperCase() + word.slice( 1 ) ).join( '' ) || 'field';
+                let key = base;
+                let suffix = 2;
+
+                while ( fieldKeys.includes( key ) )
+                {
+                    key = `${base}${suffix}`;
+                    suffix += 1;
+                }
+
+                fieldKeys.push( key );
+                fields[ key ] = {
+                    type: row.type === 'taxonomy' ? 'reference' : row.type,
+                    label: fieldLabel,
+                    required: row.required,
+                    ...( row.type === 'taxonomy' && row.refTarget !== '' ? { taxonomy: row.refTarget } : {} ),
+                    ...( row.type === 'reference' && row.refTarget !== '' ? { collection: row.refTarget } : {} ),
+                };
+            }
+
             const response = await fetch( kind === 'collection' ? '/api/collection' : '/api/taxonomy', {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
@@ -6341,15 +8111,19 @@ document.addEventListener( 'alpine:init', () =>
                     label,
                     ...( this.navCreateIndex ? {} : { index: false } ),
                     ...( kind === 'taxonomy' && this.navCreateHierarchical ? { hierarchical: true } : {} ),
+                    ...( fieldRows.length > 0 ? { fields } : {} ),
                 } ),
             } );
 
             if ( !response.ok )
             {
                 // A taken name (one namespace across collections and
-                // taxonomies, Mikey): the modal says so and stays open.
+                // taxonomies, Mikey): the modal says so and stays
+                // open - reopened here, since submit closes it
+                // eagerly, so the label and field rows survive.
                 const failure = await response.json().catch( () => ( {} ) );
 
+                this.navCreate = kind;
                 this.navCreateError = String( failure.error ?? t( 'createFailed' ) );
                 return;
             }
@@ -6358,11 +8132,13 @@ document.addEventListener( 'alpine:init', () =>
 
             await this.refresh();
 
+            // Land on the entry table (Mikey, 2026-09-03): with the
+            // fields defined in the modal, the natural next move is
+            // adding entries, not editing the shape.
             if ( kind === 'collection' )
             {
                 this.openCollection( created.file );
                 await this.loadCollection();
-                this.openFields();
             }
             else { this.openTaxonomy( created.file ); }
         },
@@ -6588,7 +8364,7 @@ document.addEventListener( 'alpine:init', () =>
 
                 this.confirmTarget = null;
                 this.confirmRowId = null;
-                await this.loadCollection();
+                await this.reloadLayoutOwner();
                 void this.refresh();
                 return;
             }
@@ -6765,7 +8541,7 @@ document.addEventListener( 'alpine:init', () =>
         // matching their Settings rule.
         get inspectorTrashTarget ()
         {
-            if ( this.layoutsRow !== null ) { return this.layoutsRow.name === 'default' ? '' : 'layout'; }
+            if ( this.layoutsRow !== null ) { return this.layoutsRow.name === 'default' || this.layoutsRow.index === true ? '' : 'layout'; }
             if ( this.workspace === 'pages' ) { return this.pagesRow !== null && !this.pageIsReserved( this.pagesRow ) ? 'page' : ''; }
             if ( this.canvasActive && this.selectedBlock !== null ) { return 'block'; }
             if ( this.workspace === 'collection' && this.entryEditor !== null ) { return 'entry'; }
@@ -6827,8 +8603,10 @@ document.addEventListener( 'alpine:init', () =>
             // not to the document root (Mikey's report); the bridge
             // deselects when there is nothing above.
             if ( this.selectedBlock !== null ) { this.sendToCanvas( { kind: 'ascend' } ); }
-            else if ( this.workspace === 'template' && this.surface !== null ) { this.openSiteWorkspace( 'templates' ); }
-            else if ( this.workspace === 'settings' && this.surface !== null && this.surface !== 'notFound' && this.surface !== 'header' && this.surface !== 'footer' ) { this.openSiteWorkspace( 'partials' ); }
+            // Back from a canvas root goes where the crumb's first step
+            // goes (Mikey, 2026-09-03): the table it came from, never
+            // the settings page a partial once lived under.
+            else if ( this.surface !== null && this.canvasHome !== null ) { this.openCanvasHome(); }
             else if ( this.surface !== null ) { this.closeSurface(); }
             else if ( this.selectedFieldKey !== null ) { this.selectedFieldKey = null; }
             else if ( this.selectedEntryId !== null ) { this.selectedEntryId = null; }
@@ -7226,7 +9004,7 @@ document.addEventListener( 'alpine:init', () =>
                 const sample = this.surface === 'template' && this.sampleEntryId !== null
                     ? `&${isTaxonomy ? 'term' : 'entry'}=${this.sampleEntryId}`
                     : '';
-                const layout = this.surface === 'template' && !isTaxonomy ? `&layout=${this.layoutName}` : '';
+                const layout = this.surface === 'template' ? `&layout=${this.layoutName}` : '';
 
                 const surfaceName = this.surface === 'template'
                     ? ( isTaxonomy ? 'term-template' : 'entry-template' )
@@ -7250,6 +9028,15 @@ document.addEventListener( 'alpine:init', () =>
             if ( this.workspace === 'template' && this.surface !== null ) { return { label: t( 'viewTemplates' ).toLowerCase(), view: [ 'site', 'templates' ] }; }
 
             return null;
+        },
+
+        openScopeSelection ()
+        {
+            const scope = this.scopeSelection;
+
+            if ( scope === null ) { return; }
+            if ( scope.kind === 'partial' ) { this.openPartial( scope.name ); }
+            else { this.openTemplate( scope.name ); }
         },
 
         openCanvasHome ()
@@ -7555,6 +9342,7 @@ document.addEventListener( 'alpine:init', () =>
         // panes' own conditions.
         get contentTabFilled ()
         {
+            if ( this.scopeSelection !== null ) { return true; }
             if ( this.canvasActive && ( this.blockEditor !== null || this.repeatEditor !== null ) ) { return true; }
             if ( this.canvasActive && this.selectedBlock !== null && this.blockInfoAt( this.selectedBlock )?.kind === 'slot' ) { return true; }
             if ( this.workspace === 'media' ) { return true; }
@@ -7861,6 +9649,7 @@ document.addEventListener( 'alpine:init', () =>
 
         get inspectorTitle ()
         {
+            if ( this.scopeSelection !== null ) { return this.scopeSelection.name; }
             if ( this.repeatEditor !== null ) { return t( 'blockRepeat' ); }
 
             if ( this.surface !== null )
@@ -7874,7 +9663,7 @@ document.addEventListener( 'alpine:init', () =>
 
             if ( this.workspace === 'collection' )
             {
-                if ( this.layoutsRow !== null ) { return this.layoutsRow.name; }
+                if ( this.layoutsRow !== null ) { return this.layoutsRow.index === true ? t( 'layoutIndexPage' ) : this.layoutsRow.name; }
 
                 if ( this.collectionView === 'fields' )
                 {
@@ -7890,6 +9679,8 @@ document.addEventListener( 'alpine:init', () =>
 
             if ( this.workspace === 'taxonomy' )
             {
+                if ( this.layoutsRow !== null ) { return this.layoutsRow.index === true ? t( 'layoutIndexPage' ) : this.layoutsRow.name; }
+
                 return this.termEditor !== null
                     ? ( this.termEditor.name === '' ? t( 'kindTerm' ) : this.termEditor.name )
                     : this.taxonomyDisplayLabel;
@@ -7915,6 +9706,7 @@ document.addEventListener( 'alpine:init', () =>
         // "events · field", "fixture-kit / card".
         get inspectorKind ()
         {
+            if ( this.scopeSelection !== null ) { return t( this.scopeSelection.kind === 'partial' ? 'kindPartial' : 'kindTemplate' ); }
             if ( this.repeatEditor !== null ) { return this.repeatShownLabel; }
 
             if ( this.surface !== null )
@@ -7931,7 +9723,15 @@ document.addEventListener( 'alpine:init', () =>
                 if ( this.workspace === 'settings' ) { return `${t( 'kindPartial' )} · ${this.surfaceLabel.toLowerCase()}`; }
                 if ( this.workspace === 'template' ) { return t( 'kindTemplate' ); }
 
-                return `${this.workspace === 'taxonomy' ? this.taxonomyDisplayLabel : this.collectionDisplayLabel} · ${this.surfaceLabel.toLowerCase()}`;
+                // A layout canvas names its layout (Mikey): "Events ·
+                // default layout", "Events · wide-card layout", and a
+                // rogue entry's canvas "Events · custom layout".
+                const owner = this.workspace === 'taxonomy' ? this.taxonomyDisplayLabel : this.collectionDisplayLabel;
+
+                if ( this.surface === 'template' ) { return `${owner} · ${this.layoutName} ${t( 'kindLayout' )}`; }
+                if ( this.surface === 'entry' ) { return `${owner} · ${t( 'layoutOwnOption' )} ${t( 'kindLayout' )}`; }
+
+                return `${owner} · ${this.surfaceLabel.toLowerCase()}`;
             }
 
             if ( this.workspace === 'collection' && this.collectionView === 'fields' && this.fieldEditor !== null )
@@ -7939,7 +9739,7 @@ document.addEventListener( 'alpine:init', () =>
                 return `${this.collectionDisplayLabel} · ${t( 'kindField' )}`;
             }
 
-            if ( this.workspace === 'collection' && this.layoutsRow !== null ) { return `${t( 'kindLayout' )} · ${this.workspaceFile ?? ''}`; }
+            if ( this.layoutsRow !== null ) { return `${t( 'kindLayout' )} · ${this.workspaceFile ?? ''}`; }
 
             if ( this.workspace === 'collection' )
             {

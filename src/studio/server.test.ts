@@ -2052,10 +2052,30 @@ describe( 'block editing over the studio API', () =>
         assert.equal( loaded.hierarchical, true );
         assert.equal( loaded.terms.find( ( term ) => term.id === child.id )?.parent, parent.id );
 
-        // Un-hierarchical while nested is refused; un-nest first.
+        // Un-hierarchical while nested is refused without the word;
+        // with "flatten" every term moves to the top level in one
+        // journaled write, and undo brings the nesting back.
         const refused = await post( '/api/taxonomy', { file: 'regions.json', patch: { hierarchical: false } }, 'PUT' );
 
         assert.equal( refused.status, 409 );
+
+        const flattened = await post( '/api/taxonomy', { file: 'regions.json', patch: { hierarchical: false, flatten: true } }, 'PUT' );
+
+        assert.equal( flattened.status, 200 );
+
+        const flat = await ( await fetch( `${base}/api/taxonomy?${new URLSearchParams( { file: 'regions.json', t: server.token } ).toString()}` ) ).json() as { hierarchical: boolean; terms: { id: string; parent?: string }[] };
+
+        assert.equal( flat.hierarchical, false );
+        assert.equal( flat.terms.every( ( term ) => term.parent === undefined ), true );
+
+        const undone = await post( '/api/undo', {}, 'POST' );
+
+        assert.equal( undone.status, 200 );
+
+        const restored = await ( await fetch( `${base}/api/taxonomy?${new URLSearchParams( { file: 'regions.json', t: server.token } ).toString()}` ) ).json() as { hierarchical: boolean; terms: { id: string; parent?: string }[] };
+
+        assert.equal( restored.hierarchical, true );
+        assert.equal( restored.terms.find( ( term ) => term.id === child.id )?.parent, parent.id );
 
         await post( '/api/term', { file: 'regions.json', id: child.id, parent: null }, 'PUT' );
 
@@ -2081,6 +2101,50 @@ describe( 'block editing over the studio API', () =>
         const loaded = await ( await fetch( `${base}/api/collection?${query.toString()}` ) ).json() as { index: boolean };
 
         assert.equal( loaded.index, false );
+
+        await fetch( `${base}/api/collection?t=${server.token}`, {
+            method: 'DELETE',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify( { file: created.file } ),
+        } );
+    } );
+
+    // The create modal brings fields along (Mikey, 2026-09-03): one
+    // POST births the collection complete - title seeded, the given
+    // fields normalized through the same path as the fields patch.
+    it( 'creates a collection with fields from the modal', async () =>
+    {
+        const created = await ( await fetch( `${base}/api/collection?t=${server.token}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify( {
+                label: 'Speakers',
+                fields: {
+                    bio: { type: 'textarea', label: 'Bio', required: false },
+                    talkDate: { type: 'date', label: 'Talk date', required: true, format: 'short' },
+                    appearance: { type: 'reference', label: 'Appearance', required: false, collection: 'events' },
+                },
+            } ),
+        } ) ).json() as { file: string };
+
+        const query = new URLSearchParams( { file: created.file, t: server.token } );
+        const loaded = await ( await fetch( `${base}/api/collection?${query.toString()}` ) ).json() as {
+            fields: Record<string, { type: string; label: string; required?: boolean; rules?: Record<string, unknown> }>;
+        };
+
+        assert.equal( loaded.fields.title?.type, 'text' );
+        assert.equal( loaded.fields.title?.required, true );
+        assert.equal( loaded.fields.bio?.type, 'textarea' );
+        assert.equal( loaded.fields.talkDate?.rules?.format, 'short' );
+        assert.equal( loaded.fields.appearance?.rules?.type, 'events' );
+
+        const refused = await ( await fetch( `${base}/api/collection?t=${server.token}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify( { label: 'Broken shape', fields: { odd: { type: 'no-such-type', label: 'Odd' } } } ),
+        } ) );
+
+        assert.equal( refused.status, 400 );
 
         await fetch( `${base}/api/collection?t=${server.token}`, {
             method: 'DELETE',

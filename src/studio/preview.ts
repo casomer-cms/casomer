@@ -21,9 +21,10 @@ import { loadSiteDirectory } from '../content/loadSiteDirectory.ts';
 import { type PresentationDocs } from '../content/presentation.ts';
 import { collectionIsDraft, collectionPathSegments, pageIsDraft, pagePathSegments, pagesById, resolveEntryUrls, resolveMenus } from '../content/urlTree.ts';
 import { entrySlug } from '../compiler/buildSite.ts';
-import { termAndDescendantIds, entryLayoutOf } from '../content/contentDocuments.ts';
+import { termAndDescendantIds, entryLayoutOf, termLayoutOf } from '../content/contentDocuments.ts';
 import { type LoadedCollection } from '../content/contentDocuments.ts';
 import { type LoadedComponent, type LoadedPackage } from '../schema/loadPackage.ts';
+import type { NormalizedField, NormalizedFields } from '../schema/fields.ts';
 import { type SchemaIssue } from '../schema/manifest.ts';
 
 export interface PreviewOptions
@@ -43,7 +44,7 @@ export interface PreviewPipeline
 {
     renderPage ( slug: string, editing?: boolean ): Promise<RenderedPreview>;
     renderCollectionSurface ( stem: string, surface: 'index' | 'template', editing?: boolean, sampleEntryId?: string, pageNumber?: number, layoutName?: string ): Promise<RenderedPreview>;
-    renderTaxonomySurface ( stem: string, surface: 'index' | 'template', editing?: boolean, sampleTermId?: string ): Promise<RenderedPreview>;
+    renderTaxonomySurface ( stem: string, surface: 'index' | 'template', editing?: boolean, sampleTermId?: string, layoutName?: string ): Promise<RenderedPreview>;
     renderRegion ( region: string ): Promise<RenderedPreview>;
     renderPageTemplate ( name: string, samplePageId?: string, editing?: boolean ): Promise<RenderedPreview>;
     renderComponentSample ( reference: string ): Promise<RenderedPreview>;
@@ -63,8 +64,8 @@ export interface PreviewPipeline
 // rendered DOM), and local to the sample document.
 const ghostSnippet = `<style>
 .cs-ghost-bar { display: inline-block; max-width: 100%; height: 0.62em; min-height: 3px; border-radius: 999px; background: currentColor; opacity: 0.38; vertical-align: baseline; }
-.cs-ghost-plate { display: grid; place-content: center; width: 100%; min-height: 3em; aspect-ratio: 16 / 9; border-radius: 6px; background: color-mix(in srgb, currentColor 16%, transparent); }
-.cs-ghost-plate svg { width: 22%; max-width: 64px; min-width: 24px; height: auto; opacity: 0.55; }
+.cs-ghost-plate { display: grid; place-content: center; width: 100%; min-height: 3em; aspect-ratio: 16 / 9; border-radius: 6px; background: #E8A13D; color: #1A1D28; }
+.cs-ghost-plate svg { width: 22%; max-width: 64px; min-width: 24px; height: auto; opacity: 0.7; }
 </style>
 <script>
 ( () =>
@@ -135,6 +136,43 @@ function sampleEntryScope (
     );
 
     return { id: 'sample', ...values };
+}
+
+// A component with no example still earns a real-render ghost
+// (Mikey, 2026-09-03): props stand in from its fields, enough for
+// the layout to show, and the ghost script then turns every image
+// into the amber plate and every run of text into bars.
+const sampleImage = `data:image/svg+xml,${encodeURIComponent( '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#E8A13D"/></svg>' )}`;
+
+export function sampleProps ( fields: NormalizedFields ): Record<string, unknown>
+{
+    const valueFor = ( key: string, field: NormalizedField ): unknown =>
+    {
+        if ( field.defaultValue !== undefined && field.type !== 'toggle' ) { return field.defaultValue; }
+
+        switch ( field.type )
+        {
+            case 'text': return key === 'title' || key === 'heading' ? 'A sample heading' : ( field.placeholder ?? field.label );
+            case 'textarea': return 'A few lines of sample text standing in for the real thing, long enough to wrap once or twice.';
+            case 'markdown': return `# ${field.label}\n\nA paragraph of sample text standing in for the real thing, long enough to wrap once or twice on a card.`;
+            case 'number': return 3;
+            case 'toggle': return field.defaultValue === true;
+            case 'select': return field.options?.source === 'static' ? ( field.options.values[ 0 ]?.value ?? '' ) : '';
+            case 'multiselect': return field.options?.source === 'static' ? field.options.values.slice( 0, 2 ).map( ( option ) => option.value ) : [];
+            case 'url': return '#';
+            case 'email': return 'hello@example.com';
+            case 'date': return '2026-09-03';
+            case 'color': return '#E8A13D';
+            case 'image': return { src: sampleImage, alt: field.label };
+            case 'file': return { src: '#', name: 'sample.pdf' };
+            case 'reference': return field.rules.multiple === true ? [] : '';
+            case 'list': return field.fields === undefined ? [] : [ sampleProps( field.fields ), sampleProps( field.fields ) ];
+            case 'group': return field.fields === undefined ? {} : sampleProps( field.fields );
+            default: return '';
+        }
+    };
+
+    return Object.fromEntries( Object.entries( fields ).map( ( [ key, field ] ) => [ key, valueFor( key, field ) ] ) );
 }
 
 function resolveTailwind (): { entry: string; cli: string }
@@ -263,7 +301,7 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
 
         // The taxonomy twin (SCHEMA 13.3): the term listing and the
         // shared term template, previewed through a sample term.
-        async renderTaxonomySurface ( stem, surface, editing = true, sampleTermId = undefined )
+        async renderTaxonomySurface ( stem, surface, editing = true, sampleTermId = undefined, layoutName = undefined )
         {
             const site = await loadSiteDirectory( options.contentDirectory, options.packages );
 
@@ -277,11 +315,16 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
             }
 
             const isIndex = surface === 'index';
+            const term = taxonomy.terms.find( ( candidate ) => candidate.id === sampleTermId ) ?? taxonomy.terms[ 0 ];
+            const chosen = layoutName !== undefined
+                ? { blocks: taxonomy.layouts[ layoutName ]?.blocks, template: taxonomy.layouts[ layoutName ]?.template }
+                : ( term === undefined
+                        ? { blocks: taxonomy.layouts.default?.blocks, template: taxonomy.layouts.default?.template }
+                        : termLayoutOf( taxonomy, term ) );
             const blocks = isIndex
                 ? ( taxonomy.indexBlocks === false ? [] : ( taxonomy.indexBlocks ?? [] ) )
-                : ( taxonomy.templateBlocks ?? [] );
-            const term = taxonomy.terms.find( ( candidate ) => candidate.id === sampleTermId ) ?? taxonomy.terms[ 0 ];
-            const layoutTemplate = isIndex ? taxonomy.indexTemplate : taxonomy.termTemplate;
+                : ( chosen.blocks ?? [] );
+            const layoutTemplate = isIndex ? taxonomy.indexTemplate : chosen.template;
             const page = {
                 id: `taxonomy:${stem}:${surface}`,
                 title: taxonomy.label,
@@ -512,7 +555,7 @@ export function createPreviewPipeline ( options: PreviewOptions ): PreviewPipeli
                 id: `sample:${reference}`,
                 title: component.manifest.title,
                 slug: 'component-sample',
-                blocks: [ { component: reference, props: component.manifest.examples[ 0 ]?.props ?? {} } ],
+                blocks: [ { component: reference, props: component.manifest.examples[ 0 ]?.props ?? sampleProps( component.manifest.fields ) } ],
             }, {
                 config: site.config,
                 bare: true,

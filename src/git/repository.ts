@@ -155,3 +155,42 @@ export async function pushCurrentBranch ( directory: string ): Promise<GitResult
 {
     return runGit( directory, [ 'push', '-u', 'origin', 'HEAD' ] );
 }
+
+export type PullOutcome
+    = | { readonly kind: 'pulled' | 'nothing' }
+        | { readonly kind: 'conflict' | 'failed'; readonly detail: string };
+
+function firstLine ( text: string ): string
+{
+    return ( text.trim().split( '\n' ).find( ( line ) => line.trim() !== '' ) ?? '' ).trim().slice( 0, 200 );
+}
+
+// Pull & push (EDITOR: Go live): before the push, the remote's latest
+// for this branch is fetched and the local commits are replayed on
+// top. A remote without the branch yet is nothing to pull. A replay
+// that conflicts is abandoned whole, so the repository is exactly as
+// it was, and the caller says so.
+export async function pullCurrentBranch ( directory: string ): Promise<PullOutcome>
+{
+    const branch = ( await runGit( directory, [ 'rev-parse', '--abbrev-ref', 'HEAD' ] ) ).stdout.trim();
+    const fetched = await runGit( directory, [ 'fetch', 'origin', branch ] );
+
+    if ( fetched.code !== 0 )
+    {
+        if ( /couldn't find remote ref|invalid refspec|no such ref/i.test( fetched.stderr ) ) { return { kind: 'nothing' }; }
+
+        return { kind: 'failed', detail: firstLine( fetched.stderr ) };
+    }
+
+    const behind = await runGit( directory, [ 'rev-list', '--count', 'HEAD..FETCH_HEAD' ] );
+
+    if ( behind.code !== 0 || behind.stdout.trim() === '0' ) { return { kind: 'nothing' }; }
+
+    const rebased = await runGit( directory, [ 'rebase', 'FETCH_HEAD' ] );
+
+    if ( rebased.code === 0 ) { return { kind: 'pulled' }; }
+
+    await runGit( directory, [ 'rebase', '--abort' ] );
+
+    return { kind: 'conflict', detail: firstLine( rebased.stdout + '\n' + rebased.stderr ) };
+}

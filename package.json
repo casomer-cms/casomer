@@ -1,85 +1,89 @@
 {
-    "name": "casomer",
-    "version": "0.0.2",
-    "description": "JSON-native CMS that compiles to lightning-fast static sites with dynamic view transitions. Powered by Alpine.js. (In development - placeholder release.)",
-    "keywords": [
-        "cms",
-        "static-site-generator",
-        "json",
-        "alpinejs",
-        "view-transitions",
-        "ssg",
-        "headless-cms",
-        "content-management",
-        "static-site",
-        "wysiwyg"
-    ],
-    "homepage": "https://casomer.com",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/casomer-cms/casomer.git"
-    },
-    "bugs": {
-        "url": "https://github.com/casomer-cms/casomer/issues"
-    },
-    "license": "BUSL-1.1",
-    "author": "Casomer",
-    "type": "module",
-    "bin": {
-        "caso": "./bin/caso.js"
-    },
-    "files": [
-        "bin/",
-        "src/",
-        "core-components/",
-        "runtime/",
-        "README.md",
-        "LICENSE.md",
-        "studio/app/"
-    ],
-    "engines": {
-        "node": ">=22"
-    },
-    "scripts": {
-        "prepare": "git config core.hooksPath .githooks || exit 0",
-        "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
-        "typecheck": "tsc",
-        "lint": "eslint .",
-        "lint:fix": "eslint . --fix",
-        "test:browser": "node --experimental-strip-types --test \"tests-browser/**/*.test.ts\"",
-        "checks": "node tools/alpine-checks.mjs",
-        "engine:build": "vite build --config studio/engine/vite.config.ts"
-    },
-    "devDependencies": {
-        "@stylistic/eslint-plugin": "^5.10.0",
-        "@types/alpinejs": "^3.13.11",
-        "@types/js-beautify": "^1.14.3",
-        "@types/mdast": "^4.0.4",
-        "@types/node": "^26.4.0",
-        "eslint": "^10.9.1",
-        "playwright": "^1.62.1",
-        "typescript": "^6.0.3",
-        "typescript-eslint": "^8.68.0",
-        "vite": "^8.2.2"
-    },
-    "dependencies": {
-        "@alpinejs/morph": "^3.17.0",
-        "@alpinejs/sort": "^3.17.1",
-        "@jsquash/jpeg": "^1.6.0",
-        "@jsquash/png": "^3.1.1",
-        "@jsquash/resize": "^2.1.1",
-        "@jsquash/webp": "^1.5.0",
-        "@tailwindcss/browser": "^4.3.3",
-        "@tailwindcss/cli": "^4.3.3",
-        "alpinejs": "^3.16.3",
-        "js-beautify": "^2.0.3",
-        "mdast-util-from-markdown": "^2.0.3",
-        "mdast-util-gfm-autolink-literal": "^2.0.1",
-        "mdast-util-gfm-strikethrough": "^2.0.0",
-        "mdast-util-gfm-table": "^2.0.0",
-        "micromark-extension-gfm-autolink-literal": "^2.1.0",
-        "micromark-extension-gfm-strikethrough": "^2.1.0",
-        "micromark-extension-gfm-table": "^2.1.1",
-        "tailwindcss": "^4.3.3"
-    }
+  "name": "casomer",
+  "version": "0.0.2",
+  "description": "JSON-native CMS that compiles to lightning-fast static sites with dynamic view transitions. Powered by Alpine.js. (In development - placeholder release.)",
+  "keywords": [
+    "cms",
+    "static-site-generator",
+    "json",
+    "alpinejs",
+    "view-transitions",
+    "ssg",
+    "headless-cms",
+    "content-management",
+    "static-site",
+    "wysiwyg"
+  ],
+  "homepage": "https://casomer.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/casomer-cms/casomer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/casomer-cms/casomer/issues"
+  },
+  "license": "BUSL-1.1",
+  "author": "Casomer",
+  "type": "module",
+  "bin": {
+    "caso": "./bin/caso.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "core-components/",
+    "runtime/",
+    "README.md",
+    "LICENSE.md",
+    "studio/app/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks || exit 0",
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "test:browser": "node --experimental-strip-types --test \"tests-browser/**/*.test.ts\"",
+    "checks": "node tools/alpine-checks.mjs",
+    "engine:build": "vite build --config studio/engine/vite.config.ts",
+    "chrome:build": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/studio/chromeCss.ts",
+    "prepublishOnly": "npm run chrome:build && npm run engine:build"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.10.0",
+    "@types/alpinejs": "^3.13.11",
+    "@types/js-beautify": "^1.14.3",
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^26.4.0",
+    "@types/ssh2": "^1.15.6",
+    "eslint": "^10.9.1",
+    "playwright": "^1.62.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0",
+    "vite": "^8.2.2"
+  },
+  "dependencies": {
+    "@alpinejs/morph": "^3.17.0",
+    "@alpinejs/sort": "^3.17.1",
+    "@jsquash/jpeg": "^1.6.0",
+    "@jsquash/png": "^3.1.1",
+    "@jsquash/resize": "^2.1.1",
+    "@jsquash/webp": "^1.5.0",
+    "@tailwindcss/browser": "^4.3.3",
+    "@tailwindcss/cli": "^4.3.3",
+    "alpinejs": "^3.16.3",
+    "js-beautify": "^2.0.3",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm-autolink-literal": "^2.0.1",
+    "mdast-util-gfm-strikethrough": "^2.0.0",
+    "mdast-util-gfm-table": "^2.0.0",
+    "micromark-extension-gfm-autolink-literal": "^2.1.0",
+    "micromark-extension-gfm-strikethrough": "^2.1.0",
+    "micromark-extension-gfm-table": "^2.1.1",
+    "ssh2": "^1.17.0",
+    "tailwindcss": "^4.3.3"
+  }
 }

@@ -65,7 +65,16 @@ function blockAt ( target )
 
 function describe ( element )
 {
-    return { path: element.dataset.casomerBlock, rect: rectOf( element ), radius: radiusOf( element ) };
+    // Chrome and partials on a page canvas carry no block path; they
+    // select as a SCOPE - the sidebar names what owns them and offers
+    // the way there (Mikey: select first, never jump).
+    const scope = element.dataset.casomerBlock !== undefined
+        ? undefined
+        : ( element.dataset.casomerPartial !== undefined
+                ? { kind: 'partial', name: element.dataset.casomerPartial }
+                : ( element.dataset.casomerTemplate !== undefined ? { kind: 'template', name: element.dataset.casomerTemplate } : undefined ) );
+
+    return { path: element.dataset.casomerBlock ?? null, scope, rect: rectOf( element ), radius: radiusOf( element ) };
 }
 
 function markedAncestors ( element )
@@ -124,6 +133,49 @@ function queueUpdate ()
 
         if ( selected !== null ) { select( selected ); }
         if ( hovered !== null ) { reportHover(); }
+
+        seamRefresh();
+    } );
+}
+
+// The seam stays on its boundary when the canvas scrolls under a
+// resting pointer (Mikey): the same key, fresh geometry. Recomputing
+// from the pointer would hop to whatever boundary slid under it.
+function seamRefresh ()
+{
+    if ( seamKey === null ) { return; }
+
+    const split = seamKey.lastIndexOf( ':' );
+    const container = seamKey.slice( 0, split );
+    const index = Number( seamKey.slice( split + 1 ) );
+    let element = null;
+
+    if ( container === '' ) { element = document.querySelector( 'main' ); }
+    else if ( container === 'header' || container === 'footer' ) { element = document.querySelector( `body > ${container}` ); }
+    else
+    {
+        const block = document.querySelector( `[data-casomer-block="${CSS.escape( container )}"]` );
+
+        element = block === null ? null : ( block.querySelector( '[data-casomer-empty]' ) ?? block );
+    }
+
+    const candidate = element === null ? undefined : candidatesFor( container, element ).find( ( entry ) => entry.index === index );
+
+    if ( candidate === undefined )
+    {
+        seamKey = null;
+        post( { kind: 'seam-clear' } );
+        return;
+    }
+
+    post( {
+        kind: 'seam',
+        container: candidate.container,
+        index: candidate.index,
+        orientation: candidate.orientation,
+        at: candidate.at,
+        crossStart: candidate.crossStart,
+        crossSize: candidate.crossSize,
     } );
 }
 
@@ -334,13 +386,11 @@ function beginInline ( element, mode, path, caret )
     }
 }
 
-document.addEventListener( 'dblclick', ( event ) =>
+function inlineStartAt ( event )
 {
     if ( !( event.target instanceof Element ) || selected === null || !selected.contains( event.target ) ) { return; }
     if ( inlineEl !== null && inlineEl.contains( event.target ) ) { return; }
-
-    event.preventDefault();
-    event.stopPropagation();
+    if ( selected.dataset.casomerBlock === undefined ) { return; }
 
     const mapped = event.target.closest( '[data-casomer-md]' );
     const element = mapped !== null && selected.contains( mapped ) ? mapped : event.target;
@@ -357,7 +407,7 @@ document.addEventListener( 'dblclick', ( event ) =>
 
     inlineEl = null;
     window.__casomerInlineCandidate = element;
-}, true );
+}
 
 document.addEventListener( 'click', ( event ) =>
 {
@@ -371,25 +421,30 @@ document.addEventListener( 'click', ( event ) =>
 
     if ( block !== null )
     {
-        select( block );
+        // One click selects the block; one more, on its text, edits
+        // in place (EDITOR 3, Mikey: single click once selected).
+        if ( block === selected && event.target instanceof Element ) { inlineStartAt( event ); }
+        else { select( block ); }
+
         return;
     }
 
     // Chrome and layout on a page canvas (EDITOR 2): a click on a
-    // partial's content or a template's own block jumps to the canvas
-    // that owns it. The partial wins when both apply (it is inside).
+    // partial's content or a template's own block SELECTS it as a
+    // scope; the sidebar offers the canvas that owns it. The partial
+    // wins when both apply (it is inside).
     const partial = event.target instanceof Element ? event.target.closest( '[data-casomer-partial]' ) : null;
     const template = event.target instanceof Element ? event.target.closest( '[data-casomer-template]' ) : null;
 
     if ( partial !== null && partial.dataset.casomerPartial !== undefined )
     {
-        post( { kind: 'jump', partial: partial.dataset.casomerPartial } );
+        select( partial );
         return;
     }
 
     if ( template !== null && typeof template.dataset.casomerTemplate === 'string' && template.dataset.casomerTemplate !== '' )
     {
-        post( { kind: 'jump', template: template.dataset.casomerTemplate } );
+        select( template );
         return;
     }
 
@@ -422,6 +477,10 @@ ghostStyle.textContent = `
    be clicked again (Mikey). The bridge measures and flags them;
    this ghost keeps them selectable. Editing canvas only - the pure
    preview and the build render the honest nothing. */
+[contenteditable]:focus {
+    outline: none;
+}
+
 [data-casomer-hollow] {
     display: block;
     min-height: 40px;
@@ -523,6 +582,20 @@ body[data-casomer-template] > [data-casomer-part]:empty::before {
 }
 `;
 document.head.append( templateStyle );
+
+// The hover cue (Mikey, 2026-09-03): over anything selectable the
+// pointer is a hand - a click selects - and stays a hand on the
+// selected block until a click there starts inline editing, when the
+// text cursor takes over. A block on the move dims in place; the
+// seam says where it lands.
+const cueStyle = document.createElement( 'style' );
+
+cueStyle.textContent = `
+[data-casomer-block], [data-casomer-partial], [data-casomer-template] { cursor: pointer; }
+[contenteditable="true"], [contenteditable="true"] * { cursor: text; }
+[data-casomer-dragging] { opacity: 0.4; transition: opacity 120ms ease; }
+`;
+document.head.append( cueStyle );
 
 function directChildBlocks ( containerPath )
 {
@@ -762,6 +835,35 @@ window.addEventListener( 'message', ( event ) =>
     }
 
     if ( message.kind === 'deselect' ) { select( null ); }
+
+    // A block on the move (the chrome holds the pointer): it dims in
+    // place, the seam follows the chrome's point, the edges scroll.
+    if ( message.kind === 'drag-start' )
+    {
+        const moving = document.querySelector( `[data-casomer-block="${CSS.escape( message.path )}"]` );
+
+        if ( moving instanceof Element ) { moving.setAttribute( 'data-casomer-dragging', '' ); }
+    }
+
+    if ( message.kind === 'drag-at' )
+    {
+        const edge = 48;
+        const step = 14;
+
+        if ( message.y < edge && window.scrollY > 0 ) { window.scrollBy( 0, -step ); }
+        else if ( message.y > window.innerHeight - edge ) { window.scrollBy( 0, step ); }
+
+        seamKey = null;
+        reportSeam( message.x, message.y );
+    }
+
+    if ( message.kind === 'drag-end' )
+    {
+        for ( const element of document.querySelectorAll( '[data-casomer-dragging]' ) ) { element.removeAttribute( 'data-casomer-dragging' ); }
+
+        seamKey = null;
+        post( { kind: 'seam-clear' } );
+    }
 
     // The chrome matched the double-clicked text to a field (or not).
     if ( message.kind === 'inline-edit' )

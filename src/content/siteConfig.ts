@@ -7,7 +7,7 @@
 import { suggestNearest } from '../schema/fields.ts';
 import { parseComponentReference, ComponentReferenceError, type SchemaIssue } from '../schema/manifest.ts';
 
-const siteConfigKeys = [ 'casomerSchema', 'theme', 'components', 'use', 'name', 'icon', 'regions', 'menus', 'notFound', 'partials', 'media', 'templates' ];
+const siteConfigKeys = [ 'casomerSchema', 'theme', 'components', 'use', 'origin', 'name', 'icon', 'regions', 'menus', 'notFound', 'partials', 'media', 'templates', 'deploy' ];
 const templateKeys = [ 'header', 'blocks', 'footer' ];
 const templateNameShape = /^[a-z][a-z0-9-]*$/;
 const regionNames = [ 'header', 'footer' ];
@@ -52,11 +52,128 @@ export interface SiteGovernance
     readonly enabled?: readonly string[];
 }
 
+// The public address as stored: "https://host" (or http), lower-cased
+// host, no trailing slash, no path, query, or hash. Empty input is
+// "" (unset); anything else that is not such an address is null.
+export interface SiteDeploy
+{
+    // Pull & push on publish: the git remote itself lives in git; this
+    // is only the switch (default on when a remote exists).
+    readonly git?: { readonly enabled: boolean };
+    readonly sftp?: {
+        readonly host: string;
+        readonly port: number;
+        readonly user: string;
+        readonly path: string;
+        readonly enabled: boolean;
+    };
+}
+
+function validateDeploy ( raw: unknown, issues: SchemaIssue[] ): SiteDeploy | undefined
+{
+    if ( raw === null || typeof raw !== 'object' || Array.isArray( raw ) )
+    {
+        issues.push( { path: 'site.deploy', message: '"deploy" is an object; today it holds "sftp".' } );
+        return undefined;
+    }
+
+    const record = raw as Record<string, unknown>;
+
+    for ( const key of Object.keys( record ) )
+    {
+        if ( key !== 'sftp' && key !== 'git' ) { issues.push( { path: `site.deploy.${key}`, message: `Unknown key "${key}". "deploy" holds "git" and "sftp".` } ); }
+    }
+
+    let git: { enabled: boolean } | undefined;
+
+    if ( record.git !== undefined )
+    {
+        const value = record.git as { enabled?: unknown } | null;
+
+        if ( value === null || typeof value !== 'object' || Array.isArray( value ) || ( value.enabled !== undefined && typeof value.enabled !== 'boolean' ) )
+        {
+            issues.push( { path: 'site.deploy.git', message: '"git" is { "enabled": true | false }: whether publish pulls and pushes the remote.' } );
+        }
+        else { git = { enabled: value.enabled !== false }; }
+    }
+
+    if ( record.sftp === undefined ) { return git === undefined ? {} : { git }; }
+    if ( record.sftp === null || typeof record.sftp !== 'object' || Array.isArray( record.sftp ) )
+    {
+        issues.push( { path: 'site.deploy.sftp', message: '"sftp" is an object: host, port, user, path, enabled.' } );
+        return undefined;
+    }
+
+    const sftp = record.sftp as Record<string, unknown>;
+    const known = [ 'host', 'port', 'user', 'path', 'enabled' ];
+
+    for ( const key of Object.keys( sftp ) )
+    {
+        if ( !known.includes( key ) ) { issues.push( { path: `site.deploy.sftp.${key}`, message: `Unknown key "${key}". "sftp" holds host, port, user, path, enabled.` } ); }
+    }
+
+    const host = typeof sftp.host === 'string' ? sftp.host.trim() : '';
+    const user = typeof sftp.user === 'string' ? sftp.user.trim() : '';
+
+    if ( host === '' || /[\s/]/.test( host ) ) { issues.push( { path: 'site.deploy.sftp.host', message: '"host" is the SFTP host name, such as "ftp.example.com".' } ); }
+    if ( sftp.port !== undefined && ( typeof sftp.port !== 'number' || !Number.isInteger( sftp.port ) || sftp.port < 1 || sftp.port > 65535 ) ) { issues.push( { path: 'site.deploy.sftp.port', message: '"port" is a whole number from 1 to 65535; SFTP is usually 22.' } ); }
+    if ( user === '' ) { issues.push( { path: 'site.deploy.sftp.user', message: '"user" is the SFTP user name.' } ); }
+    if ( sftp.path !== undefined && typeof sftp.path !== 'string' ) { issues.push( { path: 'site.deploy.sftp.path', message: '"path" is the folder on the host the site is uploaded into, such as "/public_html".' } ); }
+    if ( sftp.enabled !== undefined && typeof sftp.enabled !== 'boolean' ) { issues.push( { path: 'site.deploy.sftp.enabled', message: '"enabled" is true or false.' } ); }
+
+    return {
+        ...( git === undefined ? {} : { git } ),
+        sftp: {
+            host,
+            port: typeof sftp.port === 'number' ? sftp.port : 22,
+            user,
+            path: typeof sftp.path === 'string' && sftp.path.trim() !== '' ? sftp.path.trim().replace( /\\/g, '/' ).replace( /\/+$/, '' ) || '/' : '/',
+            enabled: sftp.enabled !== false,
+        },
+    };
+}
+
+export function normalizeOrigin ( value: string ): string | null
+{
+    const trimmed = value.trim();
+
+    if ( trimmed === '' ) { return ''; }
+
+    let url: URL;
+
+    try
+    {
+        url = new URL( /^[a-z][a-z0-9+.-]*:\/\//i.test( trimmed ) ? trimmed : `https://${trimmed}` );
+    }
+    catch
+    {
+        return null;
+    }
+
+    if ( url.protocol !== 'https:' && url.protocol !== 'http:' ) { return null; }
+    if ( url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '' ) { return null; }
+    if ( url.pathname !== '/' ) { return null; }
+    if ( url.hostname === '' || ( !url.hostname.includes( '.' ) && url.hostname !== 'localhost' ) ) { return null; }
+
+    return `${url.protocol}//${url.host}`;
+}
+
 export interface SiteConfig
 {
     readonly theme: SiteTheme;
     readonly governance: SiteGovernance;
     readonly declaredUse?: 'personal' | 'commercial';
+
+    // The site's public address (SCHEMA 12.3): scheme and host only,
+    // e.g. "https://sunrise-bakery.com". Asked at init, editable in
+    // Site settings; the licensing clock and key bind to its host.
+    readonly origin?: string;
+
+    // Where publish carries the site (SCHEMA 12.4): the SFTP
+    // destination as shareable data; the password lives in the user
+    // config, never here. "enabled: false" keeps the details while
+    // publish stops uploading.
+    readonly deploy?: SiteDeploy;
 
     // The site's identity (SCHEMA 12.3 neighborhood): a display name
     // that overrides the folder-derived project name and joins every
@@ -690,6 +807,24 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
         }
     }
 
+    let origin: string | undefined;
+
+    if ( record.origin !== undefined )
+    {
+        const normalized = typeof record.origin === 'string' ? normalizeOrigin( record.origin ) : null;
+
+        if ( normalized === null )
+        {
+            issues.push( { path: 'site.origin', message: '"origin" is the site\'s public address: a scheme and host such as "https://example.com", with no path.' } );
+        }
+        else if ( normalized !== '' )
+        {
+            origin = normalized;
+        }
+    }
+
+    const deploy = record.deploy === undefined ? undefined : validateDeploy( record.deploy, issues );
+
     let declaredUse: 'personal' | 'commercial' | undefined;
 
     if ( record.use !== undefined )
@@ -971,6 +1106,8 @@ export function validateSiteConfig ( raw: unknown, issues: SchemaIssue[] ): Site
         theme,
         governance,
         ...( declaredUse === undefined ? {} : { declaredUse } ),
+        ...( origin === undefined ? {} : { origin } ),
+        ...( deploy === undefined ? {} : { deploy } ),
         ...( siteName === undefined ? {} : { name: siteName } ),
         ...( icon === undefined ? {} : { icon } ),
         templates,
